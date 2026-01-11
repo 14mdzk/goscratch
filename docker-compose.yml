@@ -1,0 +1,131 @@
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:18-alpine
+    container_name: goscratch-postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: goscratch
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # Redis Cache (optional)
+  redis:
+    image: redis:7-alpine
+    container_name: goscratch-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    profiles:
+      - full
+
+  # RabbitMQ Message Queue (optional)
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    container_name: goscratch-rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    profiles:
+      - full
+
+  # Database Migrations
+  migrate:
+    image: migrate/migrate
+    container_name: goscratch-migrate
+    volumes:
+      - ./migrations:/migrations
+    command:
+      [
+        "-path",
+        "/migrations",
+        "-database",
+        "postgres://postgres:postgres@postgres:5432/goscratch?sslmode=disable",
+        "up",
+      ]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    profiles:
+      - tools
+
+  # Prometheus (optional - observability)
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: goscratch-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./deploy/docker/observability/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+    profiles:
+      - observability
+
+  # Loki (optional - log aggregation)
+  loki:
+    image: grafana/loki:latest
+    container_name: goscratch-loki
+    ports:
+      - "3100:3100"
+    volumes:
+      - loki_data:/loki
+    profiles:
+      - observability
+
+  # Tempo (optional - tracing)
+  tempo:
+    image: grafana/tempo:latest
+    container_name: goscratch-tempo
+    ports:
+      - "3200:3200"
+      - "4317:4317"
+    volumes:
+      - tempo_data:/tmp/tempo
+    profiles:
+      - observability
+
+  # Grafana (optional - dashboards)
+  grafana:
+    image: grafana/grafana:latest
+    container_name: goscratch-grafana
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_USERS_ALLOW_SIGN_UP: false
+    ports:
+      - "3001:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+    depends_on:
+      - prometheus
+      - loki
+      - tempo
+    profiles:
+      - observability
+
+volumes:
+  postgres_data:
+  redis_data:
+  rabbitmq_data:
+  prometheus_data:
+  loki_data:
+  tempo_data:
+  grafana_data:
