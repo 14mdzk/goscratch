@@ -21,6 +21,7 @@ type Config struct {
 	Storage       StorageConfig       `json:"storage"`
 	SSE           SSEConfig           `json:"sse"`
 	Audit         AuditConfig         `json:"audit"`
+	Authorization AuthorizationConfig `json:"authorization"`
 	Observability ObservabilityConfig `json:"observability"`
 }
 
@@ -115,6 +116,10 @@ type SSEConfig struct {
 
 type AuditConfig struct {
 	Enabled bool `json:"enabled" env:"AUDIT_ENABLED"`
+}
+
+type AuthorizationConfig struct {
+	Enabled bool `json:"enabled" env:"AUTHORIZATION_ENABLED"`
 }
 
 type ObservabilityConfig struct {

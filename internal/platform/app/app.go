@@ -5,6 +5,7 @@ import (
 
 	"github.com/14mdzk/goscratch/internal/adapter/audit"
 	"github.com/14mdzk/goscratch/internal/adapter/cache"
+	casbinadapter "github.com/14mdzk/goscratch/internal/adapter/casbin"
 	"github.com/14mdzk/goscratch/internal/adapter/queue"
 	"github.com/14mdzk/goscratch/internal/adapter/sse"
 	"github.com/14mdzk/goscratch/internal/adapter/storage"
@@ -32,6 +33,7 @@ type App struct {
 	Storage        port.Storage
 	SSE            port.SSEBroker
 	Auditor        port.Auditor
+	Authorizer     port.Authorizer
 	tracerShutdown func(context.Context) error
 }
 
@@ -144,6 +146,23 @@ func New(ctx context.Context, cfg *config.Config) (*App, error) {
 		auditor = audit.NewNoOpAuditor()
 	}
 
+	// Initialize authorizer (Casbin)
+	var authorizer port.Authorizer
+	if cfg.Authorization.Enabled {
+		log.Info("Initializing Casbin authorization...")
+		authorizer, err = casbinadapter.NewAdapter(casbinadapter.Config{
+			DatabaseURL: cfg.Database.DSN(),
+		})
+		if err != nil {
+			log.Warn("Failed to initialize Casbin, using no-op authorizer", "error", err)
+			authorizer = casbinadapter.NewNoOpAdapter()
+		} else {
+			log.Info("Casbin authorization initialized successfully")
+		}
+	} else {
+		authorizer = casbinadapter.NewNoOpAdapter()
+	}
+
 	// Initialize HTTP server
 	server := http.NewServer(cfg.Server, log)
 
@@ -169,7 +188,7 @@ func New(ctx context.Context, cfg *config.Config) (*App, error) {
 
 	// Register modules
 	healthModule := health.NewModule()
-	userModule := user.NewModule(pool, auditor, cfg.JWT.Secret)
+	userModule := user.NewModule(pool, auditor, authorizer, cfg.JWT.Secret)
 	authModule := auth.NewModule(pool, cacheAdapter, auditor, cfg.JWT)
 
 	server.RegisterModules(healthModule, userModule, authModule)
