@@ -1,10 +1,11 @@
-.PHONY: help dev build test lint clean migrate-up migrate-down migrate-create sqlc wire docker-up docker-down
+.PHONY: help dev build test lint clean migrate-up migrate-down migrate-create sqlc wire docker-up docker-down worker worker-build
 
 # Default target
 help:
 	@echo "Available commands:"
-	@echo "  make dev            - Run in development mode with hot reload"
-	@echo "  make build          - Build the binary"
+	@echo "  make dev            - Run API in development mode"
+	@echo "  make worker         - Run worker in development mode"
+	@echo "  make build          - Build API and worker binaries"
 	@echo "  make test           - Run tests"
 	@echo "  make lint           - Run linter"
 	@echo "  make clean          - Clean build artifacts"
@@ -29,12 +30,24 @@ dev:
 	@echo "Starting development server..."
 	@go run $(MAIN_PATH)/main.go
 
+# Worker
+worker:
+	@echo "Starting worker..."
+	@go run ./cmd/worker/main.go
+
+worker-build:
+	@echo "Building worker..."
+	@mkdir -p bin
+	@go build -ldflags="-w -s" -o ./bin/worker ./cmd/worker
+	@echo "Worker binary built at ./bin/worker"
+
 # Build
 build:
 	@echo "Building $(APP_NAME)..."
 	@mkdir -p bin
 	@go build -ldflags="-w -s" -o $(BINARY) $(MAIN_PATH)
-	@echo "Binary built at $(BINARY)"
+	@go build -ldflags="-w -s" -o ./bin/worker ./cmd/worker
+	@echo "Binaries built at bin/"
 
 # Test
 test:

@@ -59,6 +59,12 @@
   "authorization": {
     "enabled": true
   },
+  "worker": {
+    "enabled": true,
+    "concurrency": 2,
+    "queue_name": "jobs",
+    "exchange": ""
+  },
   "observability": {
     "metrics": {
       "enabled": true,

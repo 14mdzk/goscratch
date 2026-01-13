@@ -22,6 +22,7 @@ type Config struct {
 	SSE           SSEConfig           `json:"sse"`
 	Audit         AuditConfig         `json:"audit"`
 	Authorization AuthorizationConfig `json:"authorization"`
+	Worker        WorkerConfig        `json:"worker"`
 	Observability ObservabilityConfig `json:"observability"`
 }
 
@@ -120,6 +121,13 @@ type AuditConfig struct {
 
 type AuthorizationConfig struct {
 	Enabled bool `json:"enabled" env:"AUTHORIZATION_ENABLED"`
+}
+
+type WorkerConfig struct {
+	Enabled     bool   `json:"enabled" env:"WORKER_ENABLED"`
+	Concurrency int    `json:"concurrency" env:"WORKER_CONCURRENCY"`
+	QueueName   string `json:"queue_name" env:"WORKER_QUEUE_NAME"`
+	Exchange    string `json:"exchange" env:"WORKER_EXCHANGE"`
 }
 
 type ObservabilityConfig struct {
