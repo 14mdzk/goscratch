@@ -40,7 +40,7 @@ func (h *Handler) List(c *fiber.Ctx) error {
 	if err != nil {
 		return response.Fail(c, err)
 	}
-	return response.Success(c, result)
+	return response.Paginated(c, result.GetItems(), result.GetMeta())
 }
 
 // Create creates a new user

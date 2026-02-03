@@ -95,7 +95,7 @@ func TestNewCursorPage(t *testing.T) {
 		page := NewCursorPage(items, 2, cursorFn)
 
 		assert.True(t, page.HasMore)
-		assert.Len(t, page.Data, 2)
+		assert.Len(t, page.Items, 2)
 		assert.NotNil(t, page.NextCursor)
 	})
 
@@ -108,7 +108,7 @@ func TestNewCursorPage(t *testing.T) {
 		page := NewCursorPage(items, 2, cursorFn)
 
 		assert.False(t, page.HasMore)
-		assert.Len(t, page.Data, 2)
+		assert.Len(t, page.Items, 2)
 		assert.Nil(t, page.NextCursor)
 	})
 
@@ -120,7 +120,7 @@ func TestNewCursorPage(t *testing.T) {
 		page := NewCursorPage(items, 5, cursorFn)
 
 		assert.False(t, page.HasMore)
-		assert.Len(t, page.Data, 1)
+		assert.Len(t, page.Items, 1)
 		assert.Nil(t, page.NextCursor)
 	})
 
@@ -130,7 +130,7 @@ func TestNewCursorPage(t *testing.T) {
 		page := NewCursorPage(items, 10, cursorFn)
 
 		assert.False(t, page.HasMore)
-		assert.Empty(t, page.Data)
+		assert.Empty(t, page.Items)
 		assert.Nil(t, page.NextCursor)
 	})
 }
@@ -139,8 +139,10 @@ func TestCursorPage_WithTotal(t *testing.T) {
 	type Item struct{ ID string }
 
 	page := CursorPage[Item]{
-		Data:    []Item{{ID: "1"}},
-		HasMore: false,
+		Items: []Item{{ID: "1"}},
+		PaginationMeta: PaginationMeta{
+			HasMore: false,
+		},
 	}
 
 	pageWithTotal := page.WithTotal(100)

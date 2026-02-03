@@ -42,6 +42,9 @@ func (uc *UseCase) List(ctx context.Context, req dto.ListUsersRequest) (shareddo
 
 	// Decode cursor if provided
 	var cursorID string
+	var direction string
+	hasPrev := false
+
 	if req.Cursor != "" {
 		cursor, err := shareddomain.DecodeCursor(req.Cursor)
 		if err != nil {
@@ -49,16 +52,20 @@ func (uc *UseCase) List(ctx context.Context, req dto.ListUsersRequest) (shareddo
 		}
 		if cursor != nil {
 			cursorID = cursor.LastID
+			direction = string(cursor.Direction)
+			// If we have a cursor, there are previous items (we came from somewhere)
+			hasPrev = true
 		}
 	}
 
 	// Build filter with all optional parameters
 	filter := userdomain.UserFilter{
-		Cursor:   cursorID,
-		Limit:    limit,
-		Search:   req.Search,
-		Email:    req.Email,
-		IsActive: req.IsActive,
+		Cursor:    cursorID,
+		Limit:     limit,
+		Direction: direction,
+		Search:    req.Search,
+		Email:     req.Email,
+		IsActive:  req.IsActive,
 	}
 
 	users, err := uc.repo.List(ctx, filter)
@@ -72,8 +79,8 @@ func (uc *UseCase) List(ctx context.Context, req dto.ListUsersRequest) (shareddo
 		responses = append(responses, *toUserResponse(&u))
 	}
 
-	// Create cursor page
-	return shareddomain.NewCursorPage(responses, limit, func(u dto.UserResponse) *shareddomain.Cursor {
+	// Create bidirectional cursor page
+	return shareddomain.NewBidirectionalCursorPage(responses, limit, hasPrev, func(u dto.UserResponse) *shareddomain.Cursor {
 		return &shareddomain.Cursor{LastID: u.ID}
 	}), nil
 }

@@ -21,8 +21,9 @@ type User struct {
 // UserFilter contains filter options for listing users with optional filtering
 type UserFilter struct {
 	// Pagination
-	Cursor string
-	Limit  int
+	Cursor    string
+	Limit     int
+	Direction string // "next" (default) or "prev"
 
 	// Search filters (optional)
 	Search   types.Opt[string] // Search by name or email

@@ -1,8 +1,8 @@
 package response
 
 import (
-	"github.com/gofiber/fiber/v2"
 	"github.com/14mdzk/goscratch/pkg/apperr"
+	"github.com/gofiber/fiber/v2"
 )
 
 // Response represents a standard API response
@@ -25,6 +25,23 @@ func Success(c *fiber.Ctx, data any) error {
 	return c.Status(fiber.StatusOK).JSON(Response{
 		Success: true,
 		Data:    data,
+	})
+}
+
+// PaginatedResponse represents a paginated API response
+type PaginatedResponse struct {
+	Success    bool `json:"success"`
+	Data       any  `json:"data"`
+	Pagination any  `json:"pagination"`
+}
+
+// Paginated sends a successful response with data and pagination metadata
+// Usage: response.Paginated(c, page.GetItems(), page.GetMeta())
+func Paginated(c *fiber.Ctx, data any, pagination any) error {
+	return c.Status(fiber.StatusOK).JSON(PaginatedResponse{
+		Success:    true,
+		Data:       data,
+		Pagination: pagination,
 	})
 }
 

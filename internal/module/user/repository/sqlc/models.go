@@ -23,6 +23,18 @@ type AuditLog struct {
 	CreatedAt  pgtype.Timestamptz `db:"created_at" json:"created_at"`
 }
 
+type CasbinRule struct {
+	ID        int32              `db:"id" json:"id"`
+	PType     string             `db:"p_type" json:"p_type"`
+	V0        string             `db:"v0" json:"v0"`
+	V1        string             `db:"v1" json:"v1"`
+	V2        string             `db:"v2" json:"v2"`
+	V3        string             `db:"v3" json:"v3"`
+	V4        string             `db:"v4" json:"v4"`
+	V5        string             `db:"v5" json:"v5"`
+	CreatedAt pgtype.Timestamptz `db:"created_at" json:"created_at"`
+}
+
 type User struct {
 	ID           pgtype.UUID        `db:"id" json:"id"`
 	Email        string             `db:"email" json:"email"`

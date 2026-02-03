@@ -178,6 +178,59 @@ func (q *Queries) ListUsers(ctx context.Context, arg ListUsersParams) ([]User, e
 	return items, nil
 }
 
+const listUsersPrev = `-- name: ListUsersPrev :many
+SELECT id, email, password_hash, name, is_active, created_at, updated_at
+FROM users
+WHERE ($2::uuid IS NULL OR id < $2)
+  AND ($3::text IS NULL OR name ILIKE '%' || $3 || '%' OR email ILIKE '%' || $3 || '%')
+  AND ($4::text IS NULL OR email = $4)
+  AND ($5::bool IS NULL OR is_active = $5)
+ORDER BY id DESC
+LIMIT $1
+`
+
+type ListUsersPrevParams struct {
+	Limit       int32       `db:"limit" json:"limit"`
+	Cursor      pgtype.UUID `db:"cursor" json:"cursor"`
+	Search      pgtype.Text `db:"search" json:"search"`
+	EmailFilter pgtype.Text `db:"email_filter" json:"email_filter"`
+	IsActive    pgtype.Bool `db:"is_active" json:"is_active"`
+}
+
+func (q *Queries) ListUsersPrev(ctx context.Context, arg ListUsersPrevParams) ([]User, error) {
+	rows, err := q.db.Query(ctx, listUsersPrev,
+		arg.Limit,
+		arg.Cursor,
+		arg.Search,
+		arg.EmailFilter,
+		arg.IsActive,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []User{}
+	for rows.Next() {
+		var i User
+		if err := rows.Scan(
+			&i.ID,
+			&i.Email,
+			&i.PasswordHash,
+			&i.Name,
+			&i.IsActive,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const updatePassword = `-- name: UpdatePassword :exec
 UPDATE users
 SET password_hash = $2, updated_at = NOW()

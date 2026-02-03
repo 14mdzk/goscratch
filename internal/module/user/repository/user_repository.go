@@ -96,27 +96,59 @@ func (r *Repository) List(ctx context.Context, filter domain.UserFilter) ([]doma
 	// Fetch one extra to determine if there are more
 	limit := filter.Limit + 1
 
-	// Build query params with nullable types
-	params := sqlc.ListUsersParams{
-		Limit:  int32(limit),
-		Cursor: pgutil.NullableUUID(filter.Cursor),
-	}
+	// Determine if going backward
+	isBackward := filter.Direction == "prev"
 
-	// Apply optional filters
+	// Build common filter params
+	cursorUUID := pgutil.NullableUUID(filter.Cursor)
+	var searchParam, emailParam pgtype.Text
+	var isActiveParam pgtype.Bool
+
 	if filter.Search.Set && filter.Search.Val != "" {
-		params.Search = pgtype.Text{String: filter.Search.Val, Valid: true}
+		searchParam = pgtype.Text{String: filter.Search.Val, Valid: true}
 	}
 	if filter.Email.Set && filter.Email.Val != "" {
-		params.EmailFilter = pgtype.Text{String: filter.Email.Val, Valid: true}
+		emailParam = pgtype.Text{String: filter.Email.Val, Valid: true}
 	}
 	if filter.IsActive.Set {
-		params.IsActive = pgtype.Bool{Bool: filter.IsActive.Val, Valid: true}
+		isActiveParam = pgtype.Bool{Bool: filter.IsActive.Val, Valid: true}
 	}
 
-	users, err := r.queries.ListUsers(ctx, params)
+	var users []sqlc.User
+	var err error
+
+	if isBackward {
+		// Backward pagination: fetch items before cursor in DESC order
+		params := sqlc.ListUsersPrevParams{
+			Limit:       int32(limit),
+			Cursor:      cursorUUID,
+			Search:      searchParam,
+			EmailFilter: emailParam,
+			IsActive:    isActiveParam,
+		}
+		users, err = r.queries.ListUsersPrev(ctx, params)
+	} else {
+		// Forward pagination: fetch items after cursor in ASC order
+		params := sqlc.ListUsersParams{
+			Limit:       int32(limit),
+			Cursor:      cursorUUID,
+			Search:      searchParam,
+			EmailFilter: emailParam,
+			IsActive:    isActiveParam,
+		}
+		users, err = r.queries.ListUsers(ctx, params)
+	}
+
 	if err != nil {
 		observability.RecordSpanError(ctx, err)
 		return nil, fmt.Errorf("failed to list users: %w", err)
+	}
+
+	// For backward pagination, reverse the results to maintain ASC order
+	if isBackward {
+		for i, j := 0, len(users)-1; i < j; i, j = i+1, j-1 {
+			users[i], users[j] = users[j], users[i]
+		}
 	}
 
 	result := make([]domain.User, 0, len(users))
