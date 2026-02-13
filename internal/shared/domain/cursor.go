@@ -106,12 +106,38 @@ func NewCursorPage[T any](data []T, limit int, cursorFn func(T) *Cursor) CursorP
 	}
 }
 
-// NewBidirectionalCursorPage creates a cursor page with both next and prev cursors
-// hasPrev indicates if there are previous items (determined by direction and cursor presence)
-func NewBidirectionalCursorPage[T any](data []T, limit int, hasPrev bool, cursorFn func(T) *Cursor) CursorPage[T] {
-	hasMore := len(data) > limit
-	if hasMore {
-		data = data[:limit] // Remove the extra item used for hasMore check
+// NewBidirectionalCursorPage creates a cursor page with both next and prev cursors.
+// direction indicates which way we're paginating ("prev" for backward, anything else for forward).
+// When going forward: extra item → hasMore=true, hasPrev is based on cursor presence.
+// When going backward: extra item → hasPrev=true, hasNext=true always (we came from a later page).
+func NewBidirectionalCursorPage[T any](data []T, limit int, direction string, hasCursor bool, cursorFn func(T) *Cursor) CursorPage[T] {
+	hasExtra := len(data) > limit
+
+	isBackward := direction == "prev"
+
+	var hasMore, hasPrev bool
+
+	if isBackward {
+		// Backward: extra item means there are items BEFORE this page
+		hasPrev = hasExtra
+		// We always have a next page when going backward (we navigated from it)
+		hasNext := hasCursor
+		hasMore = hasNext
+
+		if hasExtra {
+			// Trim the extra item from the BEGINNING (first item is the oldest/extra after reverse)
+			data = data[1:]
+		}
+	} else {
+		// Forward: extra item means there are items AFTER this page
+		hasMore = hasExtra
+		// We have a prev page if we used a cursor (not the first page)
+		hasPrev = hasCursor
+
+		if hasExtra {
+			// Trim the extra item from the END
+			data = data[:limit]
+		}
 	}
 
 	var nextCursor, prevCursor *string

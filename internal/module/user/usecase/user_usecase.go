@@ -43,7 +43,7 @@ func (uc *UseCase) List(ctx context.Context, req dto.ListUsersRequest) (shareddo
 	// Decode cursor if provided
 	var cursorID string
 	var direction string
-	hasPrev := false
+	hasCursor := false
 
 	if req.Cursor != "" {
 		cursor, err := shareddomain.DecodeCursor(req.Cursor)
@@ -53,8 +53,7 @@ func (uc *UseCase) List(ctx context.Context, req dto.ListUsersRequest) (shareddo
 		if cursor != nil {
 			cursorID = cursor.LastID
 			direction = string(cursor.Direction)
-			// If we have a cursor, there are previous items (we came from somewhere)
-			hasPrev = true
+			hasCursor = true
 		}
 	}
 
@@ -80,7 +79,7 @@ func (uc *UseCase) List(ctx context.Context, req dto.ListUsersRequest) (shareddo
 	}
 
 	// Create bidirectional cursor page
-	return shareddomain.NewBidirectionalCursorPage(responses, limit, hasPrev, func(u dto.UserResponse) *shareddomain.Cursor {
+	return shareddomain.NewBidirectionalCursorPage(responses, limit, direction, hasCursor, func(u dto.UserResponse) *shareddomain.Cursor {
 		return &shareddomain.Cursor{LastID: u.ID}
 	}), nil
 }
