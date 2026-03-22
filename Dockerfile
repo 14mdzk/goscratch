@@ -1,5 +1,5 @@
 # Build stage
-FROM golang:1.22-alpine AS builder
+FROM golang:1.25-alpine AS builder
 
 WORKDIR /app
 
@@ -15,6 +15,7 @@ COPY . .
 
 # Build binary
 RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-w -s" -o /app/api ./cmd/api
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-w -s" -o /app/worker ./cmd/worker
 
 # Runtime stage
 FROM alpine:3.19
@@ -29,6 +30,7 @@ RUN addgroup -S appgroup && adduser -S appuser -G appgroup
 
 # Copy binary and config
 COPY --from=builder /app/api .
+COPY --from=builder /app/worker .
 COPY --from=builder /app/config/config.json ./config/
 
 # Change ownership

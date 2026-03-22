@@ -251,3 +251,149 @@ func TestRepository_ExistsByEmail(t *testing.T) {
 		assert.False(t, exists)
 	})
 }
+
+// --- New Tests ---
+
+func TestRepository_UpdatePassword(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping integration test in short mode")
+	}
+
+	db := setupTestDB(t)
+	defer db.cleanup(t)
+
+	repo := NewRepository(db.pool)
+	ctx := context.Background()
+
+	t.Run("success", func(t *testing.T) {
+		created, err := repo.Create(ctx, "test_updatepw@example.com", "oldhash", "User")
+		require.NoError(t, err)
+
+		err = repo.UpdatePassword(ctx, created.ID.String(), "newhash")
+		require.NoError(t, err)
+
+		// Verify the password was updated by fetching the user
+		user, err := repo.GetByID(ctx, created.ID.String())
+		require.NoError(t, err)
+		assert.Equal(t, "newhash", user.PasswordHash)
+	})
+
+	t.Run("invalid_uuid", func(t *testing.T) {
+		err := repo.UpdatePassword(ctx, "invalid-uuid", "newhash")
+		assert.Error(t, err)
+	})
+}
+
+func TestRepository_Activate(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping integration test in short mode")
+	}
+
+	db := setupTestDB(t)
+	defer db.cleanup(t)
+
+	repo := NewRepository(db.pool)
+	ctx := context.Background()
+
+	t.Run("success", func(t *testing.T) {
+		// Create a user (default is active), deactivate, then activate
+		created, err := repo.Create(ctx, "test_activate@example.com", "hash", "User")
+		require.NoError(t, err)
+
+		// Deactivate first
+		err = repo.Deactivate(ctx, created.ID.String())
+		require.NoError(t, err)
+
+		user, err := repo.GetByID(ctx, created.ID.String())
+		require.NoError(t, err)
+		assert.False(t, user.IsActive)
+
+		// Now activate
+		err = repo.Activate(ctx, created.ID.String())
+		require.NoError(t, err)
+
+		user, err = repo.GetByID(ctx, created.ID.String())
+		require.NoError(t, err)
+		assert.True(t, user.IsActive)
+	})
+
+	t.Run("not_found", func(t *testing.T) {
+		// Activating a non-existent UUID should not error at the SQL level
+		// (UPDATE with no matching rows), but we test the invalid UUID path
+		err := repo.Activate(ctx, "invalid-uuid")
+		assert.Error(t, err)
+	})
+}
+
+func TestRepository_Deactivate(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping integration test in short mode")
+	}
+
+	db := setupTestDB(t)
+	defer db.cleanup(t)
+
+	repo := NewRepository(db.pool)
+	ctx := context.Background()
+
+	t.Run("success", func(t *testing.T) {
+		created, err := repo.Create(ctx, "test_deactivate@example.com", "hash", "User")
+		require.NoError(t, err)
+
+		// User should be active by default
+		user, err := repo.GetByID(ctx, created.ID.String())
+		require.NoError(t, err)
+		assert.True(t, user.IsActive)
+
+		// Deactivate
+		err = repo.Deactivate(ctx, created.ID.String())
+		require.NoError(t, err)
+
+		user, err = repo.GetByID(ctx, created.ID.String())
+		require.NoError(t, err)
+		assert.False(t, user.IsActive)
+	})
+
+	t.Run("not_found", func(t *testing.T) {
+		err := repo.Deactivate(ctx, "invalid-uuid")
+		assert.Error(t, err)
+	})
+}
+
+func TestRepository_Count(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping integration test in short mode")
+	}
+
+	db := setupTestDB(t)
+	defer db.cleanup(t)
+
+	repo := NewRepository(db.pool)
+	ctx := context.Background()
+
+	t.Run("count_all", func(t *testing.T) {
+		// Create some test users
+		_, err := repo.Create(ctx, "test_count1@example.com", "hash", "User 1")
+		require.NoError(t, err)
+		_, err = repo.Create(ctx, "test_count2@example.com", "hash", "User 2")
+		require.NoError(t, err)
+
+		count, err := repo.Count(ctx, nil)
+		require.NoError(t, err)
+		assert.GreaterOrEqual(t, count, int64(2))
+	})
+
+	t.Run("count_active", func(t *testing.T) {
+		active := true
+		count, err := repo.Count(ctx, &active)
+		require.NoError(t, err)
+		assert.GreaterOrEqual(t, count, int64(0))
+	})
+
+	t.Run("count_inactive", func(t *testing.T) {
+		inactive := false
+		count, err := repo.Count(ctx, &inactive)
+		require.NoError(t, err)
+		assert.GreaterOrEqual(t, count, int64(0))
+	})
+}

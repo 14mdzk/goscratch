@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestCursor_Encode(t *testing.T) {
@@ -169,4 +170,145 @@ func TestNormalizeLimit(t *testing.T) {
 		result := NormalizeLimit(tt.input)
 		assert.Equal(t, tt.expected, result, "NormalizeLimit(%d) should be %d", tt.input, tt.expected)
 	}
+}
+
+func TestNewBidirectionalCursorPage(t *testing.T) {
+	type Item struct {
+		ID   string
+		Name string
+	}
+
+	cursorFn := func(item Item) *Cursor {
+		return &Cursor{LastID: item.ID}
+	}
+
+	t.Run("forward_with_more_items", func(t *testing.T) {
+		// limit=2, 3 items = has extra -> hasMore=true
+		items := []Item{
+			{ID: "1", Name: "Item 1"},
+			{ID: "2", Name: "Item 2"},
+			{ID: "3", Name: "Item 3"},
+		}
+
+		page := NewBidirectionalCursorPage(items, 2, "next", false, cursorFn)
+
+		assert.True(t, page.HasMore, "should have more items forward")
+		assert.False(t, page.HasPrev, "first page should not have prev")
+		assert.Len(t, page.Items, 2, "extra item should be trimmed from end")
+		assert.NotNil(t, page.NextCursor)
+		assert.Nil(t, page.PrevCursor)
+	})
+
+	t.Run("forward_with_cursor_has_prev", func(t *testing.T) {
+		// Forward with a cursor means we're not on the first page -> hasPrev=true
+		items := []Item{
+			{ID: "3", Name: "Item 3"},
+			{ID: "4", Name: "Item 4"},
+			{ID: "5", Name: "Item 5"},
+		}
+
+		page := NewBidirectionalCursorPage(items, 2, "next", true, cursorFn)
+
+		assert.True(t, page.HasMore, "extra item means more")
+		assert.True(t, page.HasPrev, "cursor present means prev page exists")
+		assert.Len(t, page.Items, 2)
+		assert.NotNil(t, page.NextCursor)
+		assert.NotNil(t, page.PrevCursor)
+	})
+
+	t.Run("forward_exactly_limit", func(t *testing.T) {
+		items := []Item{
+			{ID: "1", Name: "Item 1"},
+			{ID: "2", Name: "Item 2"},
+		}
+
+		page := NewBidirectionalCursorPage(items, 2, "next", false, cursorFn)
+
+		assert.False(t, page.HasMore)
+		assert.False(t, page.HasPrev)
+		assert.Len(t, page.Items, 2)
+		assert.Nil(t, page.NextCursor)
+		assert.Nil(t, page.PrevCursor)
+	})
+
+	t.Run("forward_empty_results", func(t *testing.T) {
+		var items []Item
+
+		page := NewBidirectionalCursorPage(items, 10, "next", false, cursorFn)
+
+		assert.False(t, page.HasMore)
+		assert.False(t, page.HasPrev)
+		assert.Empty(t, page.Items)
+		assert.Nil(t, page.NextCursor)
+		assert.Nil(t, page.PrevCursor)
+	})
+
+	t.Run("backward_with_more_items", func(t *testing.T) {
+		// Going backward: extra item means there are items BEFORE
+		// Items are returned in order, extra is at the beginning
+		items := []Item{
+			{ID: "1", Name: "Item 1"}, // extra
+			{ID: "2", Name: "Item 2"},
+			{ID: "3", Name: "Item 3"},
+		}
+
+		page := NewBidirectionalCursorPage(items, 2, "prev", true, cursorFn)
+
+		assert.True(t, page.HasPrev, "extra item backward means more prev items")
+		assert.True(t, page.HasMore, "backward with cursor means we came from a later page")
+		assert.Len(t, page.Items, 2, "extra item should be trimmed from beginning")
+		assert.Equal(t, "2", page.Items[0].ID, "first item after trim should be ID 2")
+		assert.NotNil(t, page.NextCursor)
+		assert.NotNil(t, page.PrevCursor)
+	})
+
+	t.Run("backward_no_extra", func(t *testing.T) {
+		// Going backward without extra item: first page reached
+		items := []Item{
+			{ID: "1", Name: "Item 1"},
+			{ID: "2", Name: "Item 2"},
+		}
+
+		page := NewBidirectionalCursorPage(items, 2, "prev", true, cursorFn)
+
+		assert.False(t, page.HasPrev, "no extra means no more prev items")
+		assert.True(t, page.HasMore, "backward with cursor means later page exists")
+		assert.Len(t, page.Items, 2)
+		assert.NotNil(t, page.NextCursor)
+		assert.Nil(t, page.PrevCursor)
+	})
+
+	t.Run("backward_empty", func(t *testing.T) {
+		var items []Item
+
+		page := NewBidirectionalCursorPage(items, 10, "prev", true, cursorFn)
+
+		assert.False(t, page.HasPrev)
+		assert.True(t, page.HasMore, "backward with cursor means later page exists")
+		assert.Empty(t, page.Items)
+		assert.Nil(t, page.NextCursor)
+		assert.Nil(t, page.PrevCursor)
+	})
+
+	t.Run("cursor_direction_is_set_correctly", func(t *testing.T) {
+		items := []Item{
+			{ID: "1", Name: "Item 1"},
+			{ID: "2", Name: "Item 2"},
+			{ID: "3", Name: "Item 3"},
+		}
+
+		page := NewBidirectionalCursorPage(items, 2, "next", true, cursorFn)
+
+		// Decode next cursor and verify direction
+		require.NotNil(t, page.NextCursor)
+		nextDecoded, err := DecodeCursor(*page.NextCursor)
+		require.NoError(t, err)
+		assert.Equal(t, CursorDirectionNext, nextDecoded.Direction)
+
+		// Decode prev cursor and verify direction
+		require.NotNil(t, page.PrevCursor)
+		prevDecoded, err := DecodeCursor(*page.PrevCursor)
+		require.NoError(t, err)
+		assert.Equal(t, CursorDirectionPrev, prevDecoded.Direction)
+	})
 }

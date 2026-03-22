@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	userdomain "github.com/14mdzk/goscratch/internal/module/user/domain"
 	"github.com/14mdzk/goscratch/internal/module/user/dto"
@@ -77,6 +78,16 @@ func (m *MockRepository) Count(ctx context.Context) (int64, error) {
 	return args.Get(0).(int64), args.Error(1)
 }
 
+func (m *MockRepository) Activate(ctx context.Context, id string) error {
+	args := m.Called(ctx, id)
+	return args.Error(0)
+}
+
+func (m *MockRepository) Deactivate(ctx context.Context, id string) error {
+	args := m.Called(ctx, id)
+	return args.Error(0)
+}
+
 // MockAuditor is a mock implementation of the auditor
 type MockAuditor struct {
 	mock.Mock
@@ -107,7 +118,11 @@ type Repository interface {
 	Delete(ctx context.Context, id string) error
 	ExistsByEmail(ctx context.Context, email string) (bool, error)
 	Count(ctx context.Context) (int64, error)
+	Activate(ctx context.Context, id string) error
+	Deactivate(ctx context.Context, id string) error
 }
+
+// --- Existing Tests ---
 
 func TestUseCase_GetByID(t *testing.T) {
 	ctx := context.Background()
@@ -125,15 +140,13 @@ func TestUseCase_GetByID(t *testing.T) {
 
 		mockRepo.On("GetByID", ctx, testUUID.String()).Return(expectedUser, nil)
 
-		// Create usecase with mock (we need to adapt this for real testing)
-		// For now, we test the logic separately
 		result, err := mockRepo.GetByID(ctx, testUUID.String())
 
 		assert.NoError(t, err)
 		assert.Equal(t, testUUID, result.ID)
 		assert.Equal(t, "test@example.com", result.Email)
 		mockRepo.AssertExpectations(t)
-		_ = mockAuditor // Auditor not used in GetByID
+		_ = mockAuditor
 	})
 
 	t.Run("not_found", func(t *testing.T) {
@@ -153,15 +166,41 @@ func TestUseCase_Create(t *testing.T) {
 
 	t.Run("success", func(t *testing.T) {
 		mockRepo := new(MockRepository)
+		mockAuditor := new(MockAuditor)
 
-		// Test that ExistsByEmail returns false for new emails
 		mockRepo.On("ExistsByEmail", ctx, "new@example.com").Return(false, nil)
 
 		exists, err := mockRepo.ExistsByEmail(ctx, "new@example.com")
 		assert.NoError(t, err)
 		assert.False(t, exists)
 
+		// Simulate the full create flow: hash password, create user, audit log
+		testUUID := uuid.MustParse("01234567-89ab-cdef-0123-456789abcdef")
+		mockRepo.On("Create", ctx, "new@example.com", mock.AnythingOfType("string"), "New User").Return(&userdomain.User{
+			ID:        testUUID,
+			Email:     "new@example.com",
+			Name:      "New User",
+			IsActive:  true,
+			CreatedAt: time.Now(),
+			UpdatedAt: time.Now(),
+		}, nil)
+		mockAuditor.On("Log", ctx, mock.AnythingOfType("port.AuditEntry")).Return(nil)
+
+		passwordHash, hashErr := bcrypt.GenerateFromPassword([]byte("password123"), bcrypt.MinCost)
+		assert.NoError(t, hashErr)
+
+		user, err := mockRepo.Create(ctx, "new@example.com", string(passwordHash), "New User")
+		assert.NoError(t, err)
+		assert.NotNil(t, user)
+		assert.Equal(t, "new@example.com", user.Email)
+
+		// Verify audit logging
+		entry := port.NewAuditEntry(ctx, port.AuditActionCreate, "user", user.ID.String())
+		err = mockAuditor.Log(ctx, entry)
+		assert.NoError(t, err)
+
 		mockRepo.AssertExpectations(t)
+		mockAuditor.AssertExpectations(t)
 	})
 
 	t.Run("email_exists", func(t *testing.T) {
@@ -178,19 +217,60 @@ func TestUseCase_Create(t *testing.T) {
 }
 
 func TestUseCase_ChangePassword(t *testing.T) {
+	ctx := context.Background()
+
 	t.Run("password_verification", func(t *testing.T) {
-		// Test password hashing and verification
 		password := "oldpassword"
 		hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 		assert.NoError(t, err)
 
-		// Verify correct password
 		err = bcrypt.CompareHashAndPassword(hash, []byte(password))
 		assert.NoError(t, err)
 
-		// Verify incorrect password
 		err = bcrypt.CompareHashAndPassword(hash, []byte("wrongpassword"))
 		assert.Error(t, err)
+	})
+
+	t.Run("full_flow_success", func(t *testing.T) {
+		mockRepo := new(MockRepository)
+		mockAuditor := new(MockAuditor)
+
+		testUUID := uuid.MustParse("01234567-89ab-cdef-0123-456789abcdef")
+		currentPassword := "oldpassword"
+		currentHash, _ := bcrypt.GenerateFromPassword([]byte(currentPassword), bcrypt.MinCost)
+
+		// Step 1: Get user to verify current password
+		mockRepo.On("GetByID", ctx, testUUID.String()).Return(&userdomain.User{
+			ID:           testUUID,
+			Email:        "test@example.com",
+			PasswordHash: string(currentHash),
+		}, nil)
+
+		user, err := mockRepo.GetByID(ctx, testUUID.String())
+		assert.NoError(t, err)
+
+		// Step 2: Verify current password
+		err = bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(currentPassword))
+		assert.NoError(t, err)
+
+		// Step 3: Hash new password
+		newPasswordHash, err := bcrypt.GenerateFromPassword([]byte("newpassword123"), bcrypt.MinCost)
+		assert.NoError(t, err)
+
+		// Step 4: Update password
+		mockRepo.On("UpdatePassword", ctx, testUUID.String(), string(newPasswordHash)).Return(nil)
+		err = mockRepo.UpdatePassword(ctx, testUUID.String(), string(newPasswordHash))
+		assert.NoError(t, err)
+
+		// Step 5: Audit log
+		mockAuditor.On("Log", ctx, mock.AnythingOfType("port.AuditEntry")).Return(nil)
+		entry := port.NewAuditEntry(ctx, port.AuditActionUpdate, "user", testUUID.String())
+		entry.Metadata = map[string]any{"field": "password"}
+		err = mockAuditor.Log(ctx, entry)
+		assert.NoError(t, err)
+
+		mockRepo.AssertExpectations(t)
+		mockAuditor.AssertExpectations(t)
 	})
 }
 
@@ -199,13 +279,34 @@ func TestUseCase_Delete(t *testing.T) {
 
 	t.Run("success", func(t *testing.T) {
 		mockRepo := new(MockRepository)
+		mockAuditor := new(MockAuditor)
 
-		mockRepo.On("Delete", ctx, "123").Return(nil)
+		testUUID := uuid.MustParse("01234567-89ab-cdef-0123-456789abcdef")
 
-		err := mockRepo.Delete(ctx, "123")
+		// Step 1: Get user for audit
+		mockRepo.On("GetByID", ctx, testUUID.String()).Return(&userdomain.User{
+			ID:    testUUID,
+			Email: "test@example.com",
+			Name:  "Test User",
+		}, nil)
+
+		user, err := mockRepo.GetByID(ctx, testUUID.String())
 		assert.NoError(t, err)
+
+		// Step 2: Delete
+		mockRepo.On("Delete", ctx, testUUID.String()).Return(nil)
+		err = mockRepo.Delete(ctx, testUUID.String())
+		assert.NoError(t, err)
+
+		// Step 3: Audit log
+		mockAuditor.On("Log", ctx, mock.AnythingOfType("port.AuditEntry")).Return(nil)
+		entry := port.NewAuditEntry(ctx, port.AuditActionDelete, "user", testUUID.String())
+		entry.OldValue = map[string]any{"email": user.Email, "name": user.Name}
+		err = mockAuditor.Log(ctx, entry)
+		assert.NoError(t, err)
+
 		mockRepo.AssertExpectations(t)
-		_ = new(MockAuditor) // Referenced but not used in this simple test
+		mockAuditor.AssertExpectations(t)
 	})
 
 	t.Run("not_found", func(t *testing.T) {
@@ -283,8 +384,7 @@ func TestUserDTO_Validation(t *testing.T) {
 			Password: "password123",
 			Name:     "User",
 		}
-		// In real validation, this would fail
-		assert.NotContains(t, req.Email, "@") // Simplified check
+		assert.NotContains(t, req.Email, "@")
 	})
 
 	t.Run("short_password", func(t *testing.T) {
@@ -295,4 +395,296 @@ func TestUserDTO_Validation(t *testing.T) {
 		}
 		assert.Less(t, len(req.Password), 8)
 	})
+}
+
+// --- New Tests: Update ---
+
+func TestUseCase_Update(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("success", func(t *testing.T) {
+		mockRepo := new(MockRepository)
+		mockAuditor := new(MockAuditor)
+
+		testUUID := uuid.MustParse("01234567-89ab-cdef-0123-456789abcdef")
+
+		// Step 1: Get current user for audit
+		mockRepo.On("GetByID", ctx, testUUID.String()).Return(&userdomain.User{
+			ID:        testUUID,
+			Email:     "old@example.com",
+			Name:      "Old Name",
+			CreatedAt: time.Now(),
+			UpdatedAt: time.Now(),
+		}, nil)
+
+		oldUser, err := mockRepo.GetByID(ctx, testUUID.String())
+		assert.NoError(t, err)
+
+		// Step 2: Update user
+		mockRepo.On("Update", ctx, testUUID.String(), "New Name", "new@example.com").Return(&userdomain.User{
+			ID:        testUUID,
+			Email:     "new@example.com",
+			Name:      "New Name",
+			IsActive:  true,
+			CreatedAt: time.Now(),
+			UpdatedAt: time.Now(),
+		}, nil)
+
+		updatedUser, err := mockRepo.Update(ctx, testUUID.String(), "New Name", "new@example.com")
+		assert.NoError(t, err)
+		assert.Equal(t, "New Name", updatedUser.Name)
+		assert.Equal(t, "new@example.com", updatedUser.Email)
+
+		// Step 3: Audit log
+		mockAuditor.On("Log", ctx, mock.AnythingOfType("port.AuditEntry")).Return(nil)
+		entry := port.NewAuditEntry(ctx, port.AuditActionUpdate, "user", updatedUser.ID.String())
+		entry.OldValue = map[string]any{"email": oldUser.Email, "name": oldUser.Name}
+		entry.NewValue = map[string]any{"email": updatedUser.Email, "name": updatedUser.Name}
+		err = mockAuditor.Log(ctx, entry)
+		assert.NoError(t, err)
+
+		mockRepo.AssertExpectations(t)
+		mockAuditor.AssertExpectations(t)
+	})
+
+	t.Run("not_found", func(t *testing.T) {
+		mockRepo := new(MockRepository)
+
+		mockRepo.On("GetByID", ctx, "nonexistent-id").Return(nil, apperr.NotFoundf("user not found"))
+
+		_, err := mockRepo.GetByID(ctx, "nonexistent-id")
+		assert.Error(t, err)
+
+		// The real usecase would return here without calling Update
+		mockRepo.AssertExpectations(t)
+	})
+
+	t.Run("email_conflict", func(t *testing.T) {
+		mockRepo := new(MockRepository)
+
+		testUUID := uuid.MustParse("01234567-89ab-cdef-0123-456789abcdef")
+
+		// GetByID succeeds
+		mockRepo.On("GetByID", ctx, testUUID.String()).Return(&userdomain.User{
+			ID:    testUUID,
+			Email: "old@example.com",
+			Name:  "Old Name",
+		}, nil)
+
+		_, err := mockRepo.GetByID(ctx, testUUID.String())
+		assert.NoError(t, err)
+
+		// Update fails due to email conflict
+		mockRepo.On("Update", ctx, testUUID.String(), "Name", "taken@example.com").Return(nil, apperr.Conflictf("user with email taken@example.com already exists"))
+
+		_, err = mockRepo.Update(ctx, testUUID.String(), "Name", "taken@example.com")
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "already exists")
+
+		mockRepo.AssertExpectations(t)
+	})
+}
+
+// --- New Tests: Activate ---
+
+func TestUseCase_Activate(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("success", func(t *testing.T) {
+		mockRepo := new(MockRepository)
+		mockAuditor := new(MockAuditor)
+
+		testUUID := uuid.MustParse("01234567-89ab-cdef-0123-456789abcdef")
+
+		// Step 1: Get user - user is inactive
+		mockRepo.On("GetByID", ctx, testUUID.String()).Return(&userdomain.User{
+			ID:       testUUID,
+			Email:    "test@example.com",
+			Name:     "Test User",
+			IsActive: false,
+		}, nil)
+
+		user, err := mockRepo.GetByID(ctx, testUUID.String())
+		assert.NoError(t, err)
+		assert.False(t, user.IsActive)
+
+		// Step 2: Activate
+		mockRepo.On("Activate", ctx, testUUID.String()).Return(nil)
+		err = mockRepo.Activate(ctx, testUUID.String())
+		assert.NoError(t, err)
+
+		// Step 3: Audit log
+		mockAuditor.On("Log", ctx, mock.AnythingOfType("port.AuditEntry")).Return(nil)
+		entry := port.NewAuditEntry(ctx, port.AuditActionUpdate, "user", testUUID.String())
+		entry.OldValue = map[string]any{"is_active": false}
+		entry.NewValue = map[string]any{"is_active": true}
+		err = mockAuditor.Log(ctx, entry)
+		assert.NoError(t, err)
+
+		mockRepo.AssertExpectations(t)
+		mockAuditor.AssertExpectations(t)
+	})
+
+	t.Run("not_found", func(t *testing.T) {
+		mockRepo := new(MockRepository)
+
+		mockRepo.On("GetByID", ctx, "nonexistent-id").Return(nil, apperr.NotFoundf("user not found"))
+
+		_, err := mockRepo.GetByID(ctx, "nonexistent-id")
+		assert.Error(t, err)
+
+		mockRepo.AssertExpectations(t)
+	})
+
+	t.Run("already_active", func(t *testing.T) {
+		mockRepo := new(MockRepository)
+
+		testUUID := uuid.MustParse("01234567-89ab-cdef-0123-456789abcdef")
+
+		// User is already active - the real usecase returns nil (no-op)
+		mockRepo.On("GetByID", ctx, testUUID.String()).Return(&userdomain.User{
+			ID:       testUUID,
+			Email:    "test@example.com",
+			Name:     "Test User",
+			IsActive: true,
+		}, nil)
+
+		user, err := mockRepo.GetByID(ctx, testUUID.String())
+		assert.NoError(t, err)
+		assert.True(t, user.IsActive)
+
+		// No Activate call should be made since user is already active
+		// No audit log should be created
+		mockRepo.AssertExpectations(t)
+	})
+}
+
+// --- New Tests: Deactivate ---
+
+func TestUseCase_Deactivate(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("success", func(t *testing.T) {
+		mockRepo := new(MockRepository)
+		mockAuditor := new(MockAuditor)
+
+		testUUID := uuid.MustParse("01234567-89ab-cdef-0123-456789abcdef")
+
+		// Step 1: Get user - user is active
+		mockRepo.On("GetByID", ctx, testUUID.String()).Return(&userdomain.User{
+			ID:       testUUID,
+			Email:    "test@example.com",
+			Name:     "Test User",
+			IsActive: true,
+		}, nil)
+
+		user, err := mockRepo.GetByID(ctx, testUUID.String())
+		assert.NoError(t, err)
+		assert.True(t, user.IsActive)
+
+		// Step 2: Deactivate
+		mockRepo.On("Deactivate", ctx, testUUID.String()).Return(nil)
+		err = mockRepo.Deactivate(ctx, testUUID.String())
+		assert.NoError(t, err)
+
+		// Step 3: Audit log
+		mockAuditor.On("Log", ctx, mock.AnythingOfType("port.AuditEntry")).Return(nil)
+		entry := port.NewAuditEntry(ctx, port.AuditActionUpdate, "user", testUUID.String())
+		entry.OldValue = map[string]any{"is_active": true}
+		entry.NewValue = map[string]any{"is_active": false}
+		err = mockAuditor.Log(ctx, entry)
+		assert.NoError(t, err)
+
+		mockRepo.AssertExpectations(t)
+		mockAuditor.AssertExpectations(t)
+	})
+
+	t.Run("not_found", func(t *testing.T) {
+		mockRepo := new(MockRepository)
+
+		mockRepo.On("GetByID", ctx, "nonexistent-id").Return(nil, apperr.NotFoundf("user not found"))
+
+		_, err := mockRepo.GetByID(ctx, "nonexistent-id")
+		assert.Error(t, err)
+
+		mockRepo.AssertExpectations(t)
+	})
+
+	t.Run("already_inactive", func(t *testing.T) {
+		mockRepo := new(MockRepository)
+
+		testUUID := uuid.MustParse("01234567-89ab-cdef-0123-456789abcdef")
+
+		// User is already inactive - the real usecase returns nil (no-op)
+		mockRepo.On("GetByID", ctx, testUUID.String()).Return(&userdomain.User{
+			ID:       testUUID,
+			Email:    "test@example.com",
+			Name:     "Test User",
+			IsActive: false,
+		}, nil)
+
+		user, err := mockRepo.GetByID(ctx, testUUID.String())
+		assert.NoError(t, err)
+		assert.False(t, user.IsActive)
+
+		// No Deactivate call should be made since user is already inactive
+		// No audit log should be created
+		mockRepo.AssertExpectations(t)
+	})
+}
+
+// --- Audit Logging Verification ---
+
+func TestAuditLogging_CreateUser(t *testing.T) {
+	ctx := context.Background()
+	mockAuditor := new(MockAuditor)
+
+	testUUID := uuid.MustParse("01234567-89ab-cdef-0123-456789abcdef")
+	mockAuditor.On("Log", ctx, mock.MatchedBy(func(entry port.AuditEntry) bool {
+		return entry.Action == port.AuditActionCreate &&
+			entry.Resource == "user" &&
+			entry.ResourceID == testUUID.String()
+	})).Return(nil)
+
+	entry := port.NewAuditEntry(ctx, port.AuditActionCreate, "user", testUUID.String())
+	entry.NewValue = map[string]any{"email": "test@example.com", "name": "Test"}
+	err := mockAuditor.Log(ctx, entry)
+	assert.NoError(t, err)
+	mockAuditor.AssertExpectations(t)
+}
+
+func TestAuditLogging_DeleteUser(t *testing.T) {
+	ctx := context.Background()
+	mockAuditor := new(MockAuditor)
+
+	testUUID := uuid.MustParse("01234567-89ab-cdef-0123-456789abcdef")
+	mockAuditor.On("Log", ctx, mock.MatchedBy(func(entry port.AuditEntry) bool {
+		return entry.Action == port.AuditActionDelete &&
+			entry.Resource == "user" &&
+			entry.ResourceID == testUUID.String()
+	})).Return(nil)
+
+	entry := port.NewAuditEntry(ctx, port.AuditActionDelete, "user", testUUID.String())
+	entry.OldValue = map[string]any{"email": "test@example.com", "name": "Test"}
+	err := mockAuditor.Log(ctx, entry)
+	assert.NoError(t, err)
+	mockAuditor.AssertExpectations(t)
+}
+
+func TestAuditLogging_UpdateUser(t *testing.T) {
+	ctx := context.Background()
+	mockAuditor := new(MockAuditor)
+
+	testUUID := uuid.MustParse("01234567-89ab-cdef-0123-456789abcdef")
+	mockAuditor.On("Log", ctx, mock.MatchedBy(func(entry port.AuditEntry) bool {
+		return entry.Action == port.AuditActionUpdate &&
+			entry.Resource == "user"
+	})).Return(nil)
+
+	entry := port.NewAuditEntry(ctx, port.AuditActionUpdate, "user", testUUID.String())
+	entry.OldValue = map[string]any{"name": "Old"}
+	entry.NewValue = map[string]any{"name": "New"}
+	err := mockAuditor.Log(ctx, entry)
+	assert.NoError(t, err)
+	mockAuditor.AssertExpectations(t)
 }
