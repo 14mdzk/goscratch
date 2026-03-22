@@ -24,6 +24,8 @@ type Config struct {
 	Authorization AuthorizationConfig `json:"authorization"`
 	Worker        WorkerConfig        `json:"worker"`
 	Observability ObservabilityConfig `json:"observability"`
+	Email         EmailConfig         `json:"email"`
+	RateLimit     RateLimitConfig     `json:"rate_limit"`
 }
 
 type AppConfig struct {
@@ -143,6 +145,21 @@ type MetricsConfig struct {
 type TracingConfig struct {
 	Enabled  bool   `json:"enabled" env:"TRACING_ENABLED"`
 	Endpoint string `json:"endpoint" env:"TRACING_ENDPOINT"`
+}
+
+type EmailConfig struct {
+	Enabled  bool   `json:"enabled" env:"EMAIL_ENABLED"`
+	Host     string `json:"host" env:"EMAIL_HOST"`
+	Port     int    `json:"port" env:"EMAIL_PORT"`
+	Username string `json:"username" env:"EMAIL_USERNAME"`
+	Password string `json:"password" env:"EMAIL_PASSWORD"`
+	From     string `json:"from" env:"EMAIL_FROM"`
+}
+
+type RateLimitConfig struct {
+	Enabled   bool `json:"enabled" env:"RATE_LIMIT_ENABLED"`
+	Max       int  `json:"max" env:"RATE_LIMIT_MAX"`
+	WindowSec int  `json:"window_sec" env:"RATE_LIMIT_WINDOW_SEC"`
 }
 
 // Load reads configuration from JSON file and applies environment variable overrides

@@ -8,9 +8,11 @@ import (
 	"syscall"
 	"time"
 
+	emailadapter "github.com/14mdzk/goscratch/internal/adapter/email"
 	"github.com/14mdzk/goscratch/internal/adapter/queue"
 	"github.com/14mdzk/goscratch/internal/platform/config"
 	"github.com/14mdzk/goscratch/internal/platform/database"
+	"github.com/14mdzk/goscratch/internal/port"
 	"github.com/14mdzk/goscratch/internal/worker"
 	"github.com/14mdzk/goscratch/internal/worker/handlers"
 	"github.com/14mdzk/goscratch/pkg/logger"
@@ -85,8 +87,24 @@ func main() {
 	}
 	w := worker.New(queueAdapter, appLogger, workerCfg)
 
+	// Initialize email sender
+	var emailSender port.EmailSender
+	if cfg.Email.Enabled {
+		appLogger.Info("Initializing SMTP email sender...")
+		emailSender = emailadapter.NewSMTPSender(emailadapter.SMTPConfig{
+			Host:     cfg.Email.Host,
+			Port:     cfg.Email.Port,
+			Username: cfg.Email.Username,
+			Password: cfg.Email.Password,
+			From:     cfg.Email.From,
+		})
+	} else {
+		emailSender = emailadapter.NewNoOpSender(appLogger)
+	}
+	defer emailSender.Close()
+
 	// Register job handlers
-	w.RegisterHandler(handlers.NewEmailHandler(appLogger))
+	w.RegisterHandler(handlers.NewEmailHandler(appLogger, emailSender))
 	w.RegisterHandler(handlers.NewAuditCleanupHandler(pool, appLogger))
 
 	// Start worker

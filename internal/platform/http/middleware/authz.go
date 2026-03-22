@@ -99,6 +99,28 @@ func RequireAllPermissions(authorizer port.Authorizer, permissions ...string) fi
 	}
 }
 
+// RequireAnyRole creates middleware that checks if user has any of the specified roles
+func RequireAnyRole(authorizer port.Authorizer, roles ...string) fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		userID := GetUserID(c)
+		if userID == "" {
+			return response.Unauthorized(c, "authentication required")
+		}
+
+		for _, role := range roles {
+			hasRole, err := authorizer.HasRoleForUser(userID, role)
+			if err != nil {
+				continue
+			}
+			if hasRole {
+				return c.Next()
+			}
+		}
+
+		return response.Forbidden(c, "insufficient role")
+	}
+}
+
 // parsePermission splits "object:action" into obj and act
 func parsePermission(perm string) (obj, act string) {
 	for i := 0; i < len(perm); i++ {

@@ -6,11 +6,23 @@ import (
 	"encoding/json"
 	"testing"
 
+	"github.com/14mdzk/goscratch/internal/port"
 	"github.com/14mdzk/goscratch/internal/worker"
 	"github.com/14mdzk/goscratch/pkg/logger"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+type mockEmailSender struct {
+	sent []port.EmailMessage
+}
+
+func (m *mockEmailSender) Send(_ context.Context, msg port.EmailMessage) error {
+	m.sent = append(m.sent, msg)
+	return nil
+}
+
+func (m *mockEmailSender) Close() error { return nil }
 
 func newTestLogger() *logger.Logger {
 	return logger.New(logger.Config{
@@ -30,13 +42,13 @@ func makeJob(t *testing.T, jobType string, payload any) *worker.Job {
 // --- EmailHandler Tests ---
 
 func TestEmailHandler_Type(t *testing.T) {
-	h := NewEmailHandler(newTestLogger())
+	h := NewEmailHandler(newTestLogger(), &mockEmailSender{})
 	assert.Equal(t, worker.JobTypeEmailSend, h.Type())
 }
 
 func TestEmailHandler_Handle(t *testing.T) {
 	t.Run("valid_payload", func(t *testing.T) {
-		h := NewEmailHandler(newTestLogger())
+		h := NewEmailHandler(newTestLogger(), &mockEmailSender{})
 		job := makeJob(t, worker.JobTypeEmailSend, EmailPayload{
 			To:      "user@example.com",
 			Subject: "Welcome",
@@ -48,7 +60,7 @@ func TestEmailHandler_Handle(t *testing.T) {
 	})
 
 	t.Run("missing_recipient", func(t *testing.T) {
-		h := NewEmailHandler(newTestLogger())
+		h := NewEmailHandler(newTestLogger(), &mockEmailSender{})
 		job := makeJob(t, worker.JobTypeEmailSend, EmailPayload{
 			To:      "",
 			Subject: "Welcome",
@@ -61,7 +73,7 @@ func TestEmailHandler_Handle(t *testing.T) {
 	})
 
 	t.Run("missing_subject", func(t *testing.T) {
-		h := NewEmailHandler(newTestLogger())
+		h := NewEmailHandler(newTestLogger(), &mockEmailSender{})
 		job := makeJob(t, worker.JobTypeEmailSend, EmailPayload{
 			To:      "user@example.com",
 			Subject: "",
@@ -74,7 +86,7 @@ func TestEmailHandler_Handle(t *testing.T) {
 	})
 
 	t.Run("invalid_payload_json", func(t *testing.T) {
-		h := NewEmailHandler(newTestLogger())
+		h := NewEmailHandler(newTestLogger(), &mockEmailSender{})
 		job := &worker.Job{
 			ID:      "test-id",
 			Type:    worker.JobTypeEmailSend,
@@ -87,7 +99,7 @@ func TestEmailHandler_Handle(t *testing.T) {
 	})
 
 	t.Run("with_html_flag", func(t *testing.T) {
-		h := NewEmailHandler(newTestLogger())
+		h := NewEmailHandler(newTestLogger(), &mockEmailSender{})
 		job := makeJob(t, worker.JobTypeEmailSend, EmailPayload{
 			To:      "user@example.com",
 			Subject: "HTML Email",

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/14mdzk/goscratch/internal/port"
 	"github.com/14mdzk/goscratch/internal/worker"
 	"github.com/14mdzk/goscratch/pkg/logger"
 )
@@ -18,15 +19,15 @@ type EmailPayload struct {
 
 // EmailHandler handles email sending jobs
 type EmailHandler struct {
-	logger *logger.Logger
-	// In production, you would inject an email service here
-	// emailService email.Sender
+	logger      *logger.Logger
+	emailSender port.EmailSender
 }
 
 // NewEmailHandler creates a new email handler
-func NewEmailHandler(log *logger.Logger) *EmailHandler {
+func NewEmailHandler(log *logger.Logger, emailSender port.EmailSender) *EmailHandler {
 	return &EmailHandler{
-		logger: log,
+		logger:      log,
+		emailSender: emailSender,
 	}
 }
 
@@ -56,19 +57,16 @@ func (h *EmailHandler) Handle(ctx context.Context, job *worker.Job) error {
 		"job_id", job.ID,
 	)
 
-	// TODO: Integrate with actual email service (SMTP, SendGrid, etc.)
-	// For now, we just log the email
-	//
-	// Example integration:
-	// err := h.emailService.Send(ctx, email.Message{
-	//     To:      payload.To,
-	//     Subject: payload.Subject,
-	//     Body:    payload.Body,
-	//     HTML:    payload.HTML,
-	// })
-	// if err != nil {
-	//     return fmt.Errorf("failed to send email: %w", err)
-	// }
+	msg := port.EmailMessage{
+		To:      []string{payload.To},
+		Subject: payload.Subject,
+		Body:    payload.Body,
+		IsHTML:  payload.HTML,
+	}
+
+	if err := h.emailSender.Send(ctx, msg); err != nil {
+		return fmt.Errorf("failed to send email: %w", err)
+	}
 
 	h.logger.Info("Email sent successfully",
 		"to", payload.To,

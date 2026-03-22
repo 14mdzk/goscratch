@@ -2,15 +2,21 @@ package app
 
 import (
 	"context"
+	"time"
 
 	"github.com/14mdzk/goscratch/internal/adapter/audit"
 	"github.com/14mdzk/goscratch/internal/adapter/cache"
 	casbinadapter "github.com/14mdzk/goscratch/internal/adapter/casbin"
+	emailadapter "github.com/14mdzk/goscratch/internal/adapter/email"
 	"github.com/14mdzk/goscratch/internal/adapter/queue"
 	"github.com/14mdzk/goscratch/internal/adapter/sse"
 	"github.com/14mdzk/goscratch/internal/adapter/storage"
 	"github.com/14mdzk/goscratch/internal/module/auth"
 	"github.com/14mdzk/goscratch/internal/module/health"
+	"github.com/14mdzk/goscratch/internal/module/job"
+	"github.com/14mdzk/goscratch/internal/module/role"
+	ssemodule "github.com/14mdzk/goscratch/internal/module/sse"
+	storagemodule "github.com/14mdzk/goscratch/internal/module/storage"
 	"github.com/14mdzk/goscratch/internal/module/user"
 	"github.com/14mdzk/goscratch/internal/platform/config"
 	"github.com/14mdzk/goscratch/internal/platform/database"
@@ -18,6 +24,7 @@ import (
 	"github.com/14mdzk/goscratch/internal/platform/http/middleware"
 	"github.com/14mdzk/goscratch/internal/platform/observability"
 	"github.com/14mdzk/goscratch/internal/port"
+	"github.com/14mdzk/goscratch/internal/worker"
 	"github.com/14mdzk/goscratch/pkg/logger"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -34,6 +41,7 @@ type App struct {
 	SSE            port.SSEBroker
 	Auditor        port.Auditor
 	Authorizer     port.Authorizer
+	Email          port.EmailSender
 	tracerShutdown func(context.Context) error
 }
 
@@ -163,6 +171,21 @@ func New(ctx context.Context, cfg *config.Config) (*App, error) {
 		authorizer = casbinadapter.NewNoOpAdapter()
 	}
 
+	// Initialize email sender
+	var emailSender port.EmailSender
+	if cfg.Email.Enabled {
+		log.Info("Initializing SMTP email sender...")
+		emailSender = emailadapter.NewSMTPSender(emailadapter.SMTPConfig{
+			Host:     cfg.Email.Host,
+			Port:     cfg.Email.Port,
+			Username: cfg.Email.Username,
+			Password: cfg.Email.Password,
+			From:     cfg.Email.From,
+		})
+	} else {
+		emailSender = emailadapter.NewNoOpSender(log)
+	}
+
 	// Initialize HTTP server
 	server := http.NewServer(cfg.Server, log)
 
@@ -186,12 +209,37 @@ func New(ctx context.Context, cfg *config.Config) (*App, error) {
 
 	app.Use(middleware.Logger(log))
 
+	// Add rate limiting middleware if enabled
+	if cfg.RateLimit.Enabled {
+		rlWindow := time.Duration(cfg.RateLimit.WindowSec) * time.Second
+		if rlWindow <= 0 {
+			rlWindow = 1 * time.Minute
+		}
+		rlMax := cfg.RateLimit.Max
+		if rlMax <= 0 {
+			rlMax = 100
+		}
+		app.Use(middleware.RateLimit(middleware.RateLimitConfig{
+			Max:      rlMax,
+			Window:   rlWindow,
+			UseRedis: cfg.Redis.Enabled,
+		}, cacheAdapter))
+		log.Info("Rate limiting enabled", "max", rlMax, "window_sec", cfg.RateLimit.WindowSec)
+	}
+
+	// Initialize worker publisher
+	publisher := worker.NewPublisher(queueAdapter, cfg.Worker.QueueName, cfg.Worker.Exchange)
+
 	// Register modules
 	healthModule := health.NewModule()
 	userModule := user.NewModule(pool, auditor, authorizer, cfg.JWT.Secret)
 	authModule := auth.NewModule(pool, cacheAdapter, auditor, cfg.JWT)
+	roleModule := role.NewModule(authorizer, cfg.JWT.Secret)
+	storageModule := storagemodule.NewModule(storageAdapter, cfg.JWT.Secret)
+	sseModule := ssemodule.NewModule(sseBroker, authorizer, cfg.JWT.Secret)
+	jobModule := job.NewModule(publisher, authorizer, cfg.JWT.Secret)
 
-	server.RegisterModules(healthModule, userModule, authModule)
+	server.RegisterModules(healthModule, userModule, authModule, roleModule, storageModule, sseModule, jobModule)
 
 	return &App{
 		Config:         cfg,
@@ -203,6 +251,7 @@ func New(ctx context.Context, cfg *config.Config) (*App, error) {
 		Storage:        storageAdapter,
 		SSE:            sseBroker,
 		Auditor:        auditor,
+		Email:          emailSender,
 		tracerShutdown: tracerShutdown,
 	}, nil
 }
@@ -235,6 +284,7 @@ func (a *App) Shutdown(ctx context.Context) error {
 	a.Storage.Close()
 	a.SSE.Close()
 	a.Auditor.Close()
+	a.Email.Close()
 	a.DB.Close()
 
 	a.Logger.Info("Application shutdown complete")

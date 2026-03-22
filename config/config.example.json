@@ -65,6 +65,19 @@
     "queue_name": "jobs",
     "exchange": ""
   },
+  "email": {
+    "enabled": false,
+    "host": "smtp.example.com",
+    "port": 587,
+    "username": "",
+    "password": "",
+    "from": "noreply@example.com"
+  },
+  "rate_limit": {
+    "enabled": true,
+    "max": 100,
+    "window_sec": 60
+  },
   "observability": {
     "metrics": {
       "enabled": true,
