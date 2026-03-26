@@ -122,10 +122,10 @@ internal/platform/http/middleware/rate_limit.go
 - `email` config (enabled, host, port, username, password, from)
 - `rate_limit` config (enabled, max, window_sec)
 
-### Remaining Gaps (not yet done)
+### Remaining Gaps (completed in v0.4)
 
-- [ ] Feature specs (`docs/features/`) for each feature
-- [ ] Seed data update for default roles + permissions
+- [x] Feature specs (`docs/features/`) for each feature
+- [x] Seed data update for default roles + permissions
 
 ### Test Coverage (v0.3 final)
 
@@ -141,34 +141,53 @@ internal/platform/http/middleware/rate_limit.go
 
 ---
 
-## v0.4 - Developer Experience (NEXT)
+## v0.4 - Developer Experience (DONE)
 
 Improve the daily development workflow.
 
-- [ ] Add `air` for hot-reload (API + Worker configs)
-- [ ] Add `.env` file support (godotenv, 3-layer config)
-- [ ] Add `.env.example` with commonly-changed values
-- [ ] Rename `config.example.json` -> `config.default.json`
-- [ ] Replace `sleep 3` in Makefile with proper healthcheck wait
-- [ ] Add `.golangci.yml` with sensible defaults
-- [ ] Remove Wire references from Makefile and install-tools
-- [ ] Write feature specs for all features (`docs/features/`)
-- [ ] Write ADRs for key decisions (`docs/adr/`)
+### Commit
 
-**Agent:** `docker-expert` + `documentation-engineer`
+- `8396ff0` chore: v0.4 developer experience improvements and documentation
+
+### Features Delivered
+
+- [x] Add `air` for hot-reload (API + Worker configs: `.air.api.toml`, `.air.worker.toml`)
+- [x] Add `.env` file support (godotenv, 3-layer config: JSON defaults → .env → env vars)
+- [x] Add `.env.example` with commonly-changed values
+- [x] Rename `config.example.json` → `config.default.json`
+- [x] Replace `sleep 3` in Makefile with `pg_isready` healthcheck wait
+- [x] Add `.golangci.yml` with sensible defaults
+- [x] Remove Wire references from Makefile and install-tools
+- [x] Write 10 feature specs (`docs/features/`)
+- [x] Write 7 ADRs for key decisions (`docs/adr/`)
+- [x] Update seed data with default roles, permissions, and role assignments
+- [x] Add UNIQUE INDEX to `casbin_rules` migration for idempotent inserts
 
 ---
 
-## v0.5 - Production Hardening
+## v0.5 - Production Hardening (IN PROGRESS)
 
-- [ ] CI/CD pipeline (GitHub Actions: lint, test, build)
-- [ ] Integration tests (Docker-based, database + cache + queue)
-- [ ] Security review (input sanitization, CORS hardening, JWT best practices)
-- [ ] API documentation (OpenAPI/Swagger spec)
-- [ ] Example deployment configs (Docker Compose production, systemd)
-- [ ] Database transaction patterns where needed
+### Wave 1 — Completed
 
-**Agent:** `code-reviewer` + `docker-expert`
+| Feature | PR | Status |
+|---------|-----|--------|
+| CI/CD pipeline (GitHub Actions: lint, test, build) | #3 | Done |
+| Pre-existing lint fixes (errcheck, gocritic, gofmt, staticcheck) | #3 | Done |
+| Integration tests (testcontainers-go: Postgres, Redis) | #6 | Done |
+| Security headers middleware | #4 | Done |
+| Config-driven CORS (production wildcard warning) | #4 | Done |
+| JWT hardening (issuer/audience claims) | #4 | Done |
+| Input sanitization (bluemonday XSS stripping) | #4 | Done |
+| OpenAPI 3.0 spec (34 endpoints documented) | #5 | Done |
+| Scalar API reference endpoint (`/docs`) | #5 | Done |
+| Production Docker Compose (all services) | #3 | Done |
+| Systemd unit files (API + Worker) | #3 | Done |
+| Nginx reverse proxy config | #3 | Done |
+
+### Wave 2 — Remaining
+
+- [ ] Database transaction patterns (wire existing `Transactor`/`GetTx` into repositories)
+- [ ] Audit refactoring with Decorator Pattern (extract audit from usecases into decorator wrappers)
 
 ---
 

@@ -36,6 +36,7 @@ func (m *Module) RegisterRoutes(router fiber.Router) {
 
 	docs.Get("/", func(c *fiber.Ctx) error {
 		c.Set("Content-Type", "text/html; charset=utf-8")
+		c.Set("Content-Security-Policy", "default-src 'self'; script-src 'self' https://cdn.jsdelivr.net 'unsafe-inline'; style-src 'self' https://cdn.jsdelivr.net 'unsafe-inline'; font-src 'self' https://cdn.jsdelivr.net data:; img-src 'self' data: blob:; connect-src 'self'")
 		return c.SendString(scalarHTML)
 	})
 
