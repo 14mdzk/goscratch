@@ -192,7 +192,28 @@ func New(ctx context.Context, cfg *config.Config) (*App, error) {
 	// Apply middleware
 	app := server.App()
 	app.Use(middleware.RequestID())
-	app.Use(middleware.CORS(middleware.DefaultCORSConfig()))
+	app.Use(middleware.SecurityHeaders(middleware.SecurityHeadersConfig{
+		IsProduction: cfg.IsProduction(),
+	}))
+
+	// Config-driven CORS
+	corsConfig := middleware.DefaultCORSConfig()
+	if cfg.CORS.AllowOrigins != "" {
+		corsConfig.AllowOrigins = cfg.CORS.AllowOrigins
+	} else if cfg.IsDevelopment() {
+		corsConfig.AllowOrigins = "*"
+	}
+	if cfg.CORS.AllowMethods != "" {
+		corsConfig.AllowMethods = cfg.CORS.AllowMethods
+	}
+	if cfg.CORS.AllowHeaders != "" {
+		corsConfig.AllowHeaders = cfg.CORS.AllowHeaders
+	}
+	corsConfig.AllowCredentials = cfg.CORS.AllowCredentials
+	if cfg.IsProduction() && corsConfig.AllowOrigins == "*" {
+		log.Warn("CORS wildcard origin '*' is used in production - this is insecure, set explicit origins via CORS_ALLOW_ORIGINS")
+	}
+	app.Use(middleware.CORS(corsConfig))
 
 	// Add tracing middleware if enabled
 	if cfg.Observability.Tracing.Enabled {

@@ -133,9 +133,21 @@ func (uc *UseCase) Logout(ctx context.Context, refreshToken string) error {
 // generateAccessToken generates a JWT access token
 func (uc *UseCase) generateAccessToken(userID, email, name string) (string, error) {
 	now := time.Now()
+
+	issuer := uc.jwtCfg.Issuer
+	if issuer == "" {
+		issuer = "goscratch"
+	}
+	audience := uc.jwtCfg.Audience
+	if audience == "" {
+		audience = "goscratch-api"
+	}
+
 	claims := middleware.Claims{
 		RegisteredClaims: jwt.RegisteredClaims{
 			Subject:   userID,
+			Issuer:    issuer,
+			Audience:  jwt.ClaimStrings{audience},
 			IssuedAt:  jwt.NewNumericDate(now),
 			ExpiresAt: jwt.NewNumericDate(now.Add(uc.jwtCfg.AccessTokenDuration())),
 			NotBefore: jwt.NewNumericDate(now),
