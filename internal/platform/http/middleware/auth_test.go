@@ -28,6 +28,8 @@ func validClaims() Claims {
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(1 * time.Hour)),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
+			Issuer:    "goscratch",
+			Audience:  jwt.ClaimStrings{"goscratch-api"},
 		},
 		UserID: "user-123",
 		Email:  "test@example.com",
@@ -135,6 +137,8 @@ func TestAuth_ExpiredJWT(t *testing.T) {
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(-1 * time.Hour)),
 			IssuedAt:  jwt.NewNumericDate(time.Now().Add(-2 * time.Hour)),
+			Issuer:    "goscratch",
+			Audience:  jwt.ClaimStrings{"goscratch-api"},
 		},
 		UserID: "user-123",
 	}

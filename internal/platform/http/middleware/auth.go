@@ -14,6 +14,8 @@ import (
 // AuthConfig holds authentication middleware configuration
 type AuthConfig struct {
 	JWTSecret    string
+	JWTIssuer    string
+	JWTAudience  string
 	TokenLookup  string // "header:Authorization" or "cookie:token"
 	ContextKey   string // Key to store user claims in context
 	ErrorHandler fiber.ErrorHandler
@@ -23,6 +25,8 @@ type AuthConfig struct {
 func DefaultAuthConfig(jwtSecret string) AuthConfig {
 	return AuthConfig{
 		JWTSecret:   jwtSecret,
+		JWTIssuer:   "goscratch",
+		JWTAudience: "goscratch-api",
 		TokenLookup: "header:Authorization",
 		ContextKey:  "user",
 	}
@@ -46,7 +50,7 @@ func Auth(cfg AuthConfig) fiber.Handler {
 		}
 
 		// Parse and validate token
-		claims, err := parseToken(token, cfg.JWTSecret)
+		claims, err := parseToken(token, cfg.JWTSecret, cfg.JWTIssuer, cfg.JWTAudience)
 		if err != nil {
 			if errors.Is(err, jwt.ErrTokenExpired) {
 				return response.Unauthorized(c, "Token has expired")
@@ -75,7 +79,7 @@ func OptionalAuth(cfg AuthConfig) fiber.Handler {
 			return c.Next()
 		}
 
-		claims, err := parseToken(token, cfg.JWTSecret)
+		claims, err := parseToken(token, cfg.JWTSecret, cfg.JWTIssuer, cfg.JWTAudience)
 		if err != nil {
 			return c.Next() // Invalid token, continue without auth
 		}
@@ -116,15 +120,25 @@ func extractToken(c *fiber.Ctx, lookup string) (string, error) {
 	}
 }
 
-// parseToken parses and validates a JWT token
-func parseToken(tokenString, secret string) (*Claims, error) {
+// parseToken parses and validates a JWT token, including issuer and audience claims
+func parseToken(tokenString, secret, issuer, audience string) (*Claims, error) {
+	parserOpts := []jwt.ParserOption{
+		jwt.WithValidMethods([]string{"HS256"}),
+	}
+	if issuer != "" {
+		parserOpts = append(parserOpts, jwt.WithIssuer(issuer))
+	}
+	if audience != "" {
+		parserOpts = append(parserOpts, jwt.WithAudience(audience))
+	}
+
 	token, err := jwt.ParseWithClaims(tokenString, &Claims{}, func(token *jwt.Token) (interface{}, error) {
 		// Validate signing method
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
 			return nil, apperr.ErrUnauthorized
 		}
 		return []byte(secret), nil
-	})
+	}, parserOpts...)
 
 	if err != nil {
 		return nil, err

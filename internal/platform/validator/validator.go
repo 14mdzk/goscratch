@@ -7,6 +7,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/14mdzk/goscratch/internal/platform/sanitizer"
 	"github.com/14mdzk/goscratch/pkg/apperr"
 	"github.com/14mdzk/goscratch/pkg/response"
 	"github.com/go-playground/validator/v10"
@@ -80,8 +81,8 @@ func Validate(s interface{}) error {
 	return nil
 }
 
-// ValidateAndBind parses the request body and validates the struct
-// Returns a ValidationError that the handler should convert to a response
+// ValidateAndBind parses the request body, sanitizes string fields, and validates the struct.
+// Returns a ValidationError that the handler should convert to a response.
 func ValidateAndBind(c *fiber.Ctx, s interface{}) error {
 	// Parse body
 	if err := c.BodyParser(s); err != nil {
@@ -89,6 +90,9 @@ func ValidateAndBind(c *fiber.Ctx, s interface{}) error {
 			Errors: map[string]string{"body": "Invalid request body"},
 		}
 	}
+
+	// Sanitize string fields to strip HTML/XSS before validation
+	sanitizer.SanitizeStruct(s)
 
 	// Validate
 	return Validate(s)

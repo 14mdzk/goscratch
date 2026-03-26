@@ -18,6 +18,7 @@ type Config struct {
 	Server        ServerConfig        `json:"server"`
 	Database      DatabaseConfig      `json:"database"`
 	JWT           JWTConfig           `json:"jwt"`
+	CORS          CORSConfig          `json:"cors"`
 	Redis         RedisConfig         `json:"redis"`
 	RabbitMQ      RabbitMQConfig      `json:"rabbitmq"`
 	Storage       StorageConfig       `json:"storage"`
@@ -67,6 +68,15 @@ type JWTConfig struct {
 	Secret          string `json:"secret" env:"JWT_SECRET"`
 	AccessTokenTTL  int    `json:"access_token_ttl" env:"JWT_ACCESS_TOKEN_TTL"`
 	RefreshTokenTTL int    `json:"refresh_token_ttl" env:"JWT_REFRESH_TOKEN_TTL"`
+	Issuer          string `json:"issuer" env:"JWT_ISSUER"`
+	Audience        string `json:"audience" env:"JWT_AUDIENCE"`
+}
+
+type CORSConfig struct {
+	AllowOrigins     string `json:"allow_origins" env:"CORS_ALLOW_ORIGINS"`
+	AllowMethods     string `json:"allow_methods" env:"CORS_ALLOW_METHODS"`
+	AllowHeaders     string `json:"allow_headers" env:"CORS_ALLOW_HEADERS"`
+	AllowCredentials bool   `json:"allow_credentials" env:"CORS_ALLOW_CREDENTIALS"`
 }
 
 // AccessTokenDuration returns the access token TTL as time.Duration (in minutes)
