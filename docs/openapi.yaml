@@ -1,0 +1,1606 @@
+openapi: "3.0.3"
+info:
+  title: Goscratch API
+  description: |
+    Goscratch is a Go backend starterkit providing authentication, user management,
+    role-based access control, file storage, server-sent events, and background job processing.
+  version: "0.5.0"
+  contact:
+    name: Goscratch
+    url: https://github.com/14mdzk/goscratch
+
+servers:
+  - url: http://localhost:8080
+    description: Local development server
+
+tags:
+  - name: Health
+    description: Health check endpoints
+  - name: Auth
+    description: Authentication endpoints
+  - name: Users
+    description: User management endpoints
+  - name: Roles
+    description: Role and permission management endpoints
+  - name: Storage
+    description: File storage endpoints
+  - name: SSE
+    description: Server-Sent Events endpoints
+  - name: Jobs
+    description: Background job endpoints
+
+paths:
+  # ── Health ──────────────────────────────────────────────────────────────
+  /health:
+    get:
+      operationId: healthCheck
+      tags: [Health]
+      summary: Basic health check
+      description: Returns the overall health status of the service.
+      responses:
+        "200":
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/SuccessResponse"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/HealthCheckResponse"
+
+  /health/ready:
+    get:
+      operationId: readinessCheck
+      tags: [Health]
+      summary: Readiness check
+      description: Checks if the application is ready to serve traffic (database, cache, etc.).
+      responses:
+        "200":
+          description: Service is ready
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/SuccessResponse"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/HealthCheckResponse"
+
+  /health/live:
+    get:
+      operationId: livenessCheck
+      tags: [Health]
+      summary: Liveness check
+      description: Checks if the application process is alive.
+      responses:
+        "200":
+          description: Service is alive
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/SuccessResponse"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/HealthCheckResponse"
+
+  # ── Auth ────────────────────────────────────────────────────────────────
+  /auth/login:
+    post:
+      operationId: login
+      tags: [Auth]
+      summary: Login
+      description: Authenticates a user with email and password, returning JWT tokens.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginRequest"
+      responses:
+        "200":
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/SuccessResponse"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/LoginResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /auth/refresh:
+    post:
+      operationId: refreshToken
+      tags: [Auth]
+      summary: Refresh access token
+      description: Exchanges a valid refresh token for a new pair of access and refresh tokens.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RefreshRequest"
+      responses:
+        "200":
+          description: Token refreshed
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/SuccessResponse"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/RefreshResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /auth/logout:
+    post:
+      operationId: logout
+      tags: [Auth]
+      summary: Logout
+      description: Invalidates the given refresh token.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RefreshRequest"
+      responses:
+        "200":
+          description: Logged out successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  # ── Users ───────────────────────────────────────────────────────────────
+  /users:
+    get:
+      operationId: listUsers
+      tags: [Users]
+      summary: List users
+      description: Returns a cursor-paginated list of users. Requires `users:read` permission.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+        - name: search
+          in: query
+          description: Search by name or email (partial match)
+          schema:
+            type: string
+        - name: email
+          in: query
+          description: Filter by exact email match
+          schema:
+            type: string
+        - name: is_active
+          in: query
+          description: Filter by active status
+          schema:
+            type: boolean
+      responses:
+        "200":
+          description: List of users
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaginatedUserResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
+    post:
+      operationId: createUser
+      tags: [Users]
+      summary: Create user
+      description: Creates a new user account. Requires `users:create` permission.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateUserRequest"
+      responses:
+        "201":
+          description: User created
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/SuccessResponse"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/UserResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /users/me:
+    get:
+      operationId: getMe
+      tags: [Users]
+      summary: Get current user
+      description: Returns the profile of the currently authenticated user.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Current user profile
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/SuccessResponse"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/UserResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /users/me/password:
+    post:
+      operationId: changePassword
+      tags: [Users]
+      summary: Change own password
+      description: Changes the password of the currently authenticated user.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChangePasswordRequest"
+      responses:
+        "200":
+          description: Password changed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /users/{id}:
+    get:
+      operationId: getUserByID
+      tags: [Users]
+      summary: Get user by ID
+      description: Returns a single user by their UUID. Requires `users:read` permission.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/UserID"
+      responses:
+        "200":
+          description: User found
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/SuccessResponse"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/UserResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+    put:
+      operationId: updateUser
+      tags: [Users]
+      summary: Update user
+      description: Updates an existing user's name and/or email. Requires `users:update` permission.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/UserID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateUserRequest"
+      responses:
+        "200":
+          description: User updated
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/SuccessResponse"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/UserResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "500":
+          $ref: "#/components/responses/InternalError"
+    delete:
+      operationId: deleteUser
+      tags: [Users]
+      summary: Delete user
+      description: Soft-deletes a user. Requires `users:delete` permission.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/UserID"
+      responses:
+        "204":
+          description: User deleted
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /users/{id}/activate:
+    post:
+      operationId: activateUser
+      tags: [Users]
+      summary: Activate user
+      description: Activates a deactivated user account. Requires `users:update` permission.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/UserID"
+      responses:
+        "200":
+          description: User activated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /users/{id}/deactivate:
+    post:
+      operationId: deactivateUser
+      tags: [Users]
+      summary: Deactivate user
+      description: Deactivates a user account. Requires `users:update` permission.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/UserID"
+      responses:
+        "200":
+          description: User deactivated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /users/{id}/roles:
+    get:
+      operationId: getUserRoles
+      tags: [Roles]
+      summary: Get user roles
+      description: Returns all roles assigned to a user. Requires admin role.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/UserID"
+      responses:
+        "200":
+          description: User roles
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/SuccessResponse"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/UserRolesResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /users/{id}/permissions:
+    get:
+      operationId: getUserPermissions
+      tags: [Roles]
+      summary: Get user permissions
+      description: Returns all implicit permissions for a user. Requires admin role.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/UserID"
+      responses:
+        "200":
+          description: User permissions
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/SuccessResponse"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/UserPermissionsResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  # ── Roles ───────────────────────────────────────────────────────────────
+  /roles:
+    get:
+      operationId: listRoles
+      tags: [Roles]
+      summary: List roles
+      description: Returns all available roles. Requires admin role.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: List of roles
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/SuccessResponse"
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: "#/components/schemas/RoleResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /roles/assign:
+    post:
+      operationId: assignRole
+      tags: [Roles]
+      summary: Assign role to user
+      description: Assigns a role to a user. Requires admin role.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AssignRoleRequest"
+      responses:
+        "200":
+          description: Role assigned
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /roles/revoke:
+    post:
+      operationId: revokeRole
+      tags: [Roles]
+      summary: Revoke role from user
+      description: Removes a role from a user. Requires admin role.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RemoveRoleRequest"
+      responses:
+        "200":
+          description: Role revoked
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /roles/{role}/users:
+    get:
+      operationId: getRoleUsers
+      tags: [Roles]
+      summary: Get users by role
+      description: Returns all user IDs assigned to a specific role. Requires admin role.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/RoleName"
+      responses:
+        "200":
+          description: Users for role
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/SuccessResponse"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/RoleUsersResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /roles/{role}/permissions:
+    get:
+      operationId: getRolePermissions
+      tags: [Roles]
+      summary: Get role permissions
+      description: Returns all permissions assigned to a role. Requires admin role.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/RoleName"
+      responses:
+        "200":
+          description: Role permissions
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/SuccessResponse"
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: "#/components/schemas/PermissionResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
+    post:
+      operationId: addRolePermission
+      tags: [Roles]
+      summary: Add permission to role
+      description: Adds a permission (object + action) to a role. Requires admin role.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/RoleName"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AddPermissionRequest"
+      responses:
+        "200":
+          description: Permission added
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
+    delete:
+      operationId: removeRolePermission
+      tags: [Roles]
+      summary: Remove permission from role
+      description: Removes a permission (object + action) from a role. Requires admin role.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/RoleName"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RemovePermissionRequest"
+      responses:
+        "200":
+          description: Permission removed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  # ── Storage ─────────────────────────────────────────────────────────────
+  /files:
+    get:
+      operationId: listFiles
+      tags: [Storage]
+      summary: List files
+      description: Lists files with an optional prefix filter. Requires authentication.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: prefix
+          in: query
+          description: Filter files by path prefix
+          schema:
+            type: string
+      responses:
+        "200":
+          description: List of files
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/SuccessResponse"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/ListFilesResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /files/upload:
+    post:
+      operationId: uploadFile
+      tags: [Storage]
+      summary: Upload file
+      description: Uploads a file via multipart/form-data. Requires authentication.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - file
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: The file to upload
+                directory:
+                  type: string
+                  description: Optional target directory
+      responses:
+        "201":
+          description: File uploaded
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/SuccessResponse"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/UploadResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /files/url/{path}:
+    get:
+      operationId: getFileURL
+      tags: [Storage]
+      summary: Get file URL
+      description: Returns a URL for accessing a file, optionally with an expiry duration. Requires authentication.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: path
+          in: path
+          required: true
+          description: File path
+          schema:
+            type: string
+        - name: expires
+          in: query
+          description: URL expiry time in seconds (positive integer)
+          schema:
+            type: integer
+            minimum: 1
+      responses:
+        "200":
+          description: File URL
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/SuccessResponse"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/FileResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /files/download/{path}:
+    get:
+      operationId: downloadFile
+      tags: [Storage]
+      summary: Download file
+      description: Downloads a file by path. Returns the file content with appropriate Content-Type. Requires authentication.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: path
+          in: path
+          required: true
+          description: File path
+          schema:
+            type: string
+      responses:
+        "200":
+          description: File content
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /files/{path}:
+    delete:
+      operationId: deleteFile
+      tags: [Storage]
+      summary: Delete file
+      description: Deletes a file by path. Requires authentication.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: path
+          in: path
+          required: true
+          description: File path
+          schema:
+            type: string
+      responses:
+        "204":
+          description: File deleted
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  # ── SSE ─────────────────────────────────────────────────────────────────
+  /sse/subscribe:
+    get:
+      operationId: sseSubscribe
+      tags: [SSE]
+      summary: Subscribe to SSE stream
+      description: |
+        Opens a Server-Sent Events stream for the authenticated user.
+        Optionally subscribe to specific topics via the `topics` query parameter.
+        Requires authentication.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: topics
+          in: query
+          description: Comma-separated list of topics to subscribe to
+          schema:
+            type: string
+          example: "notifications,alerts"
+      responses:
+        "200":
+          description: SSE stream opened
+          content:
+            text/event-stream:
+              schema:
+                type: string
+                description: SSE event stream
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /sse/broadcast:
+    post:
+      operationId: sseBroadcast
+      tags: [SSE]
+      summary: Broadcast event
+      description: Broadcasts an event to all connected SSE clients, or to a specific topic. Requires `sse:broadcast` permission.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BroadcastRequest"
+      responses:
+        "200":
+          description: Event broadcast
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /sse/clients:
+    get:
+      operationId: sseClientCount
+      tags: [SSE]
+      summary: Get connected client count
+      description: Returns the number of currently connected SSE clients. Requires `sse:read` permission.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Client count
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/SuccessResponse"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          count:
+                            type: integer
+                            example: 5
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  # ── Jobs ────────────────────────────────────────────────────────────────
+  /jobs/dispatch:
+    post:
+      operationId: dispatchJob
+      tags: [Jobs]
+      summary: Dispatch a background job
+      description: Dispatches a new background job to the queue. Requires admin role.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DispatchJobRequest"
+      responses:
+        "201":
+          description: Job dispatched
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/SuccessResponse"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/JobResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /jobs/types:
+    get:
+      operationId: listJobTypes
+      tags: [Jobs]
+      summary: List available job types
+      description: Returns all registered job types and their descriptions. Requires admin role.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Available job types
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/SuccessResponse"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/ListJobTypesResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+# ══════════════════════════════════════════════════════════════════════════
+# Components
+# ══════════════════════════════════════════════════════════════════════════
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT access token obtained from the login endpoint
+
+  parameters:
+    UserID:
+      name: id
+      in: path
+      required: true
+      description: User UUID
+      schema:
+        type: string
+        format: uuid
+    RoleName:
+      name: role
+      in: path
+      required: true
+      description: Role name
+      schema:
+        type: string
+        example: admin
+    Cursor:
+      name: cursor
+      in: query
+      description: Base64-encoded cursor for pagination
+      schema:
+        type: string
+    Limit:
+      name: limit
+      in: query
+      description: "Number of items per page (default: 20, max: 100)"
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
+
+  responses:
+    BadRequest:
+      description: Bad request or validation error
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          example:
+            success: false
+            error:
+              code: VALIDATION_ERROR
+              message: Validation failed
+              details:
+                email: "must be a valid email address"
+    Unauthorized:
+      description: Authentication required or invalid token
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          example:
+            success: false
+            error:
+              code: UNAUTHORIZED
+              message: Authentication required
+    Forbidden:
+      description: Insufficient permissions
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          example:
+            success: false
+            error:
+              code: FORBIDDEN
+              message: Access denied
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          example:
+            success: false
+            error:
+              code: NOT_FOUND
+              message: Resource not found
+    Conflict:
+      description: Resource conflict (e.g. duplicate email)
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          example:
+            success: false
+            error:
+              code: CONFLICT
+              message: Email already exists
+    TooManyRequests:
+      description: Rate limit exceeded
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          example:
+            success: false
+            error:
+              code: BAD_REQUEST
+              message: Rate limit exceeded
+    InternalError:
+      description: Internal server error
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          example:
+            success: false
+            error:
+              code: INTERNAL_ERROR
+              message: An unexpected error occurred
+
+  schemas:
+    # ── Base response wrappers ────────────────────────────────────────────
+    SuccessResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        data:
+          description: Response payload
+      required:
+        - success
+
+    MessageResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        message:
+          type: string
+      required:
+        - success
+        - message
+
+    ErrorResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: false
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              description: Machine-readable error code
+              enum:
+                - BAD_REQUEST
+                - UNAUTHORIZED
+                - FORBIDDEN
+                - NOT_FOUND
+                - CONFLICT
+                - UNPROCESSABLE_ENTITY
+                - INTERNAL_ERROR
+                - SERVICE_UNAVAILABLE
+                - VALIDATION_ERROR
+            message:
+              type: string
+              description: Human-readable error message
+            details:
+              type: object
+              additionalProperties: true
+              description: Additional error details (e.g. field validation errors)
+          required:
+            - code
+            - message
+      required:
+        - success
+        - error
+
+    PaginationMeta:
+      type: object
+      properties:
+        next_cursor:
+          type: string
+          nullable: true
+          description: Base64-encoded cursor for the next page
+        prev_cursor:
+          type: string
+          nullable: true
+          description: Base64-encoded cursor for the previous page
+        has_more:
+          type: boolean
+          description: Whether more items exist after this page
+        has_prev:
+          type: boolean
+          description: Whether items exist before this page
+        total:
+          type: integer
+          nullable: true
+          description: Total count of items (included when available)
+
+    # ── Health ────────────────────────────────────────────────────────────
+    HealthCheckResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [ok, ready, alive]
+        timestamp:
+          type: string
+          format: date-time
+        version:
+          type: string
+        checks:
+          type: object
+          additionalProperties:
+            type: string
+          description: Individual subsystem check results
+
+    # ── Auth ──────────────────────────────────────────────────────────────
+    LoginRequest:
+      type: object
+      required:
+        - email
+        - password
+      properties:
+        email:
+          type: string
+          format: email
+          example: user@example.com
+        password:
+          type: string
+          format: password
+          example: "secretpass"
+
+    LoginResponse:
+      type: object
+      properties:
+        access_token:
+          type: string
+        refresh_token:
+          type: string
+        expires_in:
+          type: integer
+          description: Token lifetime in seconds
+        token_type:
+          type: string
+          example: Bearer
+
+    RefreshRequest:
+      type: object
+      required:
+        - refresh_token
+      properties:
+        refresh_token:
+          type: string
+
+    RefreshResponse:
+      type: object
+      properties:
+        access_token:
+          type: string
+        refresh_token:
+          type: string
+        expires_in:
+          type: integer
+          description: Token lifetime in seconds
+        token_type:
+          type: string
+          example: Bearer
+
+    # ── Users ─────────────────────────────────────────────────────────────
+    UserResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        email:
+          type: string
+          format: email
+        name:
+          type: string
+        is_active:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    CreateUserRequest:
+      type: object
+      required:
+        - email
+        - password
+        - name
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          format: password
+          minLength: 8
+        name:
+          type: string
+          minLength: 2
+          maxLength: 100
+
+    UpdateUserRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 2
+          maxLength: 100
+        email:
+          type: string
+          format: email
+
+    ChangePasswordRequest:
+      type: object
+      required:
+        - current_password
+        - new_password
+      properties:
+        current_password:
+          type: string
+          format: password
+        new_password:
+          type: string
+          format: password
+          minLength: 8
+
+    PaginatedUserResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/UserResponse"
+        pagination:
+          $ref: "#/components/schemas/PaginationMeta"
+      required:
+        - success
+        - data
+        - pagination
+
+    # ── Roles ─────────────────────────────────────────────────────────────
+    RoleResponse:
+      type: object
+      properties:
+        name:
+          type: string
+          example: admin
+        description:
+          type: string
+
+    PermissionResponse:
+      type: object
+      properties:
+        object:
+          type: string
+          example: users
+        action:
+          type: string
+          example: read
+
+    AssignRoleRequest:
+      type: object
+      required:
+        - user_id
+        - role
+      properties:
+        user_id:
+          type: string
+          format: uuid
+        role:
+          type: string
+
+    RemoveRoleRequest:
+      type: object
+      required:
+        - user_id
+        - role
+      properties:
+        user_id:
+          type: string
+          format: uuid
+        role:
+          type: string
+
+    AddPermissionRequest:
+      type: object
+      required:
+        - object
+        - action
+      properties:
+        object:
+          type: string
+          description: The resource object (e.g. "users", "roles")
+        action:
+          type: string
+          description: The action (e.g. "read", "create", "update", "delete")
+
+    RemovePermissionRequest:
+      type: object
+      required:
+        - object
+        - action
+      properties:
+        object:
+          type: string
+        action:
+          type: string
+
+    UserRolesResponse:
+      type: object
+      properties:
+        user_id:
+          type: string
+          format: uuid
+        roles:
+          type: array
+          items:
+            type: string
+
+    RoleUsersResponse:
+      type: object
+      properties:
+        role:
+          type: string
+        user_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+
+    UserPermissionsResponse:
+      type: object
+      properties:
+        user_id:
+          type: string
+          format: uuid
+        permissions:
+          type: array
+          items:
+            $ref: "#/components/schemas/PermissionResponse"
+
+    # ── Storage ───────────────────────────────────────────────────────────
+    FileResponse:
+      type: object
+      properties:
+        path:
+          type: string
+        size:
+          type: integer
+          format: int64
+        content_type:
+          type: string
+        url:
+          type: string
+        mod_time:
+          type: string
+          format: date-time
+
+    UploadResponse:
+      type: object
+      properties:
+        path:
+          type: string
+        url:
+          type: string
+        size:
+          type: integer
+          format: int64
+
+    ListFilesResponse:
+      type: object
+      properties:
+        files:
+          type: array
+          items:
+            $ref: "#/components/schemas/FileResponse"
+
+    # ── SSE ───────────────────────────────────────────────────────────────
+    BroadcastRequest:
+      type: object
+      required:
+        - event
+      properties:
+        event:
+          type: string
+          description: Event type name
+        data:
+          type: string
+          description: Event payload data
+        topic:
+          type: string
+          description: Optional topic to broadcast to (omit for global broadcast)
+
+    # ── Jobs ──────────────────────────────────────────────────────────────
+    DispatchJobRequest:
+      type: object
+      required:
+        - type
+        - payload
+      properties:
+        type:
+          type: string
+          description: Job type identifier
+        payload:
+          type: object
+          description: Arbitrary JSON payload for the job
+        max_retry:
+          type: integer
+          description: "Maximum retry attempts (default: 3)"
+
+    JobResponse:
+      type: object
+      properties:
+        id:
+          type: string
+        type:
+          type: string
+        status:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+
+    JobTypeInfo:
+      type: object
+      properties:
+        type:
+          type: string
+        description:
+          type: string
+
+    ListJobTypesResponse:
+      type: object
+      properties:
+        types:
+          type: array
+          items:
+            $ref: "#/components/schemas/JobTypeInfo"
