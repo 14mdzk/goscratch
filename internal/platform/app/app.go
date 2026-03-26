@@ -12,6 +12,7 @@ import (
 	"github.com/14mdzk/goscratch/internal/adapter/sse"
 	"github.com/14mdzk/goscratch/internal/adapter/storage"
 	"github.com/14mdzk/goscratch/internal/module/auth"
+	"github.com/14mdzk/goscratch/internal/module/docs"
 	"github.com/14mdzk/goscratch/internal/module/health"
 	"github.com/14mdzk/goscratch/internal/module/job"
 	"github.com/14mdzk/goscratch/internal/module/role"
@@ -231,6 +232,7 @@ func New(ctx context.Context, cfg *config.Config) (*App, error) {
 	publisher := worker.NewPublisher(queueAdapter, cfg.Worker.QueueName, cfg.Worker.Exchange)
 
 	// Register modules
+	docsModule := docs.NewModule()
 	healthModule := health.NewModule()
 	userModule := user.NewModule(pool, auditor, authorizer, cfg.JWT.Secret)
 	authModule := auth.NewModule(pool, cacheAdapter, auditor, cfg.JWT)
@@ -239,7 +241,7 @@ func New(ctx context.Context, cfg *config.Config) (*App, error) {
 	sseModule := ssemodule.NewModule(sseBroker, authorizer, cfg.JWT.Secret)
 	jobModule := job.NewModule(publisher, authorizer, cfg.JWT.Secret)
 
-	server.RegisterModules(healthModule, userModule, authModule, roleModule, storageModule, sseModule, jobModule)
+	server.RegisterModules(docsModule, healthModule, userModule, authModule, roleModule, storageModule, sseModule, jobModule)
 
 	return &App{
 		Config:         cfg,
