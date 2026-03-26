@@ -31,7 +31,7 @@ RUN addgroup -S appgroup && adduser -S appuser -G appgroup
 # Copy binary and config
 COPY --from=builder /app/api .
 COPY --from=builder /app/worker .
-COPY --from=builder /app/config/config.json ./config/
+COPY --from=builder /app/config/config.default.json ./config/
 
 # Change ownership
 RUN chown -R appuser:appgroup /app

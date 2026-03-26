@@ -1,23 +1,25 @@
-.PHONY: help dev build test lint clean migrate-up migrate-down migrate-create sqlc wire docker-up docker-down worker worker-build
+.PHONY: help dev dev-worker dev-no-air build test lint clean migrate-up migrate-down migrate-create sqlc docker-up docker-down worker-build
 
 # Default target
 help:
 	@echo "Available commands:"
-	@echo "  make dev            - Run API in development mode"
-	@echo "  make worker         - Run worker in development mode"
-	@echo "  make build          - Build API and worker binaries"
-	@echo "  make test           - Run tests"
-	@echo "  make lint           - Run linter"
-	@echo "  make clean          - Clean build artifacts"
-	@echo "  make migrate-up     - Run database migrations up"
-	@echo "  make migrate-down   - Rollback last migration"
-	@echo "  make migrate-create - Create new migration (NAME=migration_name)"
-	@echo "  make sqlc           - Generate SQLC code"
-	@echo "  make wire           - Generate Wire dependencies"
-	@echo "  make docker-up      - Start Docker services"
-	@echo "  make docker-down    - Stop Docker services"
-	@echo "  make docker-full    - Start all Docker services (including Redis, RabbitMQ)"
-	@echo "  make seed           - Seed database with initial data"
+	@echo "  make dev              - Run API with hot-reload (air)"
+	@echo "  make dev-worker       - Run worker with hot-reload (air)"
+	@echo "  make dev-no-air       - Run API without hot-reload (go run)"
+	@echo "  make worker           - Run worker without hot-reload (go run)"
+	@echo "  make build            - Build API and worker binaries"
+	@echo "  make test             - Run tests"
+	@echo "  make lint             - Run linter"
+	@echo "  make clean            - Clean build artifacts"
+	@echo "  make migrate-up       - Run database migrations up"
+	@echo "  make migrate-down     - Rollback last migration"
+	@echo "  make migrate-create   - Create new migration (NAME=migration_name)"
+	@echo "  make sqlc             - Generate SQLC code"
+	@echo "  make docker-up        - Start Docker services"
+	@echo "  make docker-down      - Stop Docker services"
+	@echo "  make docker-full      - Start all Docker services (including Redis, RabbitMQ)"
+	@echo "  make seed             - Seed database with initial data"
+	@echo "  make install-tools    - Install development tools"
 
 # Variables
 APP_NAME := goscratch
@@ -25,12 +27,21 @@ BINARY := ./bin/$(APP_NAME)
 MAIN_PATH := ./cmd/api
 DATABASE_URL ?= postgres://postgres:postgres@localhost:5432/goscratch?sslmode=disable
 
-# Development
+# Development (with hot-reload)
 dev:
+	@echo "Starting API server with hot-reload..."
+	@air -c .air.api.toml
+
+dev-worker:
+	@echo "Starting worker with hot-reload..."
+	@air -c .air.worker.toml
+
+# Development (without hot-reload)
+dev-no-air:
 	@echo "Starting development server..."
 	@go run $(MAIN_PATH)/main.go
 
-# Worker
+# Worker (without hot-reload)
 worker:
 	@echo "Starting worker..."
 	@go run ./cmd/worker/main.go
@@ -69,6 +80,7 @@ lint:
 clean:
 	@echo "Cleaning..."
 	@rm -rf bin/
+	@rm -rf tmp/
 	@rm -f coverage.out coverage.html
 	@echo "Clean complete"
 
@@ -103,19 +115,13 @@ sqlc:
 	@sqlc generate
 	@echo "SQLC generation complete"
 
-# Wire (if using)
-wire:
-	@echo "Generating Wire dependencies..."
-	@cd cmd/api && wire
-	@echo "Wire generation complete"
-
 # Docker
 docker-up:
 	@echo "Starting Docker services..."
 	@docker compose up -d postgres
-	@echo "Waiting for PostgreSQL to be ready..."
-	@sleep 3
-	@echo "Docker services started"
+	@echo "Waiting for PostgreSQL..."
+	@until docker compose exec -T postgres pg_isready -U postgres > /dev/null 2>&1; do sleep 1; done
+	@echo "PostgreSQL is ready"
 
 docker-down:
 	@echo "Stopping Docker services..."
@@ -146,7 +152,8 @@ db-reset:
 	@echo "Resetting database..."
 	@docker compose down -v postgres
 	@docker compose up -d postgres
-	@sleep 3
+	@echo "Waiting for PostgreSQL..."
+	@until docker compose exec -T postgres pg_isready -U postgres > /dev/null 2>&1; do sleep 1; done
 	@make migrate-up
 	@echo "Database reset complete"
 
@@ -162,9 +169,9 @@ seed-fresh: db-reset seed
 # Installation helpers
 install-tools:
 	@echo "Installing development tools..."
+	@go install github.com/air-verse/air@latest
 	@go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
 	@go install github.com/sqlc-dev/sqlc/cmd/sqlc@latest
-	@go install github.com/google/wire/cmd/wire@latest
 	@go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@latest
 	@echo "Tools installed successfully"
 

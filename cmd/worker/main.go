@@ -22,7 +22,7 @@ func main() {
 	// Load configuration
 	configPath := os.Getenv("CONFIG_PATH")
 	if configPath == "" {
-		configPath = "config/config.json"
+		configPath = "config/config.default.json"
 	}
 
 	cfg, err := config.Load(configPath)
