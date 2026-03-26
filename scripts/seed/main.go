@@ -11,6 +11,38 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
+// Default role permissions (p_type = 'p', v0 = role, v1 = object, v2 = action)
+var seedPermissions = []struct {
+	Role   string
+	Object string
+	Action string
+}{
+	// Superadmin: wildcard access
+	{Role: "superadmin", Object: "*", Action: "*"},
+
+	// Admin permissions
+	{Role: "admin", Object: "users", Action: "read"},
+	{Role: "admin", Object: "users", Action: "create"},
+	{Role: "admin", Object: "users", Action: "update"},
+	{Role: "admin", Object: "users", Action: "delete"},
+	{Role: "admin", Object: "roles", Action: "read"},
+	{Role: "admin", Object: "roles", Action: "assign"},
+	{Role: "admin", Object: "files", Action: "read"},
+	{Role: "admin", Object: "files", Action: "upload"},
+	{Role: "admin", Object: "files", Action: "delete"},
+	{Role: "admin", Object: "jobs", Action: "dispatch"},
+
+	// Editor permissions
+	{Role: "editor", Object: "users", Action: "read"},
+	{Role: "editor", Object: "users", Action: "update"},
+	{Role: "editor", Object: "files", Action: "read"},
+	{Role: "editor", Object: "files", Action: "upload"},
+
+	// Viewer permissions
+	{Role: "viewer", Object: "users", Action: "read"},
+	{Role: "viewer", Object: "files", Action: "read"},
+}
+
 // Default seed users
 var seedUsers = []struct {
 	Email    string
@@ -150,6 +182,35 @@ func main() {
 		}
 	}
 
+	// Seed default role permissions
+	fmt.Println("\n🔐 Seeding role permissions...")
+	for _, p := range seedPermissions {
+		// Check if permission already exists
+		var permExists bool
+		err := pool.QueryRow(ctx,
+			"SELECT EXISTS(SELECT 1 FROM casbin_rules WHERE p_type = 'p' AND v0 = $1 AND v1 = $2 AND v2 = $3)",
+			p.Role, p.Object, p.Action,
+		).Scan(&permExists)
+		if err != nil {
+			log.Printf("⚠️  Error checking permission %s:%s for role %s: %v", p.Object, p.Action, p.Role, err)
+			continue
+		}
+
+		if permExists {
+			fmt.Printf("⏭️  Permission '%s:%s' already exists for role '%s'\n", p.Object, p.Action, p.Role)
+		} else {
+			_, err = pool.Exec(ctx,
+				"INSERT INTO casbin_rules (p_type, v0, v1, v2) VALUES ('p', $1, $2, $3)",
+				p.Role, p.Object, p.Action,
+			)
+			if err != nil {
+				log.Printf("⚠️  Error adding permission %s:%s for role %s: %v", p.Object, p.Action, p.Role, err)
+				continue
+			}
+			fmt.Printf("✅ Added permission '%s:%s' for role '%s'\n", p.Object, p.Action, p.Role)
+		}
+	}
+
 	fmt.Println("\n🎉 Database seeding completed!")
 	fmt.Println("\n📋 Seeded Users:")
 	fmt.Println("┌────────────────────────────┬───────────────┬────────────┐")
@@ -159,4 +220,13 @@ func main() {
 		fmt.Printf("│ %-26s │ %-13s │ %-10s │\n", u.Email, u.Password, u.Role)
 	}
 	fmt.Println("└────────────────────────────┴───────────────┴────────────┘")
+
+	fmt.Println("\n📋 Seeded Permissions:")
+	fmt.Println("┌────────────┬────────────┬────────────┐")
+	fmt.Println("│ Role       │ Object     │ Action     │")
+	fmt.Println("├────────────┼────────────┼────────────┤")
+	for _, p := range seedPermissions {
+		fmt.Printf("│ %-10s │ %-10s │ %-10s │\n", p.Role, p.Object, p.Action)
+	}
+	fmt.Println("└────────────┴────────────┴────────────┘")
 }

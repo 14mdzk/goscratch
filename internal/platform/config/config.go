@@ -8,6 +8,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/joho/godotenv"
 )
 
 // Config holds all application configuration
@@ -164,6 +166,8 @@ type RateLimitConfig struct {
 
 // Load reads configuration from JSON file and applies environment variable overrides
 func Load(path string) (*Config, error) {
+	_ = godotenv.Load() // Load .env file if it exists (silently ignore if missing)
+
 	cfg := &Config{}
 
 	// Read JSON config file

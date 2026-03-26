@@ -35,9 +35,9 @@ Thumbs.db
 .env.local
 .env.*.local
 
-# Config files (keep example)
+# Config files (keep default)
 config/config.json
-!config/config.example.json
+!config/config.default.json
 
 # Logs
 logs/
