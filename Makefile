@@ -1,4 +1,4 @@
-.PHONY: help dev dev-worker dev-no-air build test test-ci lint clean migrate-up migrate-down migrate-create sqlc docker-up docker-down worker-build
+.PHONY: help dev dev-worker dev-no-air build test test-ci test-integration lint clean migrate-up migrate-down migrate-create sqlc docker-up docker-down worker-build
 
 # Default target
 help:
@@ -9,6 +9,7 @@ help:
 	@echo "  make worker           - Run worker without hot-reload (go run)"
 	@echo "  make build            - Build API and worker binaries"
 	@echo "  make test             - Run tests"
+	@echo "  make test-integration - Run integration tests (requires Docker)"
 	@echo "  make lint             - Run linter"
 	@echo "  make clean            - Clean build artifacts"
 	@echo "  make migrate-up       - Run database migrations up"
@@ -68,6 +69,10 @@ test:
 test-ci:
 	@echo "Running CI tests with coverage..."
 	@go test -v -race -coverprofile=coverage.out ./...
+
+test-integration:
+	@echo "Running integration tests..."
+	@go test -v -race -tags=integration -count=1 ./...
 
 test-coverage:
 	@echo "Running tests with coverage..."
