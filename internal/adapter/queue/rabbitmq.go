@@ -96,9 +96,9 @@ func (q *RabbitMQ) Consume(ctx context.Context, queueName string, handler func(b
 				}
 				if err := handler(msg.Body); err != nil {
 					// Reject and requeue on error
-					msg.Nack(false, true)
+					_ = msg.Nack(false, true)
 				} else {
-					msg.Ack(false)
+					_ = msg.Ack(false)
 				}
 			}
 		}

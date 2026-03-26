@@ -16,12 +16,7 @@ linters:
     - goimports
     - revive
     - gocritic
-    - exportloopref
-  disable:
-    - scopelint
-    - structcheck
-    - deadcode
-    - varcheck
+  disable: []
 
 linters-settings:
   revive:

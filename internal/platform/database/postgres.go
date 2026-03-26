@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/14mdzk/goscratch/internal/platform/config"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 // NewPostgresPool creates a new PostgreSQL connection pool
@@ -63,7 +63,7 @@ func (t *Transactor) WithTx(ctx context.Context, fn TxFunc) error {
 
 	defer func() {
 		if p := recover(); p != nil {
-			tx.Rollback(ctx)
+			_ = tx.Rollback(ctx)
 			panic(p) // Re-throw panic after rollback
 		}
 	}()

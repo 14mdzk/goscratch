@@ -50,9 +50,10 @@ func main() {
 
 	// Shutdown with timeout
 	shutdownCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
-	defer cancel()
 
 	if err := application.Shutdown(shutdownCtx); err != nil {
+		cancel()
 		log.Fatalf("Failed to shutdown application: %v", err)
 	}
+	cancel()
 }

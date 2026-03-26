@@ -4,11 +4,11 @@ import (
 	"errors"
 	"strings"
 
-	"github.com/gofiber/fiber/v2"
-	"github.com/golang-jwt/jwt/v5"
 	"github.com/14mdzk/goscratch/pkg/apperr"
 	"github.com/14mdzk/goscratch/pkg/logger"
 	"github.com/14mdzk/goscratch/pkg/response"
+	"github.com/gofiber/fiber/v2"
+	"github.com/golang-jwt/jwt/v5"
 )
 
 // AuthConfig holds authentication middleware configuration

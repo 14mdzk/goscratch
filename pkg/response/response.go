@@ -37,7 +37,7 @@ type PaginatedResponse struct {
 
 // Paginated sends a successful response with data and pagination metadata
 // Usage: response.Paginated(c, page.GetItems(), page.GetMeta())
-func Paginated(c *fiber.Ctx, data any, pagination any) error {
+func Paginated(c *fiber.Ctx, data, pagination any) error {
 	return c.Status(fiber.StatusOK).JSON(PaginatedResponse{
 		Success:    true,
 		Data:       data,

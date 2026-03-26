@@ -12,9 +12,9 @@ import (
 
 // mockQueue implements port.Queue for testing
 type mockQueue struct {
-	mu          sync.Mutex
+	mu           sync.Mutex
 	publishCalls []publishCall
-	publishErr  error
+	publishErr   error
 }
 
 type publishCall struct {
@@ -38,10 +38,10 @@ func (m *mockQueue) PublishJSON(_ context.Context, _, _ string, _ any) error { r
 func (m *mockQueue) Consume(_ context.Context, _ string, _ func(body []byte) error) error {
 	return nil
 }
-func (m *mockQueue) DeclareQueue(_ context.Context, _ string, _ bool) error   { return nil }
+func (m *mockQueue) DeclareQueue(_ context.Context, _ string, _ bool) error       { return nil }
 func (m *mockQueue) DeclareExchange(_ context.Context, _, _ string, _ bool) error { return nil }
-func (m *mockQueue) BindQueue(_ context.Context, _, _, _ string) error        { return nil }
-func (m *mockQueue) Close() error                                             { return nil }
+func (m *mockQueue) BindQueue(_ context.Context, _, _, _ string) error            { return nil }
+func (m *mockQueue) Close() error                                                 { return nil }
 
 func (m *mockQueue) lastCall() publishCall {
 	m.mu.Lock()

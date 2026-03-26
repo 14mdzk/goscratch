@@ -22,7 +22,7 @@ type LocalStorage struct {
 // NewLocalStorage creates a new local storage instance
 func NewLocalStorage(basePath, baseURL string) (*LocalStorage, error) {
 	// Ensure base path exists
-	if err := os.MkdirAll(basePath, 0755); err != nil {
+	if err := os.MkdirAll(basePath, 0o755); err != nil {
 		return nil, fmt.Errorf("failed to create storage directory: %w", err)
 	}
 
@@ -40,7 +40,7 @@ func (s *LocalStorage) Upload(ctx context.Context, path string, data io.Reader, 
 
 	// Ensure directory exists
 	dir := filepath.Dir(fullPath)
-	if err := os.MkdirAll(dir, 0755); err != nil {
+	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return "", fmt.Errorf("failed to create directory: %w", err)
 	}
 
@@ -57,11 +57,10 @@ func (s *LocalStorage) Upload(ctx context.Context, path string, data io.Reader, 
 		return "", fmt.Errorf("failed to write file: %w", err)
 	}
 
-	// Store metadata if provided (using extended attributes or sidecar file)
-	if len(cfg.Metadata) > 0 || cfg.ContentType != "" {
-		// For simplicity, we'll rely on file extension for content type
-		// In production, consider using xattr or a metadata database
-	}
+	// NOTE: metadata and content type are not stored for local filesystem.
+	// For simplicity, we rely on file extension for content type.
+	// In production, consider using xattr or a metadata database.
+	_ = cfg
 
 	return path, nil
 }

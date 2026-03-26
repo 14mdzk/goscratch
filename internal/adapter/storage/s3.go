@@ -7,11 +7,11 @@ import (
 	"io"
 	"time"
 
+	"github.com/14mdzk/goscratch/internal/port"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
-	"github.com/14mdzk/goscratch/internal/port"
 )
 
 // S3Storage implements port.Storage using S3-compatible storage

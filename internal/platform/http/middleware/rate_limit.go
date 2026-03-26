@@ -15,10 +15,10 @@ import (
 
 // RateLimitConfig holds rate limiting configuration
 type RateLimitConfig struct {
-	Max      int                    // Max requests per window (default: 100)
-	Window   time.Duration          // Time window (default: 1 minute)
+	Max      int                     // Max requests per window (default: 100)
+	Window   time.Duration           // Time window (default: 1 minute)
 	KeyFunc  func(*fiber.Ctx) string // Custom key extraction
-	UseRedis bool                   // Use Redis backend
+	UseRedis bool                    // Use Redis backend
 }
 
 // rateLimitBackend defines the interface for rate limit storage backends
@@ -99,13 +99,13 @@ func newMemoryBackend() *memoryBackend {
 	return mb
 }
 
-func (mb *memoryBackend) Allow(_ context.Context, key string, max int, window time.Duration) (bool, int, time.Time, error) {
+func (mb *memoryBackend) Allow(_ context.Context, key string, maxReqs int, window time.Duration) (allowed bool, remaining int, resetAt time.Time, err error) {
 	mb.mu.Lock()
 	defer mb.mu.Unlock()
 
 	now := time.Now()
 	windowStart := now.Add(-window)
-	resetAt := now.Add(window)
+	resetAt = now.Add(window)
 
 	sw, exists := mb.windows[key]
 	if !exists {
@@ -124,14 +124,13 @@ func (mb *memoryBackend) Allow(_ context.Context, key string, max int, window ti
 	sw.expiresAt = resetAt
 
 	count := len(sw.timestamps)
-	if count >= max {
-		remaining := 0
-		return false, remaining, resetAt, nil
+	if count >= maxReqs {
+		return false, 0, resetAt, nil
 	}
 
 	// Add current request
 	sw.timestamps = append(sw.timestamps, now)
-	remaining := max - count - 1
+	remaining = maxReqs - count - 1
 
 	return true, remaining, resetAt, nil
 }
@@ -162,16 +161,16 @@ func newRedisBackend(cache port.Cache) *redisBackend {
 	return &redisBackend{cache: cache}
 }
 
-func (rb *redisBackend) Allow(ctx context.Context, key string, max int, window time.Duration) (bool, int, time.Time, error) {
+func (rb *redisBackend) Allow(ctx context.Context, key string, maxReqs int, window time.Duration) (allowed bool, remaining int, resetAt time.Time, err error) {
 	now := time.Now()
 	windowSec := int(window.Seconds())
 	windowKey := fmt.Sprintf("ratelimit:%s:%d", key, now.Unix()/int64(windowSec))
-	resetAt := time.Unix(((now.Unix()/int64(windowSec))+1)*int64(windowSec), 0)
+	resetAt = time.Unix(((now.Unix()/int64(windowSec))+1)*int64(windowSec), 0)
 
 	// Increment counter
 	count, err := rb.cache.Increment(ctx, windowKey)
 	if err != nil {
-		return true, max, resetAt, err
+		return true, maxReqs, resetAt, err
 	}
 
 	// Set expiry on first request
@@ -179,10 +178,10 @@ func (rb *redisBackend) Allow(ctx context.Context, key string, max int, window t
 		_ = rb.cache.Expire(ctx, windowKey, window)
 	}
 
-	if int(count) > max {
+	if int(count) > maxReqs {
 		return false, 0, resetAt, nil
 	}
 
-	remaining := max - int(count)
+	remaining = maxReqs - int(count)
 	return true, remaining, resetAt, nil
 }

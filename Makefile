@@ -1,4 +1,4 @@
-.PHONY: help dev dev-worker dev-no-air build test lint clean migrate-up migrate-down migrate-create sqlc docker-up docker-down worker-build
+.PHONY: help dev dev-worker dev-no-air build test test-ci lint clean migrate-up migrate-down migrate-create sqlc docker-up docker-down worker-build
 
 # Default target
 help:
@@ -64,6 +64,10 @@ build:
 test:
 	@echo "Running tests..."
 	@go test -v -race -cover ./...
+
+test-ci:
+	@echo "Running CI tests with coverage..."
+	@go test -v -race -coverprofile=coverage.out ./...
 
 test-coverage:
 	@echo "Running tests with coverage..."
