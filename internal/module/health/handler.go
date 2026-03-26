@@ -3,8 +3,8 @@ package health
 import (
 	"time"
 
-	"github.com/gofiber/fiber/v2"
 	"github.com/14mdzk/goscratch/pkg/response"
+	"github.com/gofiber/fiber/v2"
 )
 
 // Handler handles health check requests

@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/14mdzk/goscratch/internal/port"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/14mdzk/goscratch/internal/port"
 )
 
 // PostgresAuditor implements port.Auditor using PostgreSQL
@@ -158,10 +158,10 @@ func (a *PostgresAuditor) Query(ctx context.Context, filter port.AuditFilter) ([
 			entry.UserID = *userID
 		}
 		if oldValue != nil {
-			json.Unmarshal(oldValue, &entry.OldValue)
+			_ = json.Unmarshal(oldValue, &entry.OldValue)
 		}
 		if newValue != nil {
-			json.Unmarshal(newValue, &entry.NewValue)
+			_ = json.Unmarshal(newValue, &entry.NewValue)
 		}
 		if ipAddress != nil {
 			entry.IPAddress = *ipAddress
@@ -192,4 +192,4 @@ func nullString(s string) any {
 var _ port.Auditor = (*PostgresAuditor)(nil)
 
 // Compile-time check for pgx.Row interface
-var _ pgx.Row = (pgx.Row)(nil)
+var _ pgx.Row = pgx.Row(nil)

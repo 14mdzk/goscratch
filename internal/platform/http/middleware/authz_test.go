@@ -14,7 +14,7 @@ import (
 
 // mockAuthorizer implements port.Authorizer for testing
 type mockAuthorizer struct {
-	enforceFunc       func(sub, obj, act string) (bool, error)
+	enforceFunc        func(sub, obj, act string) (bool, error)
 	hasRoleForUserFunc func(userID, role string) (bool, error)
 }
 

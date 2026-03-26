@@ -1,13 +1,13 @@
 package auth
 
 import (
-	"github.com/gofiber/fiber/v2"
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/14mdzk/goscratch/internal/module/auth/handler"
 	"github.com/14mdzk/goscratch/internal/module/auth/usecase"
 	userrepo "github.com/14mdzk/goscratch/internal/module/user/repository"
 	"github.com/14mdzk/goscratch/internal/platform/config"
 	"github.com/14mdzk/goscratch/internal/port"
+	"github.com/gofiber/fiber/v2"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 // Module represents the auth module

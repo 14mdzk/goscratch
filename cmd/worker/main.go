@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"os"
 	"os/signal"
@@ -19,6 +20,12 @@ import (
 )
 
 func main() {
+	if err := run(); err != nil {
+		log.Fatal(err)
+	}
+}
+
+func run() error {
 	// Load configuration
 	configPath := os.Getenv("CONFIG_PATH")
 	if configPath == "" {
@@ -27,7 +34,7 @@ func main() {
 
 	cfg, err := config.Load(configPath)
 	if err != nil {
-		log.Fatalf("Failed to load configuration: %v", err)
+		return fmt.Errorf("failed to load configuration: %w", err)
 	}
 
 	// Initialize logger
@@ -47,24 +54,24 @@ func main() {
 
 	ctx := context.Background()
 
+	// Validate queue configuration before creating connections
+	if !cfg.RabbitMQ.Enabled {
+		return fmt.Errorf("RabbitMQ must be enabled to run the worker. Set rabbitmq.enabled=true in config")
+	}
+
 	// Initialize database connection
 	appLogger.Info("Connecting to database...")
 	pool, err := database.NewPostgresPool(ctx, cfg.Database)
 	if err != nil {
-		log.Fatalf("Failed to connect to database: %v", err)
+		return fmt.Errorf("failed to connect to database: %w", err)
 	}
 	defer pool.Close()
 	appLogger.Info("Database connected successfully")
 
-	// Initialize queue
-	if !cfg.RabbitMQ.Enabled {
-		log.Fatal("RabbitMQ must be enabled to run the worker. Set rabbitmq.enabled=true in config.")
-	}
-
 	appLogger.Info("Connecting to RabbitMQ...")
 	queueAdapter, err := queue.NewRabbitMQ(cfg.RabbitMQ.URL)
 	if err != nil {
-		log.Fatalf("Failed to connect to RabbitMQ: %v", err)
+		return fmt.Errorf("failed to connect to RabbitMQ: %w", err)
 	}
 	defer queueAdapter.Close()
 	appLogger.Info("RabbitMQ connected successfully")
@@ -109,7 +116,7 @@ func main() {
 
 	// Start worker
 	if err := w.Start(); err != nil {
-		log.Fatalf("Failed to start worker: %v", err)
+		return fmt.Errorf("failed to start worker: %w", err)
 	}
 
 	appLogger.Info("Worker is running",
@@ -134,4 +141,5 @@ func main() {
 	}
 
 	appLogger.Info("Worker process stopped")
+	return nil
 }

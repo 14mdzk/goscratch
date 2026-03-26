@@ -241,7 +241,7 @@ func TestShutdown_WithTimeout(t *testing.T) {
 	go func() {
 		defer wgDone.Done()
 		defer w.wg.Done()
-		<-w.ctx.Done() // waits for cancel
+		<-w.ctx.Done()              // waits for cancel
 		time.Sleep(5 * time.Second) // simulate slow cleanup
 	}()
 

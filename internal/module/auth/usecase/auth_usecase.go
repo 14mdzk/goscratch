@@ -61,11 +61,11 @@ func (uc *UseCase) Login(ctx context.Context, req dto.LoginRequest) (*dto.LoginR
 
 	// Store refresh token in cache (if enabled)
 	refreshKey := "refresh:" + refreshToken
-	uc.cache.Set(ctx, refreshKey, []byte(user.ID.String()), uc.jwtCfg.RefreshTokenDuration())
+	_ = uc.cache.Set(ctx, refreshKey, []byte(user.ID.String()), uc.jwtCfg.RefreshTokenDuration())
 
 	// Audit log
 	entry := port.NewAuditEntry(ctx, port.AuditActionLogin, "user", user.ID.String())
-	uc.auditor.Log(ctx, entry)
+	_ = uc.auditor.Log(ctx, entry)
 
 	return &dto.LoginResponse{
 		AccessToken:  accessToken,
@@ -93,7 +93,7 @@ func (uc *UseCase) Refresh(ctx context.Context, req dto.RefreshRequest) (*dto.Re
 	}
 
 	// Revoke old refresh token
-	uc.cache.Delete(ctx, refreshKey)
+	_ = uc.cache.Delete(ctx, refreshKey)
 
 	// Generate new tokens
 	accessToken, err := uc.generateAccessToken(user.ID.String(), user.Email, user.Name)
@@ -108,7 +108,7 @@ func (uc *UseCase) Refresh(ctx context.Context, req dto.RefreshRequest) (*dto.Re
 
 	// Store new refresh token
 	newRefreshKey := "refresh:" + newRefreshToken
-	uc.cache.Set(ctx, newRefreshKey, []byte(user.ID.String()), uc.jwtCfg.RefreshTokenDuration())
+	_ = uc.cache.Set(ctx, newRefreshKey, []byte(user.ID.String()), uc.jwtCfg.RefreshTokenDuration())
 
 	return &dto.RefreshResponse{
 		AccessToken:  accessToken,
@@ -121,11 +121,11 @@ func (uc *UseCase) Refresh(ctx context.Context, req dto.RefreshRequest) (*dto.Re
 // Logout invalidates a refresh token
 func (uc *UseCase) Logout(ctx context.Context, refreshToken string) error {
 	refreshKey := "refresh:" + refreshToken
-	uc.cache.Delete(ctx, refreshKey)
+	_ = uc.cache.Delete(ctx, refreshKey)
 
 	// Audit log
 	entry := port.NewAuditEntry(ctx, port.AuditActionLogout, "user", "")
-	uc.auditor.Log(ctx, entry)
+	_ = uc.auditor.Log(ctx, entry)
 
 	return nil
 }

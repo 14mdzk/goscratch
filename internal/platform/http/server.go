@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/gofiber/fiber/v2"
-	"github.com/gofiber/fiber/v2/middleware/recover"
 	"github.com/14mdzk/goscratch/internal/platform/config"
 	"github.com/14mdzk/goscratch/pkg/logger"
+	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v2/middleware/recover"
 )
 
 // Server wraps the Fiber app with configuration

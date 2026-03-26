@@ -1,0 +1,39 @@
+[Unit]
+Description=goscratch Background Worker
+Documentation=https://github.com/14mdzk/goscratch
+After=network.target postgresql.service rabbitmq-server.service
+Wants=postgresql.service rabbitmq-server.service
+
+[Service]
+Type=simple
+User=goscratch
+Group=goscratch
+WorkingDirectory=/opt/goscratch
+ExecStart=/opt/goscratch/bin/worker
+EnvironmentFile=/etc/goscratch/.env
+Restart=on-failure
+RestartSec=5
+StartLimitBurst=5
+StartLimitIntervalSec=60
+
+# Security hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/goscratch/data
+PrivateTmp=true
+ProtectKernelTunables=true
+ProtectControlGroups=true
+
+# Resource limits
+LimitNOFILE=65536
+MemoryMax=512M
+CPUQuota=100%
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=goscratch-worker
+
+[Install]
+WantedBy=multi-user.target

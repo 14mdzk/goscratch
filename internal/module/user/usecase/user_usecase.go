@@ -113,7 +113,7 @@ func (uc *UseCase) Create(ctx context.Context, req dto.CreateUserRequest) (*dto.
 		"email": user.Email,
 		"name":  user.Name,
 	}
-	uc.auditor.Log(ctx, entry)
+	_ = uc.auditor.Log(ctx, entry)
 
 	return toUserResponse(user), nil
 }
@@ -136,7 +136,7 @@ func (uc *UseCase) Update(ctx context.Context, id string, req dto.UpdateUserRequ
 	entry := port.NewAuditEntry(ctx, port.AuditActionUpdate, "user", user.ID.String())
 	entry.OldValue = map[string]any{"email": oldUser.Email, "name": oldUser.Name}
 	entry.NewValue = map[string]any{"email": user.Email, "name": user.Name}
-	uc.auditor.Log(ctx, entry)
+	_ = uc.auditor.Log(ctx, entry)
 
 	return toUserResponse(user), nil
 }
@@ -168,7 +168,7 @@ func (uc *UseCase) ChangePassword(ctx context.Context, id string, req dto.Change
 	// Audit log
 	entry := port.NewAuditEntry(ctx, port.AuditActionUpdate, "user", id)
 	entry.Metadata = map[string]any{"field": "password"}
-	uc.auditor.Log(ctx, entry)
+	_ = uc.auditor.Log(ctx, entry)
 
 	return nil
 }
@@ -192,7 +192,7 @@ func (uc *UseCase) Delete(ctx context.Context, id string) error {
 		"email": user.Email,
 		"name":  user.Name,
 	}
-	uc.auditor.Log(ctx, entry)
+	_ = uc.auditor.Log(ctx, entry)
 
 	return nil
 }
@@ -219,7 +219,7 @@ func (uc *UseCase) Activate(ctx context.Context, id string) error {
 	entry := port.NewAuditEntry(ctx, port.AuditActionUpdate, "user", id)
 	entry.OldValue = map[string]any{"is_active": false}
 	entry.NewValue = map[string]any{"is_active": true}
-	uc.auditor.Log(ctx, entry)
+	_ = uc.auditor.Log(ctx, entry)
 
 	return nil
 }
@@ -246,7 +246,7 @@ func (uc *UseCase) Deactivate(ctx context.Context, id string) error {
 	entry := port.NewAuditEntry(ctx, port.AuditActionUpdate, "user", id)
 	entry.OldValue = map[string]any{"is_active": true}
 	entry.NewValue = map[string]any{"is_active": false}
-	uc.auditor.Log(ctx, entry)
+	_ = uc.auditor.Log(ctx, entry)
 
 	return nil
 }

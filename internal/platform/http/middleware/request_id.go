@@ -1,9 +1,9 @@
 package middleware
 
 import (
+	"github.com/14mdzk/goscratch/pkg/logger"
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
-	"github.com/14mdzk/goscratch/pkg/logger"
 )
 
 const (
