@@ -165,9 +165,9 @@ Improve the daily development workflow.
 
 ---
 
-## v0.5 - Production Hardening (IN PROGRESS)
+## v0.5 - Production Hardening (DONE)
 
-### Wave 1 — Completed
+### Wave 1
 
 | Feature | PR | Status |
 |---------|-----|--------|
@@ -183,11 +183,14 @@ Improve the daily development workflow.
 | Production Docker Compose (all services) | #3 | Done |
 | Systemd unit files (API + Worker) | #3 | Done |
 | Nginx reverse proxy config | #3 | Done |
+| Docs CSP fix for Scalar CDN | #7 | Done |
 
-### Wave 2 — Remaining
+### Wave 2
 
-- [ ] Database transaction patterns (wire existing `Transactor`/`GetTx` into repositories)
-- [ ] Audit refactoring with Decorator Pattern (extract audit from usecases into decorator wrappers)
+| Feature | PR | Status |
+|---------|-----|--------|
+| Database transaction patterns (`DBFromContext`, TX-aware repos) | #8 | Done |
+| Audit refactoring with Decorator Pattern (user + auth) | #9 | Done |
 
 ---
 
