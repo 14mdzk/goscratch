@@ -7,6 +7,7 @@ import (
 
 	"github.com/14mdzk/goscratch/internal/module/user/domain"
 	"github.com/14mdzk/goscratch/internal/module/user/repository/sqlc"
+	"github.com/14mdzk/goscratch/internal/platform/database"
 	"github.com/14mdzk/goscratch/internal/platform/observability"
 	"github.com/14mdzk/goscratch/pkg/apperr"
 	"github.com/14mdzk/goscratch/pkg/pgutil"
@@ -16,18 +17,22 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// Repository handles user data access using SQLC-generated queries
+// Repository handles user data access using SQLC-generated queries.
+// It is TX-aware: if a pgx.Tx is present in the context (placed there by
+// database.Transactor.WithTx), all SQL operations run within that transaction.
 type Repository struct {
-	pool    *pgxpool.Pool
-	queries *sqlc.Queries
+	pool *pgxpool.Pool
 }
 
 // NewRepository creates a new user repository
 func NewRepository(pool *pgxpool.Pool) *Repository {
-	return &Repository{
-		pool:    pool,
-		queries: sqlc.New(pool),
-	}
+	return &Repository{pool: pool}
+}
+
+// queries returns a *sqlc.Queries bound to the transaction in ctx, or to the
+// pool when no transaction is active.
+func (r *Repository) queries(ctx context.Context) *sqlc.Queries {
+	return sqlc.New(database.DBFromContext(ctx, r.pool))
 }
 
 // GetByID retrieves a user by ID
@@ -46,7 +51,7 @@ func (r *Repository) GetByID(ctx context.Context, id string) (*domain.User, erro
 	}
 
 	pgUUID := pgutil.UUIDToPgtype(uid)
-	user, err := r.queries.GetUserByID(ctx, pgUUID)
+	user, err := r.queries(ctx).GetUserByID(ctx, pgUUID)
 	if err == pgx.ErrNoRows {
 		return nil, apperr.NotFoundf("user %s not found", id)
 	}
@@ -68,7 +73,7 @@ func (r *Repository) GetByEmail(ctx context.Context, email string) (*domain.User
 	ctx, span := observability.WrapDBOperation(ctx, "GetUserByEmail", "users")
 	defer span.End()
 
-	user, err := r.queries.GetUserByEmail(ctx, email)
+	user, err := r.queries(ctx).GetUserByEmail(ctx, email)
 	if err == pgx.ErrNoRows {
 		return nil, apperr.NotFoundf("user with email %s not found", email)
 	}
@@ -126,7 +131,7 @@ func (r *Repository) List(ctx context.Context, filter domain.UserFilter) ([]doma
 			EmailFilter: emailParam,
 			IsActive:    isActiveParam,
 		}
-		users, err = r.queries.ListUsersPrev(ctx, params)
+		users, err = r.queries(ctx).ListUsersPrev(ctx, params)
 	} else {
 		// Forward pagination: fetch items after cursor in ASC order
 		params := sqlc.ListUsersParams{
@@ -136,7 +141,7 @@ func (r *Repository) List(ctx context.Context, filter domain.UserFilter) ([]doma
 			EmailFilter: emailParam,
 			IsActive:    isActiveParam,
 		}
-		users, err = r.queries.ListUsers(ctx, params)
+		users, err = r.queries(ctx).ListUsers(ctx, params)
 	}
 
 	if err != nil {
@@ -169,7 +174,7 @@ func (r *Repository) Create(ctx context.Context, email, passwordHash, name strin
 	ctx, span := observability.WrapDBOperation(ctx, "CreateUser", "users")
 	defer span.End()
 
-	user, err := r.queries.CreateUser(ctx, sqlc.CreateUserParams{
+	user, err := r.queries(ctx).CreateUser(ctx, sqlc.CreateUserParams{
 		Email:        email,
 		PasswordHash: passwordHash,
 		Name:         name,
@@ -200,7 +205,7 @@ func (r *Repository) Update(ctx context.Context, id, name, email string) (*domai
 		return nil, apperr.NotFoundf("user %s not found", id)
 	}
 
-	user, err := r.queries.UpdateUser(ctx, sqlc.UpdateUserParams{
+	user, err := r.queries(ctx).UpdateUser(ctx, sqlc.UpdateUserParams{
 		ID:      pgutil.UUIDToPgtype(uid),
 		Column2: name,
 		Column3: email,
@@ -234,7 +239,7 @@ func (r *Repository) UpdatePassword(ctx context.Context, id, passwordHash string
 		return apperr.NotFoundf("user %s not found", id)
 	}
 
-	err = r.queries.UpdatePassword(ctx, sqlc.UpdatePasswordParams{
+	err = r.queries(ctx).UpdatePassword(ctx, sqlc.UpdatePasswordParams{
 		ID:           pgutil.UUIDToPgtype(uid),
 		PasswordHash: passwordHash,
 	})
@@ -261,7 +266,7 @@ func (r *Repository) Delete(ctx context.Context, id string) error {
 		return apperr.NotFoundf("user %s not found", id)
 	}
 
-	err = r.queries.DeleteUser(ctx, pgutil.UUIDToPgtype(uid))
+	err = r.queries(ctx).DeleteUser(ctx, pgutil.UUIDToPgtype(uid))
 	if err != nil {
 		observability.RecordSpanError(ctx, err)
 		return fmt.Errorf("failed to delete user: %w", err)
@@ -285,7 +290,7 @@ func (r *Repository) Activate(ctx context.Context, id string) error {
 		return apperr.NotFoundf("user %s not found", id)
 	}
 
-	err = r.queries.ActivateUser(ctx, pgutil.UUIDToPgtype(uid))
+	err = r.queries(ctx).ActivateUser(ctx, pgutil.UUIDToPgtype(uid))
 	if err != nil {
 		observability.RecordSpanError(ctx, err)
 		return fmt.Errorf("failed to activate user: %w", err)
@@ -309,7 +314,7 @@ func (r *Repository) Deactivate(ctx context.Context, id string) error {
 		return apperr.NotFoundf("user %s not found", id)
 	}
 
-	err = r.queries.DeactivateUser(ctx, pgutil.UUIDToPgtype(uid))
+	err = r.queries(ctx).DeactivateUser(ctx, pgutil.UUIDToPgtype(uid))
 	if err != nil {
 		observability.RecordSpanError(ctx, err)
 		return fmt.Errorf("failed to deactivate user: %w", err)
@@ -328,7 +333,7 @@ func (r *Repository) ExistsByEmail(ctx context.Context, email string) (bool, err
 	ctx, span := observability.WrapDBOperation(ctx, "UserExistsByEmail", "users")
 	defer span.End()
 
-	exists, err := r.queries.UserExistsByEmail(ctx, email)
+	exists, err := r.queries(ctx).UserExistsByEmail(ctx, email)
 	if err != nil {
 		observability.RecordSpanError(ctx, err)
 		return false, fmt.Errorf("failed to check email existence: %w", err)
@@ -352,7 +357,7 @@ func (r *Repository) Count(ctx context.Context, isActive *bool) (int64, error) {
 		isActiveParam = pgtype.Bool{Bool: *isActive, Valid: true}
 	}
 
-	count, err := r.queries.CountUsers(ctx, isActiveParam)
+	count, err := r.queries(ctx).CountUsers(ctx, isActiveParam)
 	if err != nil {
 		observability.RecordSpanError(ctx, err)
 		return 0, fmt.Errorf("failed to count users: %w", err)

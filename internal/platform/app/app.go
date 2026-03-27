@@ -252,10 +252,13 @@ func New(ctx context.Context, cfg *config.Config) (*App, error) {
 	// Initialize worker publisher
 	publisher := worker.NewPublisher(queueAdapter, cfg.Worker.QueueName, cfg.Worker.Exchange)
 
+	// Initialize transactor
+	transactor := database.NewTransactor(pool)
+
 	// Register modules
 	docsModule := docs.NewModule()
 	healthModule := health.NewModule()
-	userModule := user.NewModule(pool, auditor, authorizer, cfg.JWT.Secret)
+	userModule := user.NewModule(pool, transactor, auditor, authorizer, cfg.JWT.Secret)
 	authModule := auth.NewModule(pool, cacheAdapter, auditor, cfg.JWT)
 	roleModule := role.NewModule(authorizer, cfg.JWT.Secret)
 	storageModule := storagemodule.NewModule(storageAdapter, cfg.JWT.Secret)

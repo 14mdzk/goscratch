@@ -7,6 +7,7 @@ import (
 	userdomain "github.com/14mdzk/goscratch/internal/module/user/domain"
 	"github.com/14mdzk/goscratch/internal/module/user/dto"
 	"github.com/14mdzk/goscratch/internal/module/user/repository"
+	"github.com/14mdzk/goscratch/internal/platform/database"
 	"github.com/14mdzk/goscratch/internal/port"
 	shareddomain "github.com/14mdzk/goscratch/internal/shared/domain"
 	"github.com/14mdzk/goscratch/pkg/apperr"
@@ -15,15 +16,17 @@ import (
 
 // UseCase handles user business logic
 type UseCase struct {
-	repo    *repository.Repository
-	auditor port.Auditor
+	repo       *repository.Repository
+	transactor *database.Transactor
+	auditor    port.Auditor
 }
 
 // NewUseCase creates a new user use case
-func NewUseCase(repo *repository.Repository, auditor port.Auditor) *UseCase {
+func NewUseCase(repo *repository.Repository, transactor *database.Transactor, auditor port.Auditor) *UseCase {
 	return &UseCase{
-		repo:    repo,
-		auditor: auditor,
+		repo:       repo,
+		transactor: transactor,
+		auditor:    auditor,
 	}
 }
 
@@ -84,30 +87,38 @@ func (uc *UseCase) List(ctx context.Context, req dto.ListUsersRequest) (shareddo
 	}), nil
 }
 
-// Create creates a new user
+// Create creates a new user. The email-existence check and the INSERT are
+// executed inside a single transaction so that concurrent requests cannot
+// both pass the check and then both insert the same email address.
 func (uc *UseCase) Create(ctx context.Context, req dto.CreateUserRequest) (*dto.UserResponse, error) {
-	// Check if email already exists
-	exists, err := uc.repo.ExistsByEmail(ctx, req.Email)
-	if err != nil {
-		return nil, err
-	}
-	if exists {
-		return nil, apperr.Conflictf("user with email %s already exists", req.Email)
-	}
-
-	// Hash password
+	// Hash the password before entering the transaction — bcrypt is CPU-bound
+	// and does not need to hold a DB connection.
 	passwordHash, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
 	if err != nil {
 		return nil, apperr.Internalf("failed to hash password")
 	}
 
-	// Create user
-	user, err := uc.repo.Create(ctx, req.Email, string(passwordHash), req.Name)
-	if err != nil {
+	var user *userdomain.User
+
+	if err := uc.transactor.WithTx(ctx, func(ctx context.Context) error {
+		// Check if email already exists (within the transaction)
+		exists, err := uc.repo.ExistsByEmail(ctx, req.Email)
+		if err != nil {
+			return err
+		}
+		if exists {
+			return apperr.Conflictf("user with email %s already exists", req.Email)
+		}
+
+		// Create user (within the same transaction)
+		user, err = uc.repo.Create(ctx, req.Email, string(passwordHash), req.Name)
+		return err
+	}); err != nil {
 		return nil, err
 	}
 
-	// Audit log
+	// Audit log is intentionally outside the transaction: a failure here must
+	// not roll back a successfully created user.
 	entry := port.NewAuditEntry(ctx, port.AuditActionCreate, "user", user.ID.String())
 	entry.NewValue = map[string]any{
 		"email": user.Email,
