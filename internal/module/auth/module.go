@@ -18,8 +18,9 @@ type Module struct {
 // NewModule creates a new auth module
 func NewModule(pool *pgxpool.Pool, cache port.Cache, auditor port.Auditor, jwtCfg config.JWTConfig) *Module {
 	userRepo := userrepo.NewRepository(pool)
-	uc := usecase.NewUseCase(userRepo, cache, auditor, jwtCfg)
-	h := handler.NewHandler(uc)
+	uc := usecase.NewUseCase(userRepo, cache, jwtCfg)
+	audited := usecase.NewAuditedUseCase(uc, auditor)
+	h := handler.NewHandler(audited)
 
 	return &Module{
 		handler: h,

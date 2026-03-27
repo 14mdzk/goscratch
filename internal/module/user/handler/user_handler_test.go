@@ -30,7 +30,7 @@ func parseResponse(t *testing.T, resp *http.Response) map[string]interface{} {
 
 // TestNewHandler verifies handler construction
 func TestNewHandler(t *testing.T) {
-	var uc *usecase.UseCase
+	var uc usecase.UseCase
 	h := NewHandler(uc)
 	assert.NotNil(t, h)
 }

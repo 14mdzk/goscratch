@@ -8,30 +8,27 @@ import (
 	"github.com/14mdzk/goscratch/internal/module/user/dto"
 	"github.com/14mdzk/goscratch/internal/module/user/repository"
 	"github.com/14mdzk/goscratch/internal/platform/database"
-	"github.com/14mdzk/goscratch/internal/port"
 	shareddomain "github.com/14mdzk/goscratch/internal/shared/domain"
 	"github.com/14mdzk/goscratch/pkg/apperr"
 	"golang.org/x/crypto/bcrypt"
 )
 
-// UseCase handles user business logic
-type UseCase struct {
+// userUseCase handles user business logic
+type userUseCase struct {
 	repo       *repository.Repository
 	transactor *database.Transactor
-	auditor    port.Auditor
 }
 
 // NewUseCase creates a new user use case
-func NewUseCase(repo *repository.Repository, transactor *database.Transactor, auditor port.Auditor) *UseCase {
-	return &UseCase{
+func NewUseCase(repo *repository.Repository, transactor *database.Transactor) UseCase {
+	return &userUseCase{
 		repo:       repo,
 		transactor: transactor,
-		auditor:    auditor,
 	}
 }
 
 // GetByID retrieves a user by ID
-func (uc *UseCase) GetByID(ctx context.Context, id string) (*dto.UserResponse, error) {
+func (uc *userUseCase) GetByID(ctx context.Context, id string) (*dto.UserResponse, error) {
 	user, err := uc.repo.GetByID(ctx, id)
 	if err != nil {
 		return nil, err
@@ -40,7 +37,7 @@ func (uc *UseCase) GetByID(ctx context.Context, id string) (*dto.UserResponse, e
 }
 
 // List retrieves a paginated list of users
-func (uc *UseCase) List(ctx context.Context, req dto.ListUsersRequest) (shareddomain.CursorPage[dto.UserResponse], error) {
+func (uc *userUseCase) List(ctx context.Context, req dto.ListUsersRequest) (shareddomain.CursorPage[dto.UserResponse], error) {
 	limit := shareddomain.NormalizeLimit(req.Limit)
 
 	// Decode cursor if provided
@@ -90,7 +87,7 @@ func (uc *UseCase) List(ctx context.Context, req dto.ListUsersRequest) (shareddo
 // Create creates a new user. The email-existence check and the INSERT are
 // executed inside a single transaction so that concurrent requests cannot
 // both pass the check and then both insert the same email address.
-func (uc *UseCase) Create(ctx context.Context, req dto.CreateUserRequest) (*dto.UserResponse, error) {
+func (uc *userUseCase) Create(ctx context.Context, req dto.CreateUserRequest) (*dto.UserResponse, error) {
 	// Hash the password before entering the transaction — bcrypt is CPU-bound
 	// and does not need to hold a DB connection.
 	passwordHash, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
@@ -117,43 +114,22 @@ func (uc *UseCase) Create(ctx context.Context, req dto.CreateUserRequest) (*dto.
 		return nil, err
 	}
 
-	// Audit log is intentionally outside the transaction: a failure here must
-	// not roll back a successfully created user.
-	entry := port.NewAuditEntry(ctx, port.AuditActionCreate, "user", user.ID.String())
-	entry.NewValue = map[string]any{
-		"email": user.Email,
-		"name":  user.Name,
-	}
-	_ = uc.auditor.Log(ctx, entry)
-
 	return toUserResponse(user), nil
 }
 
 // Update updates a user
-func (uc *UseCase) Update(ctx context.Context, id string, req dto.UpdateUserRequest) (*dto.UserResponse, error) {
-	// Get current user for audit
-	oldUser, err := uc.repo.GetByID(ctx, id)
-	if err != nil {
-		return nil, err
-	}
-
+func (uc *userUseCase) Update(ctx context.Context, id string, req dto.UpdateUserRequest) (*dto.UserResponse, error) {
 	// Update user
 	user, err := uc.repo.Update(ctx, id, req.Name, req.Email)
 	if err != nil {
 		return nil, err
 	}
 
-	// Audit log
-	entry := port.NewAuditEntry(ctx, port.AuditActionUpdate, "user", user.ID.String())
-	entry.OldValue = map[string]any{"email": oldUser.Email, "name": oldUser.Name}
-	entry.NewValue = map[string]any{"email": user.Email, "name": user.Name}
-	_ = uc.auditor.Log(ctx, entry)
-
 	return toUserResponse(user), nil
 }
 
 // ChangePassword changes a user's password
-func (uc *UseCase) ChangePassword(ctx context.Context, id string, req dto.ChangePasswordRequest) error {
+func (uc *userUseCase) ChangePassword(ctx context.Context, id string, req dto.ChangePasswordRequest) error {
 	// Get user to verify current password
 	user, err := uc.repo.GetByID(ctx, id)
 	if err != nil {
@@ -176,40 +152,21 @@ func (uc *UseCase) ChangePassword(ctx context.Context, id string, req dto.Change
 		return err
 	}
 
-	// Audit log
-	entry := port.NewAuditEntry(ctx, port.AuditActionUpdate, "user", id)
-	entry.Metadata = map[string]any{"field": "password"}
-	_ = uc.auditor.Log(ctx, entry)
-
 	return nil
 }
 
 // Delete soft-deletes a user
-func (uc *UseCase) Delete(ctx context.Context, id string) error {
-	// Get user for audit
-	user, err := uc.repo.GetByID(ctx, id)
-	if err != nil {
-		return err
-	}
-
+func (uc *userUseCase) Delete(ctx context.Context, id string) error {
 	// Delete user
 	if err := uc.repo.Delete(ctx, id); err != nil {
 		return err
 	}
 
-	// Audit log
-	entry := port.NewAuditEntry(ctx, port.AuditActionDelete, "user", id)
-	entry.OldValue = map[string]any{
-		"email": user.Email,
-		"name":  user.Name,
-	}
-	_ = uc.auditor.Log(ctx, entry)
-
 	return nil
 }
 
 // Activate activates a user
-func (uc *UseCase) Activate(ctx context.Context, id string) error {
+func (uc *userUseCase) Activate(ctx context.Context, id string) error {
 	// Verify user exists
 	user, err := uc.repo.GetByID(ctx, id)
 	if err != nil {
@@ -226,17 +183,11 @@ func (uc *UseCase) Activate(ctx context.Context, id string) error {
 		return err
 	}
 
-	// Audit log
-	entry := port.NewAuditEntry(ctx, port.AuditActionUpdate, "user", id)
-	entry.OldValue = map[string]any{"is_active": false}
-	entry.NewValue = map[string]any{"is_active": true}
-	_ = uc.auditor.Log(ctx, entry)
-
 	return nil
 }
 
 // Deactivate deactivates a user
-func (uc *UseCase) Deactivate(ctx context.Context, id string) error {
+func (uc *userUseCase) Deactivate(ctx context.Context, id string) error {
 	// Verify user exists
 	user, err := uc.repo.GetByID(ctx, id)
 	if err != nil {
@@ -252,12 +203,6 @@ func (uc *UseCase) Deactivate(ctx context.Context, id string) error {
 	if err := uc.repo.Deactivate(ctx, id); err != nil {
 		return err
 	}
-
-	// Audit log
-	entry := port.NewAuditEntry(ctx, port.AuditActionUpdate, "user", id)
-	entry.OldValue = map[string]any{"is_active": true}
-	entry.NewValue = map[string]any{"is_active": false}
-	_ = uc.auditor.Log(ctx, entry)
 
 	return nil
 }
