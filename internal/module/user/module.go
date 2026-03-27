@@ -4,6 +4,7 @@ import (
 	"github.com/14mdzk/goscratch/internal/module/user/handler"
 	"github.com/14mdzk/goscratch/internal/module/user/repository"
 	"github.com/14mdzk/goscratch/internal/module/user/usecase"
+	"github.com/14mdzk/goscratch/internal/platform/database"
 	"github.com/14mdzk/goscratch/internal/platform/http/middleware"
 	"github.com/14mdzk/goscratch/internal/port"
 	"github.com/gofiber/fiber/v2"
@@ -18,9 +19,9 @@ type Module struct {
 }
 
 // NewModule creates a new user module
-func NewModule(pool *pgxpool.Pool, auditor port.Auditor, authorizer port.Authorizer, jwtSecret string) *Module {
+func NewModule(pool *pgxpool.Pool, transactor *database.Transactor, auditor port.Auditor, authorizer port.Authorizer, jwtSecret string) *Module {
 	repo := repository.NewRepository(pool)
-	uc := usecase.NewUseCase(repo, auditor)
+	uc := usecase.NewUseCase(repo, transactor, auditor)
 	h := handler.NewHandler(uc)
 
 	return &Module{
