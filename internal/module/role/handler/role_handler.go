@@ -123,3 +123,61 @@ func (h *Handler) GetUserPermissions(c *fiber.Ctx) error {
 	}
 	return response.Success(c, result)
 }
+
+// ListAllPermissions returns all permissions grouped by role (permission catalog)
+func (h *Handler) ListAllPermissions(c *fiber.Ctx) error {
+	result, err := h.useCase.ListAllPermissions(c.UserContext())
+	if err != nil {
+		return response.Fail(c, err)
+	}
+	return response.Success(c, result)
+}
+
+// AddUserPermission adds a direct permission to a user
+func (h *Handler) AddUserPermission(c *fiber.Ctx) error {
+	userID := c.Params("id")
+	var req dto.AddUserPermissionRequest
+	if err := validator.ValidateAndBind(c, &req); err != nil {
+		return validator.HandleValidationError(c, err)
+	}
+
+	if err := h.useCase.AddUserPermission(c.UserContext(), userID, req.Object, req.Action); err != nil {
+		return response.Fail(c, err)
+	}
+	return response.Message(c, "Permission added successfully")
+}
+
+// RemoveUserPermission removes a direct permission from a user
+func (h *Handler) RemoveUserPermission(c *fiber.Ctx) error {
+	userID := c.Params("id")
+	var req dto.RemoveUserPermissionRequest
+	if err := validator.ValidateAndBind(c, &req); err != nil {
+		return validator.HandleValidationError(c, err)
+	}
+
+	if err := h.useCase.RemoveUserPermission(c.UserContext(), userID, req.Object, req.Action); err != nil {
+		return response.Fail(c, err)
+	}
+	return response.Message(c, "Permission removed successfully")
+}
+
+// CheckUserPermission checks if a user has a specific permission
+func (h *Handler) CheckUserPermission(c *fiber.Ctx) error {
+	userID := c.Params("id")
+	var req dto.CheckPermissionRequest
+	if err := validator.ValidateQuery(c, &req); err != nil {
+		return validator.HandleValidationError(c, err)
+	}
+
+	allowed, err := h.useCase.CheckPermission(c.UserContext(), userID, req.Object, req.Action)
+	if err != nil {
+		return response.Fail(c, err)
+	}
+
+	return response.Success(c, dto.CheckPermissionResponse{
+		UserID:  userID,
+		Object:  req.Object,
+		Action:  req.Action,
+		Allowed: allowed,
+	})
+}

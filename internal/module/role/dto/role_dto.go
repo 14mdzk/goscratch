@@ -55,3 +55,46 @@ type UserPermissionsResponse struct {
 	UserID      string               `json:"user_id"`
 	Permissions []PermissionResponse `json:"permissions"`
 }
+
+// AddUserPermissionRequest represents the request to add a direct permission to a user
+type AddUserPermissionRequest struct {
+	Object string `json:"object" validate:"required"`
+	Action string `json:"action" validate:"required"`
+}
+
+// RemoveUserPermissionRequest represents the request to remove a direct permission from a user
+type RemoveUserPermissionRequest struct {
+	Object string `json:"object" validate:"required"`
+	Action string `json:"action" validate:"required"`
+}
+
+// CheckPermissionRequest represents the query parameters for checking a permission
+type CheckPermissionRequest struct {
+	Object string `query:"object" validate:"required"`
+	Action string `query:"action" validate:"required"`
+}
+
+// CheckPermissionResponse represents the result of a permission check
+type CheckPermissionResponse struct {
+	UserID  string `json:"user_id"`
+	Object  string `json:"object"`
+	Action  string `json:"action"`
+	Allowed bool   `json:"allowed"`
+}
+
+// AllPermissionsResponse represents all permissions grouped by role
+type AllPermissionsResponse struct {
+	Roles []RolePermissionsEntry `json:"roles"`
+}
+
+// RolePermissionsEntry represents a single role and its permissions
+type RolePermissionsEntry struct {
+	Role        string            `json:"role"`
+	Permissions []PermissionEntry `json:"permissions"`
+}
+
+// PermissionEntry represents a single permission (object + action)
+type PermissionEntry struct {
+	Object string `json:"object"`
+	Action string `json:"action"`
+}
