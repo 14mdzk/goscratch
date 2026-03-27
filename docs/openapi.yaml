@@ -482,7 +482,7 @@ paths:
       operationId: getUserPermissions
       tags: [Roles]
       summary: Get user permissions
-      description: Returns all implicit permissions for a user. Requires admin role.
+      description: Returns all implicit permissions for a user (including via roles). Requires roles:read permission.
       security:
         - bearerAuth: []
       parameters:
@@ -499,6 +499,109 @@ paths:
                     properties:
                       data:
                         $ref: "#/components/schemas/UserPermissionsResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
+    post:
+      operationId: addUserPermission
+      tags: [Roles]
+      summary: Add direct permission to user
+      description: Adds a direct permission to a user (bypassing roles). Requires roles:manage permission.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/UserID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AddPermissionRequest"
+      responses:
+        "200":
+          description: Permission added
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
+    delete:
+      operationId: removeUserPermission
+      tags: [Roles]
+      summary: Remove direct permission from user
+      description: Removes a direct permission from a user. Requires roles:manage permission.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/UserID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RemovePermissionRequest"
+      responses:
+        "200":
+          description: Permission removed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /users/{id}/permissions/check:
+    get:
+      operationId: checkUserPermission
+      tags: [Roles]
+      summary: Check user permission
+      description: Checks if a user has a specific permission (object + action). Requires roles:read permission.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/UserID"
+        - name: object
+          in: query
+          required: true
+          schema:
+            type: string
+          description: The resource object (e.g. "users", "files")
+        - name: action
+          in: query
+          required: true
+          schema:
+            type: string
+          description: The action (e.g. "read", "create")
+      responses:
+        "200":
+          description: Permission check result
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/SuccessResponse"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/CheckPermissionResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
@@ -529,6 +632,33 @@ paths:
                         type: array
                         items:
                           $ref: "#/components/schemas/RoleResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /roles/permissions:
+    get:
+      operationId: listAllPermissions
+      tags: [Roles]
+      summary: List all permissions
+      description: Returns all permissions grouped by role (permission catalog). Requires roles:read permission.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: All permissions grouped by role
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/SuccessResponse"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/AllPermissionsResponse"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
@@ -1506,6 +1636,40 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/PermissionResponse"
+
+    AllPermissionsResponse:
+      type: object
+      properties:
+        roles:
+          type: array
+          items:
+            $ref: "#/components/schemas/RolePermissionsEntry"
+
+    RolePermissionsEntry:
+      type: object
+      properties:
+        role:
+          type: string
+          example: admin
+        permissions:
+          type: array
+          items:
+            $ref: "#/components/schemas/PermissionResponse"
+
+    CheckPermissionResponse:
+      type: object
+      properties:
+        user_id:
+          type: string
+          format: uuid
+        object:
+          type: string
+          example: users
+        action:
+          type: string
+          example: read
+        allowed:
+          type: boolean
 
     # ── Storage ───────────────────────────────────────────────────────────
     FileResponse:

@@ -169,6 +169,50 @@ func (uc *UseCase) CheckPermission(ctx context.Context, userID, object, action s
 	return allowed, nil
 }
 
+// ListAllPermissions returns all permissions grouped by predefined role
+func (uc *UseCase) ListAllPermissions(ctx context.Context) (*dto.AllPermissionsResponse, error) {
+	entries := make([]dto.RolePermissionsEntry, 0, len(domain.PredefinedRoles))
+	for _, r := range domain.PredefinedRoles {
+		perms, err := uc.authorizer.GetPermissionsForRole(r.Name)
+		if err != nil {
+			return nil, apperr.Internalf("failed to get permissions for role %s: %s", r.Name, err.Error())
+		}
+
+		permEntries := make([]dto.PermissionEntry, 0, len(perms))
+		for _, p := range perms {
+			if len(p) >= 3 {
+				permEntries = append(permEntries, dto.PermissionEntry{
+					Object: p[1],
+					Action: p[2],
+				})
+			}
+		}
+
+		entries = append(entries, dto.RolePermissionsEntry{
+			Role:        r.Name,
+			Permissions: permEntries,
+		})
+	}
+
+	return &dto.AllPermissionsResponse{Roles: entries}, nil
+}
+
+// AddUserPermission adds a direct permission to a user (bypassing roles)
+func (uc *UseCase) AddUserPermission(ctx context.Context, userID, object, action string) error {
+	if err := uc.authorizer.AddPermissionForUser(userID, object, action); err != nil {
+		return apperr.Internalf("failed to add user permission: %s", err.Error())
+	}
+	return nil
+}
+
+// RemoveUserPermission removes a direct permission from a user
+func (uc *UseCase) RemoveUserPermission(ctx context.Context, userID, object, action string) error {
+	if err := uc.authorizer.RemovePermissionForUser(userID, object, action); err != nil {
+		return apperr.Internalf("failed to remove user permission: %s", err.Error())
+	}
+	return nil
+}
+
 // toPermissionResponses converts raw permission slices to PermissionResponse DTOs
 // Each permission slice is expected to be [subject, object, action]
 func toPermissionResponses(perms [][]string) []dto.PermissionResponse {

@@ -27,6 +27,7 @@ var seedPermissions = []struct {
 	{Role: "admin", Object: "users", Action: "delete"},
 	{Role: "admin", Object: "roles", Action: "read"},
 	{Role: "admin", Object: "roles", Action: "assign"},
+	{Role: "admin", Object: "roles", Action: "manage"},
 	{Role: "admin", Object: "files", Action: "read"},
 	{Role: "admin", Object: "files", Action: "upload"},
 	{Role: "admin", Object: "files", Action: "delete"},

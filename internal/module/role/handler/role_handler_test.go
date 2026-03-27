@@ -389,3 +389,146 @@ func TestAddRolePermission_ValidationError(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
 }
+
+func TestListAllPermissions_Success(t *testing.T) {
+	mockAuth := new(MockAuthorizer)
+	app, h := setupTestApp(mockAuth)
+	app.Get("/roles/permissions", h.ListAllPermissions)
+
+	mockAuth.On("GetPermissionsForRole", "superadmin").Return([][]string{
+		{"superadmin", "*", "*"},
+	}, nil)
+	mockAuth.On("GetPermissionsForRole", "admin").Return([][]string{
+		{"admin", "users", "read"},
+	}, nil)
+	mockAuth.On("GetPermissionsForRole", "editor").Return([][]string{}, nil)
+	mockAuth.On("GetPermissionsForRole", "viewer").Return([][]string{}, nil)
+
+	req := httptest.NewRequest(http.MethodGet, "/roles/permissions", nil)
+	resp, err := app.Test(req)
+	assert.NoError(t, err)
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+
+	result := parseResponseBody(t, resp)
+	assert.True(t, result["success"].(bool))
+	data := result["data"].(map[string]any)
+	roles := data["roles"].([]any)
+	assert.Len(t, roles, 4)
+	mockAuth.AssertExpectations(t)
+}
+
+func TestAddUserPermission_Success(t *testing.T) {
+	mockAuth := new(MockAuthorizer)
+	app, h := setupTestApp(mockAuth)
+	app.Post("/users/:id/permissions", h.AddUserPermission)
+
+	mockAuth.On("AddPermissionForUser", "user-123", "posts", "write").Return(nil)
+
+	body, _ := json.Marshal(map[string]string{
+		"object": "posts",
+		"action": "write",
+	})
+	req := httptest.NewRequest(http.MethodPost, "/users/user-123/permissions", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := app.Test(req)
+	assert.NoError(t, err)
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+
+	result := parseResponseBody(t, resp)
+	assert.True(t, result["success"].(bool))
+	assert.Equal(t, "Permission added successfully", result["message"])
+	mockAuth.AssertExpectations(t)
+}
+
+func TestAddUserPermission_ValidationError(t *testing.T) {
+	mockAuth := new(MockAuthorizer)
+	app, h := setupTestApp(mockAuth)
+	app.Post("/users/:id/permissions", h.AddUserPermission)
+
+	// Missing required fields
+	body, _ := json.Marshal(map[string]string{})
+	req := httptest.NewRequest(http.MethodPost, "/users/user-123/permissions", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := app.Test(req)
+	assert.NoError(t, err)
+	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
+}
+
+func TestRemoveUserPermission_Success(t *testing.T) {
+	mockAuth := new(MockAuthorizer)
+	app, h := setupTestApp(mockAuth)
+	app.Delete("/users/:id/permissions", h.RemoveUserPermission)
+
+	mockAuth.On("RemovePermissionForUser", "user-123", "posts", "write").Return(nil)
+
+	body, _ := json.Marshal(map[string]string{
+		"object": "posts",
+		"action": "write",
+	})
+	req := httptest.NewRequest(http.MethodDelete, "/users/user-123/permissions", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := app.Test(req)
+	assert.NoError(t, err)
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+
+	result := parseResponseBody(t, resp)
+	assert.True(t, result["success"].(bool))
+	assert.Equal(t, "Permission removed successfully", result["message"])
+	mockAuth.AssertExpectations(t)
+}
+
+func TestCheckUserPermission_Allowed(t *testing.T) {
+	mockAuth := new(MockAuthorizer)
+	app, h := setupTestApp(mockAuth)
+	app.Get("/users/:id/permissions/check", h.CheckUserPermission)
+
+	mockAuth.On("EnforceWithContext", mock.Anything, "user-123", "users", "read").Return(true, nil)
+
+	req := httptest.NewRequest(http.MethodGet, "/users/user-123/permissions/check?object=users&action=read", nil)
+	resp, err := app.Test(req)
+	assert.NoError(t, err)
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+
+	result := parseResponseBody(t, resp)
+	assert.True(t, result["success"].(bool))
+	data := result["data"].(map[string]any)
+	assert.Equal(t, "user-123", data["user_id"])
+	assert.Equal(t, "users", data["object"])
+	assert.Equal(t, "read", data["action"])
+	assert.True(t, data["allowed"].(bool))
+	mockAuth.AssertExpectations(t)
+}
+
+func TestCheckUserPermission_Denied(t *testing.T) {
+	mockAuth := new(MockAuthorizer)
+	app, h := setupTestApp(mockAuth)
+	app.Get("/users/:id/permissions/check", h.CheckUserPermission)
+
+	mockAuth.On("EnforceWithContext", mock.Anything, "user-123", "users", "delete").Return(false, nil)
+
+	req := httptest.NewRequest(http.MethodGet, "/users/user-123/permissions/check?object=users&action=delete", nil)
+	resp, err := app.Test(req)
+	assert.NoError(t, err)
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+
+	result := parseResponseBody(t, resp)
+	assert.True(t, result["success"].(bool))
+	data := result["data"].(map[string]any)
+	assert.False(t, data["allowed"].(bool))
+	mockAuth.AssertExpectations(t)
+}
+
+func TestCheckUserPermission_MissingParams(t *testing.T) {
+	mockAuth := new(MockAuthorizer)
+	app, h := setupTestApp(mockAuth)
+	app.Get("/users/:id/permissions/check", h.CheckUserPermission)
+
+	// Missing query params
+	req := httptest.NewRequest(http.MethodGet, "/users/user-123/permissions/check", nil)
+	resp, err := app.Test(req)
+	assert.NoError(t, err)
+	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
+}

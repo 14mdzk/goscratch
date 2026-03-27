@@ -2,21 +2,25 @@
 
 ## Overview
 
-RBAC (Role-Based Access Control) management backed by Casbin. Provides endpoints to assign/revoke roles, manage per-role permissions, and query user roles and permissions. All endpoints require authentication and admin or superadmin role.
+RBAC (Role-Based Access Control) management backed by Casbin. Provides endpoints to assign/revoke roles, manage per-role and direct user permissions, check permissions, and query the permission catalog. All endpoints require authentication and granular permission checks (`roles:read` or `roles:manage`).
 
 ## API Endpoints
 
-| Method | Path | Auth | Role Required | Description |
-|--------|------|------|---------------|-------------|
-| GET | `/api/roles` | JWT | admin/superadmin | List all predefined roles |
-| POST | `/api/roles/assign` | JWT | admin/superadmin | Assign a role to a user |
-| POST | `/api/roles/revoke` | JWT | admin/superadmin | Revoke a role from a user |
-| GET | `/api/roles/:role/users` | JWT | admin/superadmin | Get all users with a role |
-| GET | `/api/roles/:role/permissions` | JWT | admin/superadmin | Get permissions for a role |
-| POST | `/api/roles/:role/permissions` | JWT | admin/superadmin | Add permission to a role |
-| DELETE | `/api/roles/:role/permissions` | JWT | admin/superadmin | Remove permission from a role |
-| GET | `/api/users/:id/roles` | JWT | admin/superadmin | Get all roles for a user |
-| GET | `/api/users/:id/permissions` | JWT | admin/superadmin | Get all implicit permissions for a user |
+| Method | Path | Auth | Permission | Description |
+|--------|------|------|------------|-------------|
+| GET | `/api/roles` | JWT | roles:read | List all predefined roles |
+| GET | `/api/roles/permissions` | JWT | roles:read | List all permissions grouped by role (catalog) |
+| POST | `/api/roles/assign` | JWT | roles:manage | Assign a role to a user |
+| POST | `/api/roles/revoke` | JWT | roles:manage | Revoke a role from a user |
+| GET | `/api/roles/:role/users` | JWT | roles:read | Get all users with a role |
+| GET | `/api/roles/:role/permissions` | JWT | roles:read | Get permissions for a role |
+| POST | `/api/roles/:role/permissions` | JWT | roles:manage | Add permission to a role |
+| DELETE | `/api/roles/:role/permissions` | JWT | roles:manage | Remove permission from a role |
+| GET | `/api/users/:id/roles` | JWT | roles:read | Get all roles for a user |
+| GET | `/api/users/:id/permissions` | JWT | roles:read | Get all implicit permissions for a user |
+| POST | `/api/users/:id/permissions` | JWT | roles:manage | Add direct permission to a user |
+| DELETE | `/api/users/:id/permissions` | JWT | roles:manage | Remove direct permission from a user |
+| GET | `/api/users/:id/permissions/check` | JWT | roles:read | Check if user has a specific permission |
 
 ## Predefined Roles
 
@@ -33,7 +37,7 @@ Permissions follow an `object:action` pattern. For example:
 - `users:read`, `users:create`, `users:update`, `users:delete`
 - `sse:broadcast`, `sse:read`
 
-Permissions are assigned to roles, and roles are assigned to users. A user's effective permissions are the union of all permissions from all their roles (implicit permissions).
+Permissions can be assigned to roles (role-based) or directly to users (direct permissions). A user's effective permissions are the union of all permissions from their roles plus any direct permissions (implicit permissions).
 
 ## Request/Response Examples
 
@@ -153,6 +157,65 @@ The `role` field in the body is overridden by the `:role` path parameter.
 }
 ```
 
+### GET /api/roles/permissions (Permission Catalog)
+
+**Response (200):**
+```json
+{
+  "success": true,
+  "data": {
+    "roles": [
+      {
+        "role": "superadmin",
+        "permissions": [{ "object": "*", "action": "*" }]
+      },
+      {
+        "role": "admin",
+        "permissions": [
+          { "object": "users", "action": "read" },
+          { "object": "users", "action": "create" },
+          { "object": "roles", "action": "read" },
+          { "object": "roles", "action": "manage" }
+        ]
+      }
+    ]
+  }
+}
+```
+
+### POST /api/users/:id/permissions (Direct Permission)
+
+**Request:**
+```json
+{
+  "object": "reports",
+  "action": "export"
+}
+```
+
+**Response (200):**
+```json
+{
+  "success": true,
+  "message": "Permission added successfully"
+}
+```
+
+### GET /api/users/:id/permissions/check?object=users&action=read
+
+**Response (200):**
+```json
+{
+  "success": true,
+  "data": {
+    "user_id": "01912345-abcd-7def-8000-000000000001",
+    "object": "users",
+    "action": "read",
+    "allowed": true
+  }
+}
+```
+
 ## Configuration
 
 | Key | Env | Default | Description |
@@ -166,7 +229,7 @@ When disabled, a NoOp authorizer is used that permits all requests.
 - `internal/module/role/` - Handler, usecase, DTO, domain
 - `internal/adapter/casbin/` - Casbin adapter implementing `port.Authorizer`
 - Casbin policies are stored in PostgreSQL via the Casbin adapter
-- The `RequireAnyRole` middleware guards all role management routes
+- Granular `RequirePermission` middleware guards each route (`roles:read` for GET, `roles:manage` for mutations)
 
 ## Dependencies
 
