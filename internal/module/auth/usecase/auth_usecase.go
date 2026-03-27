@@ -16,26 +16,24 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-// UseCase handles authentication business logic
-type UseCase struct {
+// authUseCase handles authentication business logic
+type authUseCase struct {
 	userRepo *userrepo.Repository
 	cache    port.Cache
-	auditor  port.Auditor
 	jwtCfg   config.JWTConfig
 }
 
 // NewUseCase creates a new auth use case
-func NewUseCase(userRepo *userrepo.Repository, cache port.Cache, auditor port.Auditor, jwtCfg config.JWTConfig) *UseCase {
-	return &UseCase{
+func NewUseCase(userRepo *userrepo.Repository, cache port.Cache, jwtCfg config.JWTConfig) UseCase {
+	return &authUseCase{
 		userRepo: userRepo,
 		cache:    cache,
-		auditor:  auditor,
 		jwtCfg:   jwtCfg,
 	}
 }
 
 // Login authenticates a user and returns tokens
-func (uc *UseCase) Login(ctx context.Context, req dto.LoginRequest) (*dto.LoginResponse, error) {
+func (uc *authUseCase) Login(ctx context.Context, req dto.LoginRequest) (*dto.LoginResponse, error) {
 	// Get user by email
 	user, err := uc.userRepo.GetByEmail(ctx, req.Email)
 	if err != nil {
@@ -63,10 +61,6 @@ func (uc *UseCase) Login(ctx context.Context, req dto.LoginRequest) (*dto.LoginR
 	refreshKey := "refresh:" + refreshToken
 	_ = uc.cache.Set(ctx, refreshKey, []byte(user.ID.String()), uc.jwtCfg.RefreshTokenDuration())
 
-	// Audit log
-	entry := port.NewAuditEntry(ctx, port.AuditActionLogin, "user", user.ID.String())
-	_ = uc.auditor.Log(ctx, entry)
-
 	return &dto.LoginResponse{
 		AccessToken:  accessToken,
 		RefreshToken: refreshToken,
@@ -76,7 +70,7 @@ func (uc *UseCase) Login(ctx context.Context, req dto.LoginRequest) (*dto.LoginR
 }
 
 // Refresh refreshes an access token using a refresh token
-func (uc *UseCase) Refresh(ctx context.Context, req dto.RefreshRequest) (*dto.RefreshResponse, error) {
+func (uc *authUseCase) Refresh(ctx context.Context, req dto.RefreshRequest) (*dto.RefreshResponse, error) {
 	// Validate refresh token
 	refreshKey := "refresh:" + req.RefreshToken
 	userIDBytes, err := uc.cache.Get(ctx, refreshKey)
@@ -119,19 +113,15 @@ func (uc *UseCase) Refresh(ctx context.Context, req dto.RefreshRequest) (*dto.Re
 }
 
 // Logout invalidates a refresh token
-func (uc *UseCase) Logout(ctx context.Context, refreshToken string) error {
+func (uc *authUseCase) Logout(ctx context.Context, refreshToken string) error {
 	refreshKey := "refresh:" + refreshToken
 	_ = uc.cache.Delete(ctx, refreshKey)
-
-	// Audit log
-	entry := port.NewAuditEntry(ctx, port.AuditActionLogout, "user", "")
-	_ = uc.auditor.Log(ctx, entry)
 
 	return nil
 }
 
 // generateAccessToken generates a JWT access token
-func (uc *UseCase) generateAccessToken(userID, email, name string) (string, error) {
+func (uc *authUseCase) generateAccessToken(userID, email, name string) (string, error) {
 	now := time.Now()
 
 	issuer := uc.jwtCfg.Issuer
@@ -162,7 +152,7 @@ func (uc *UseCase) generateAccessToken(userID, email, name string) (string, erro
 }
 
 // generateRefreshToken generates a random refresh token
-func (uc *UseCase) generateRefreshToken() (string, error) {
+func (uc *authUseCase) generateRefreshToken() (string, error) {
 	bytes := make([]byte, 32)
 	if _, err := rand.Read(bytes); err != nil {
 		return "", err

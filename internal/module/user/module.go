@@ -21,8 +21,9 @@ type Module struct {
 // NewModule creates a new user module
 func NewModule(pool *pgxpool.Pool, transactor *database.Transactor, auditor port.Auditor, authorizer port.Authorizer, jwtSecret string) *Module {
 	repo := repository.NewRepository(pool)
-	uc := usecase.NewUseCase(repo, transactor, auditor)
-	h := handler.NewHandler(uc)
+	uc := usecase.NewUseCase(repo, transactor)
+	audited := usecase.NewAuditedUseCase(uc, auditor)
+	h := handler.NewHandler(audited)
 
 	return &Module{
 		handler:    h,

@@ -357,7 +357,7 @@ func TestLogout(t *testing.T) {
 
 // TestNewHandler verifies handler construction
 func TestNewHandler(t *testing.T) {
-	var uc *usecase.UseCase
+	var uc usecase.UseCase
 	h := NewHandler(uc)
 	assert.NotNil(t, h)
 }

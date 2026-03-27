@@ -11,11 +11,11 @@ import (
 
 // Handler handles user HTTP requests
 type Handler struct {
-	useCase *usecase.UseCase
+	useCase usecase.UseCase
 }
 
 // NewHandler creates a new user handler
-func NewHandler(useCase *usecase.UseCase) *Handler {
+func NewHandler(useCase usecase.UseCase) *Handler {
 	return &Handler{useCase: useCase}
 }
 
