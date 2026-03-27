@@ -194,13 +194,11 @@ Improve the daily development workflow.
 
 ---
 
-## v1.0 - Release
+## v1.0 - Release (DONE)
 
-- [ ] README overhaul (quick start, feature list, architecture overview)
-- [ ] Template-friendly setup (easy clone-and-rename workflow)
-- [ ] Changelog
-- [ ] All features documented with specs
-- [ ] All features tested (90%+ coverage)
-- [ ] 5-minute onboarding verified (clone -> setup -> running API)
-
-**Agent:** `documentation-engineer`
+- [x] README overhaul (quick start, feature list, architecture overview)
+- [x] Template-friendly setup (`scripts/setup.sh` for clone-and-rename)
+- [x] Changelog (`CHANGELOG.md` covering v0.1.0 through v0.5.0)
+- [x] All features documented with specs (10 feature specs in `docs/features/`)
+- [x] All features tested (90%+ unit coverage, integration tests for core flows)
+- [x] 5-minute onboarding verified (`docs/QUICKSTART.md`)
