@@ -1,267 +1,222 @@
-# Go Backend Boilerplate
+# Goscratch
 
-A production-ready, modular Go backend boilerplate with clean architecture, SQLC, JWT authentication, and full observability stack (LGTM).
+Production-ready Go backend starterkit with clean architecture, modular design, and built-in observability.
 
-## ✨ Features
+[![Go Version](https://img.shields.io/github/go-mod/go-version/14mdzk/goscratch)](https://github.com/14mdzk/goscratch)
+[![CI](https://github.com/14mdzk/goscratch/actions/workflows/ci.yml/badge.svg)](https://github.com/14mdzk/goscratch/actions/workflows/ci.yml)
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-- **Modular Monolith Architecture** - Clean separation of modules, ports, adapters
-- **SQLC** - Type-safe SQL with auto-generated Go code
-- **JWT Authentication** - Login, token refresh, bcrypt password hashing
-- **UUID v7** - Native PostgreSQL 18+ support via google/uuid
-- **Observability (LGTM Stack)**
-  - Prometheus metrics (`/metrics` endpoint)
-  - OpenTelemetry tracing (Tempo integration)
-  - Structured logging (Loki-compatible with trace correlation)
-  - Grafana dashboards
-- **Plug & Play Adapters**
-  - Cache: Redis / NoOp
-  - Queue: RabbitMQ / NoOp
-  - Storage: Local / S3 / Composite
-  - Audit: PostgreSQL / NoOp
-- **Cursor-based Pagination** - Efficient pagination for large datasets
-- **Docker Compose** - Full development environment
+## What Is Goscratch?
 
-## 📁 Project Structure
+Goscratch is a **starterkit you clone and own** -- not a framework or package you import. It provides production-grade infrastructure (authentication, authorization, background jobs, file storage, observability) so you skip weeks of boilerplate and jump straight into building business logic.
 
-```
-.
-├── cmd/
-│   └── api/              # API entry point
-├── config/               # Configuration files
-├── internal/
-│   ├── adapter/          # External service adapters (redis, rabbitmq, s3, etc.)
-│   ├── module/           # Feature modules (user, auth, health)
-│   ├── platform/         # Framework integrations (fiber, config, database)
-│   ├── port/             # Interfaces for plug & play components
-│   └── shared/           # Shared domain types (pagination, etc.)
-├── migrations/           # PostgreSQL migrations
-├── pkg/                  # Reusable packages
-│   ├── apperr/           # Structured application errors
-│   ├── logger/           # Structured logging
-│   ├── pgutil/           # PostgreSQL utilities (UUID, errors)
-│   ├── response/         # HTTP response helpers
-│   └── types/            # Generic optional types (Opt, NOpt)
-├── scripts/              # Database seeder
-├── docker-compose.yml    # Development environment
-├── Makefile              # Development commands
-└── sqlc.yaml             # SQLC configuration
-```
+Every external dependency (Redis, RabbitMQ, S3) has a NoOp fallback. Start with just PostgreSQL, enable services as you need them.
 
-## 🚀 Quick Start
+## Quick Start
 
-### Prerequisites
-
-- Go 1.22+
-- PostgreSQL 15+ (18+ for native UUID v7)
-- Docker & Docker Compose (optional)
-
-### 1. Clone and Setup
+Get a running API in 5 minutes:
 
 ```bash
 git clone https://github.com/14mdzk/goscratch.git
 cd goscratch
-
-# Copy and configure
-cp config/config.example.json config/config.json
-# Edit config/config.json with your settings
-```
-
-### 2. Start Services (Docker)
-
-```bash
-docker-compose up -d
-
-# Wait for PostgreSQL to be ready
-docker-compose logs -f postgres
-```
-
-### 3. Run Migrations
-
-```bash
+make install-tools
+make docker-up
 make migrate-up
-```
-
-### 4. Seed Database (Optional)
-
-```bash
 make seed
+make dev
 ```
 
-Creates test users:
+Then visit:
+- Health check: http://localhost:3000/health
+- API docs: http://localhost:3000/docs
+
+Test credentials (from seeded data):
+
 | Email | Password | Role |
 |-------|----------|------|
 | `superadmin@example.com` | `password123` | Super Admin |
 | `admin@example.com` | `password123` | Admin |
-| `user@example.com` | `password123` | User |
+| `user@example.com` | `password123` | Viewer |
 
-### 5. Start Development Server
+## Features
+
+| Feature | Description |
+|---------|-------------|
+| **Authentication** | JWT access + refresh tokens, bcrypt hashing, login/logout/refresh |
+| **User Management** | CRUD, activate/deactivate, password change, cursor-based pagination |
+| **Role & Permission** | Casbin v3 RBAC, database-backed policies, 9 management endpoints |
+| **File Storage** | Upload/download via S3 or local filesystem, path traversal protection |
+| **Background Jobs** | RabbitMQ with exponential backoff retry, dispatch + list APIs |
+| **Server-Sent Events** | Real-time push, subscribe/broadcast/client-count endpoints |
+| **Email** | SMTP adapter + NoOp fallback for development |
+| **Rate Limiting** | Sliding window (in-memory or Redis), X-RateLimit headers, 429 responses |
+| **API Documentation** | OpenAPI 3.0 spec, Scalar interactive explorer at `/docs` |
+| **Observability** | Prometheus metrics, OpenTelemetry tracing, structured JSON logging |
+| **Security** | Security headers, config-driven CORS, JWT iss/aud claims, XSS sanitization |
+| **Health Checks** | Database, cache, queue, storage readiness at `/health` |
+
+## Architecture
+
+Goscratch follows **hexagonal (clean) architecture**:
+
+```
+HTTP Handler -> UseCase (business logic) -> Port (interface) -> Adapter (implementation)
+```
+
+Key principles:
+- **No magic** -- manual DI, explicit dependencies wired in `internal/platform/app/app.go`
+- **Port-driven** -- swap implementations without touching business logic
+- **NoOp fallbacks** -- every adapter has a no-op variant, start minimal
+- **Decorator Pattern** -- audit logging is decoupled from usecases via decorators
+- **TX-aware repositories** -- transactions propagate through context automatically
+
+Design decisions documented in `docs/adr/`.
+
+## Project Structure
+
+```
+.
+├── cmd/
+│   ├── api/                     # API server entry point
+│   └── worker/                  # Background job worker entry point
+├── config/
+│   └── config.default.json      # Default configuration (JSON layer)
+├── internal/
+│   ├── adapter/                 # External service implementations
+│   │   ├── audit/               #   PostgreSQL audit logging
+│   │   ├── cache/               #   Redis + NoOp
+│   │   ├── casbin/              #   RBAC authorization
+│   │   ├── email/               #   SMTP + NoOp
+│   │   ├── queue/               #   RabbitMQ + NoOp
+│   │   ├── sse/                 #   In-memory SSE broker
+│   │   └── storage/             #   S3 + local filesystem
+│   ├── module/                  # Feature modules
+│   │   ├── auth/                #   Authentication
+│   │   ├── docs/                #   OpenAPI / Scalar endpoint
+│   │   ├── health/              #   Health checks
+│   │   ├── job/                 #   Job dispatch API
+│   │   ├── role/                #   Role & permission management
+│   │   ├── sse/                 #   SSE HTTP endpoints
+│   │   ├── storage/             #   File upload/download API
+│   │   └── user/                #   User CRUD & profile
+│   ├── platform/                # Framework integrations
+│   │   ├── app/                 #   DI container, module wiring
+│   │   ├── config/              #   3-layer config loader
+│   │   ├── database/            #   PostgreSQL pool, transactor
+│   │   ├── http/                #   Fiber server, middleware
+│   │   ├── sanitizer/           #   XSS input sanitization
+│   │   ├── testutil/            #   Integration test helpers
+│   │   └── validator/           #   Request validation
+│   ├── port/                    # Interfaces (cache, queue, storage, audit, etc.)
+│   ├── shared/                  # Shared domain types (pagination)
+│   └── worker/                  # Background job processing
+├── pkg/                         # Reusable packages
+│   ├── apperr/                  #   Structured application errors
+│   ├── logger/                  #   Structured logging
+│   ├── pgutil/                  #   PostgreSQL utilities
+│   ├── response/                #   HTTP response helpers
+│   └── types/                   #   Optional types (Opt, NOpt)
+├── migrations/                  # SQL migration files
+├── scripts/seed/                # Database seeding
+├── deploy/                      # Production deployment configs
+│   ├── docker/                  #   Docker Compose (production)
+│   ├── systemd/                 #   Systemd unit files
+│   └── nginx/                   #   Reverse proxy config
+├── docs/                        # Documentation
+│   ├── features/                #   Feature specifications
+│   ├── adr/                     #   Architecture decision records
+│   └── openapi.yaml             #   OpenAPI 3.0 spec
+├── .github/workflows/ci.yml    # CI pipeline (lint, test, build)
+├── docker-compose.yml           # Development environment
+├── Dockerfile                   # Multi-stage production image
+├── Makefile                     # Development commands
+└── sqlc.yaml                    # SQLC configuration
+```
+
+## Configuration
+
+Goscratch uses a **3-layer configuration system** (each layer overrides the previous):
+
+1. **JSON defaults** -- `config/config.default.json`
+2. **.env file** -- loaded via godotenv (optional, `cp .env.example .env`)
+3. **Environment variables** -- highest priority, for production
+
+| Setting | Default | Environment Variable |
+|---------|---------|---------------------|
+| App port | `3000` | `PORT` |
+| Database host | `localhost` | `DB_HOST` |
+| JWT secret | *(insecure)* | `JWT_SECRET` |
+| Redis | disabled | `REDIS_ENABLED=true` |
+| RabbitMQ | disabled | `RABBITMQ_ENABLED=true` |
+| Email | disabled | `EMAIL_ENABLED=true` |
+
+See `.env.example` and `config/config.default.json` for all options.
+
+## Development
 
 ```bash
-make dev
+make dev                # API server with hot-reload (air)
+make dev-worker         # Background worker with hot-reload
+make test               # Unit tests
+make test-integration   # Integration tests (requires Docker)
+make test-ci            # Tests with coverage report
+make lint               # golangci-lint
+make build              # Production binaries (bin/goscratch + bin/worker)
+make migrate-up         # Run migrations
+make migrate-down       # Rollback last migration
+make migrate-create NAME=xxx  # Create new migration
+make sqlc               # Regenerate SQLC code
+make docker-up          # Start PostgreSQL
+make docker-full        # Start all services (Redis, RabbitMQ, etc.)
+make seed               # Seed test data
+make install-tools      # Install air, golangci-lint, sqlc, migrate
 ```
 
-Server runs at `http://localhost:3000`
+### Adding a New Module
 
-## 📡 API Endpoints
+1. Create `internal/module/yourmodule/` with domain, dto, handler, usecase, module.go
+2. Add SQL queries and run `make sqlc`
+3. Register in `internal/platform/app/app.go`
 
-### Authentication
+See `internal/module/user/` as reference.
 
-```bash
-# Login
-POST /auth/login
-{"email": "admin@example.com", "password": "password123"}
+## Deployment
 
-# Refresh Token
-POST /auth/refresh
-{"refresh_token": "..."}
+Production configs in `deploy/`:
 
-# Logout
-POST /auth/logout
-{"refresh_token": "..."}
-```
+- **Docker Compose** -- `deploy/docker/docker-compose.prod.yml` (all services, healthchecks, resource limits)
+- **Systemd** -- `deploy/systemd/` (API + Worker unit files)
+- **Nginx** -- `deploy/nginx/nginx.conf` (reverse proxy, TLS, rate limiting)
 
-### Users (Protected)
+## Documentation
 
-```bash
-# List users (with pagination & filters)
-GET /users?limit=10&cursor=...&search=john&is_active=true
+- `docs/VISION.md` -- Project vision and design principles
+- `docs/ROADMAP.md` -- Version history and feature tracking
+- `docs/features/` -- Feature specifications (10 specs)
+- `docs/adr/` -- Architecture decision records (7 ADRs)
+- `/docs` -- Interactive API explorer (Scalar, runtime)
+- `/health` -- Health check endpoint
+- `/metrics` -- Prometheus metrics
 
-# Get current user
-GET /users/me
+## Tech Stack
 
-# Get user by ID
-GET /users/:id
+| Component | Technology |
+|-----------|-----------|
+| Language | Go 1.25+ |
+| Web framework | Fiber v2 |
+| Database | PostgreSQL 18+ |
+| SQL generation | SQLC |
+| Authentication | JWT (golang-jwt) + bcrypt |
+| Authorization | Casbin v3 |
+| Cache | Redis (optional, NoOp fallback) |
+| Queue | RabbitMQ (optional, NoOp fallback) |
+| Storage | S3 / Local filesystem |
+| Metrics | Prometheus |
+| Tracing | OpenTelemetry |
+| Logging | Structured JSON (slog) |
+| Linting | golangci-lint |
+| Hot-reload | Air |
 
-# Create user
-POST /users
-{"email": "new@example.com", "password": "password123", "name": "New User"}
-
-# Update user
-PUT /users/:id
-{"name": "Updated Name"}
-
-# Change password
-POST /users/me/password
-{"current_password": "...", "new_password": "..."}
-
-# Activate/Deactivate user
-POST /users/:id/activate
-POST /users/:id/deactivate
-
-# Soft delete user
-DELETE /users/:id
-```
-
-### Health & Metrics
-
-```bash
-GET /health          # Health check
-GET /metrics         # Prometheus metrics
-```
-
-## 🔧 Make Commands
-
-```bash
-make dev             # Start development server
-make build           # Build production binary
-make test            # Run all tests
-make test-short      # Run unit tests only
-make sqlc            # Generate SQLC code
-make migrate-up      # Run migrations
-make migrate-down    # Rollback migration
-make migrate-create  # Create new migration
-make seed            # Seed database
-make lint            # Run linter
-```
-
-## ⚙️ Configuration
-
-Configuration is loaded from `config/config.json` with environment variable overrides.
-
-```json
-{
-  "app": {
-    "name": "goscratch",
-    "env": "development",
-    "port": 3000
-  },
-  "database": {
-    "host": "localhost",
-    "port": 5432,
-    "user": "postgres",
-    "password": "postgres",
-    "name": "goscratch"
-  },
-  "jwt": {
-    "secret": "your-secret-key",
-    "access_token_ttl": 15,
-    "refresh_token_ttl": 10080
-  },
-  "cache": {
-    "enabled": false,
-    "host": "localhost",
-    "port": 6379
-  },
-  "observability": {
-    "metrics": {"enabled": true, "port": 9090},
-    "tracing": {"enabled": false, "endpoint": "http://localhost:4317"}
-  }
-}
-```
-
-## 🏗️ Adding New Modules
-
-1. Create module directory:
-   ```
-   internal/module/yourmodule/
-   ├── domain/     # Domain entities
-   ├── dto/        # Request/Response DTOs
-   ├── handler/    # HTTP handlers
-   ├── repository/ # Database access (with SQLC)
-   │   └── queries/  # SQL queries for SQLC
-   ├── usecase/    # Business logic
-   └── module.go   # Module registration
-   ```
-
-2. Add SQLC queries in `internal/module/yourmodule/repository/queries/`
-
-3. Update `sqlc.yaml` and run `make sqlc`
-
-4. Register module in `internal/platform/app/app.go`
-
-## 🧪 Testing
-
-```bash
-# Run all tests
-make test
-
-# Run unit tests only (skip integration)
-make test-short
-
-# Run specific package tests
-go test -v ./internal/module/user/...
-```
-
-## 🐳 Docker
-
-```bash
-# Build image
-docker build -t goscratch .
-
-# Run with Docker Compose (includes PostgreSQL, Redis, Prometheus, etc.)
-docker-compose up -d
-```
-
-## 📊 Observability
-
-- **Prometheus**: http://localhost:9090
-- **Grafana**: http://localhost:3001 (admin/admin)
-- **Tempo** (Tracing): http://localhost:3200
-
-## 📝 License
+## License
 
 MIT
-
----
-
-Built with ❤️ using Go, Fiber, SQLC, and PostgreSQL.
