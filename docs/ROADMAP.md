@@ -202,3 +202,42 @@ Improve the daily development workflow.
 - [x] All features documented with specs (10 feature specs in `docs/features/`)
 - [x] All features tested (90%+ unit coverage, integration tests for core flows)
 - [x] 5-minute onboarding verified (`docs/QUICKSTART.md`)
+
+---
+
+## v1.1 - Pre-Ship Hardening (PLANNED)
+
+Triggered by the 2026-05-02 pre-ship audit (see `docs/audit/2026-05-02-preship-audit.md`). 14 block-ship + ~30 should-fix findings; v1.0 is **not** ship-ready as-is despite the v1.0 checklist being complete.
+
+PR slicing plan: see `docs/audit/punch-list.md`.
+
+| PR | Title | Status |
+|----|-------|--------|
+| 1 | Audit fix — context keys + decorators on storage/job + failed-login | Planned |
+| 2 | Secure defaults — JWT secret guard, `sslmode=require`, prod stack-trace gate, generic error handler, `/metrics` lockdown | Planned |
+| 3 | Auth hardening — logout authn, Casbin fail-fast, refresh-on-NoOp gate, rate-limit fail-closed, iss/aud strict | Planned |
+| 4 | Shutdown rewrite — `Authorizer` wired + closed, sub-budgets, tracer last, SSE per-conn UUID, worker `wg` covers real work, retry select on ctx | Planned |
+| 5 | Storage download streaming + path-prefix guard + content-type sniff | Planned |
+| 6 | Pattern alignment — UseCase interfaces for role/storage/job, auth user-repo reuse, Claims to domain, `errors.Is` | Planned |
+| 7 | RabbitMQ correctness — per-goroutine channels, `Qos`, NotifyClose reconnect | Planned |
+| 8 | SMTP + Postgres rollback context discipline | Planned |
+| 9 | Rate-limit hardening — sliding window Redis, ProxyHeader, memory cleanup stop chan | Planned |
+
+### Cross-cutting themes the audit surfaced
+
+1. Audit feature is broken end-to-end (context-key type mismatch silently empties every audit row).
+2. NoOp fallbacks unsafe for security-critical adapters; ADR-006 needs a carve-out for authz / refresh / audit.
+3. Shutdown is theater (`wg` does not cover real work, single ctx budget, wrong ordering, Casbin `*sql.DB` never closed).
+4. Module-pattern drift (role / storage / job skip the UseCase-interface step that user / auth follow).
+5. Default config ships insecure (committed JWT secret, `sslmode=disable`, unconditional stack traces, `/metrics` unauthenticated, nginx TLS commented out).
+
+### Reusable lessons captured to wiki
+
+`~/claude-obsidian/wiki/concepts/`:
+
+- Go Context Key Type Safety
+- NoOp Adapter Auth Anti-Pattern
+- Go Graceful Shutdown Pattern
+- fasthttp Stream Body Lifetime
+- RabbitMQ Channel Goroutine Safety
+- Sliding vs Fixed Window Rate Limit
