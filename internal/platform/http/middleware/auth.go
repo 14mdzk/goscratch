@@ -62,9 +62,11 @@ func Auth(cfg AuthConfig) fiber.Handler {
 		c.Locals(cfg.ContextKey, claims)
 		c.Locals("user_id", claims.UserID)
 
-		// Add to user context for logger
+		// Add to user context for logger and auditor
 		ctx := c.UserContext()
 		ctx = setContextValue(ctx, logger.UserIDKey, claims.UserID)
+		ctx = setContextValue(ctx, logger.IPAddressKey, c.IP())
+		ctx = setContextValue(ctx, logger.UserAgentKey, c.Get("User-Agent"))
 		c.SetUserContext(ctx)
 
 		return c.Next()
@@ -89,6 +91,8 @@ func OptionalAuth(cfg AuthConfig) fiber.Handler {
 
 		ctx := c.UserContext()
 		ctx = setContextValue(ctx, logger.UserIDKey, claims.UserID)
+		ctx = setContextValue(ctx, logger.IPAddressKey, c.IP())
+		ctx = setContextValue(ctx, logger.UserAgentKey, c.Get("User-Agent"))
 		c.SetUserContext(ctx)
 
 		return c.Next()

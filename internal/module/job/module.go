@@ -17,9 +17,13 @@ type Module struct {
 }
 
 // NewModule creates a new job module
-func NewModule(publisher *worker.Publisher, authorizer port.Authorizer, jwtSecret string) *Module {
+func NewModule(publisher *worker.Publisher, auditor port.Auditor, authorizer port.Authorizer, jwtSecret string) *Module {
 	uc := usecase.NewUseCase(publisher)
-	h := handler.NewHandler(uc)
+	var ucIface usecase.UseCase = uc
+	if auditor != nil {
+		ucIface = usecase.NewAuditedUseCase(ucIface, auditor)
+	}
+	h := handler.NewHandler(ucIface)
 
 	return &Module{
 		handler:    h,

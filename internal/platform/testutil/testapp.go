@@ -21,6 +21,7 @@ import (
 	storagemodule "github.com/14mdzk/goscratch/internal/module/storage"
 	"github.com/14mdzk/goscratch/internal/module/user"
 	"github.com/14mdzk/goscratch/internal/platform/config"
+	"github.com/14mdzk/goscratch/internal/platform/database"
 	httpserver "github.com/14mdzk/goscratch/internal/platform/http"
 	"github.com/14mdzk/goscratch/internal/platform/http/middleware"
 	"github.com/14mdzk/goscratch/internal/port"
@@ -112,13 +113,15 @@ func NewTestApp(ctx context.Context, pgConnStr, redisAddr string) (*fiber.App, f
 	// Wire up modules exactly like app.go
 	publisher := worker.NewPublisher(queueAdapter, "jobs", "")
 
+	transactor := database.NewTransactor(pool)
+
 	healthModule := health.NewModule()
-	userModule := user.NewModule(pool, auditor, authorizer, jwtCfg.Secret)
+	userModule := user.NewModule(pool, transactor, auditor, authorizer, jwtCfg.Secret)
 	authModule := auth.NewModule(pool, cacheAdapter, auditor, jwtCfg)
 	roleModule := role.NewModule(authorizer, jwtCfg.Secret)
-	storageModule := storagemodule.NewModule(storageAdapter, jwtCfg.Secret)
+	storageModule := storagemodule.NewModule(storageAdapter, auditor, jwtCfg.Secret)
 	sseModule := ssemodule.NewModule(sseBroker, authorizer, jwtCfg.Secret)
-	jobModule := job.NewModule(publisher, authorizer, jwtCfg.Secret)
+	jobModule := job.NewModule(publisher, auditor, authorizer, jwtCfg.Secret)
 
 	server.RegisterModules(healthModule, userModule, authModule, roleModule, storageModule, sseModule, jobModule)
 

@@ -127,6 +127,19 @@ Signed with `HS256` using the configured secret.
 5. Stores refresh token in `port.Cache`
 6. Logs login event via `port.Auditor`
 
+### Audit logging
+
+Both successful and failed login attempts are recorded in `audit_logs`:
+
+| Outcome | `action` | `resource_id` | `metadata.outcome` | `metadata.reason` |
+|---------|----------|---------------|--------------------|---------------------|
+| Success | `LOGIN` | authenticated user ID | `success` | — |
+| Failed (bad password / unknown user) | `LOGIN` | attempted email | `failed` | `invalid_credentials` |
+| Failed (inactive account) | `LOGIN` | attempted email | `failed` | `user_inactive` |
+| Failed (other) | `LOGIN` | attempted email | `failed` | `unknown` |
+
+Logging the attempted email on failure makes brute-force activity against a single email address detectable. The `reason` is sanitized to a fixed category — raw error strings are never echoed into the audit log.
+
 ## Dependencies
 
 | Port | Adapter | Purpose |

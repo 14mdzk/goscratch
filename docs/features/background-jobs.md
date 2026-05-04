@@ -115,9 +115,14 @@ The worker runs as a separate process (or goroutine) that:
 - The API uses `worker.Publisher` to publish jobs
 - The worker uses `worker.Worker` to consume and dispatch to registered `JobHandler` implementations
 
+## Audit Logging
+
+Each job dispatched via the API is recorded in `audit_logs` with `action=CREATE`, `resource=job`, `resource_id=<job_id>`, and metadata `{job_type, max_retry}`. Failed dispatch attempts are not audited (no job exists).
+
 ## Dependencies
 
 | Port | Adapter | Purpose |
 |------|---------|---------|
 | `port.Queue` | RabbitMQ / NoOp | Job publishing and consuming |
 | `port.Authorizer` | Casbin / NoOp | Admin role check on API routes |
+| `port.Auditor` | PostgreSQL / NoOp | Dispatch audit logging |

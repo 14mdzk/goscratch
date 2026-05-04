@@ -17,20 +17,22 @@ var validJobTypes = map[string]string{
 	worker.JobTypeNotification: "Send a notification to a user",
 }
 
-// UseCase handles job business logic
-type UseCase struct {
+// jobUseCase handles job business logic.
+// Returned via the UseCase interface; the concrete type is unexported so
+// callers depend on the interface (enables the audit decorator).
+type jobUseCase struct {
 	publisher *worker.Publisher
 }
 
 // NewUseCase creates a new job use case
-func NewUseCase(publisher *worker.Publisher) *UseCase {
-	return &UseCase{
+func NewUseCase(publisher *worker.Publisher) UseCase {
+	return &jobUseCase{
 		publisher: publisher,
 	}
 }
 
 // Dispatch validates the job type and publishes a job to the queue
-func (uc *UseCase) Dispatch(ctx context.Context, jobType string, payload any, maxRetry int) (*dto.JobResponse, error) {
+func (uc *jobUseCase) Dispatch(ctx context.Context, jobType string, payload any, maxRetry int) (*dto.JobResponse, error) {
 	// Validate job type
 	if _, ok := validJobTypes[jobType]; !ok {
 		return nil, apperr.BadRequestf("invalid job type: %s", jobType)
@@ -50,7 +52,7 @@ func (uc *UseCase) Dispatch(ctx context.Context, jobType string, payload any, ma
 }
 
 // ListJobTypes returns all available job types with descriptions
-func (uc *UseCase) ListJobTypes(ctx context.Context) *dto.ListJobTypesResponse {
+func (uc *jobUseCase) ListJobTypes(ctx context.Context) *dto.ListJobTypesResponse {
 	types := make([]dto.JobTypeInfo, 0, len(validJobTypes))
 	for t, desc := range validJobTypes {
 		types = append(types, dto.JobTypeInfo{

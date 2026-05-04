@@ -115,8 +115,20 @@ All file paths are sanitized to prevent path traversal attacks:
 - Uploaded files get a UUID-based unique name preserving the original extension
 - If S3 initialization fails, falls back to local storage automatically
 
+## Audit Logging
+
+State-mutating operations are recorded in `audit_logs` via `port.Auditor`:
+
+| Operation | `action` | `resource` | `resource_id` |
+|-----------|----------|------------|---------------|
+| Upload | `CREATE` | `file` | uploaded path / object key |
+| Delete | `DELETE` | `file` | deleted path / object key |
+
+Read-only operations (`Download`, `GetURL`, `List`) are intentionally not audited to keep the audit log signal high.
+
 ## Dependencies
 
 | Port | Adapter | Purpose |
 |------|---------|---------|
 | `port.Storage` | Local / S3 | All file operations |
+| `port.Auditor` | PostgreSQL / NoOp | Upload / Delete audit logging |
