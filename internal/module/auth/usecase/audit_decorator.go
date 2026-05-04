@@ -2,14 +2,15 @@ package usecase
 
 import (
 	"context"
+	"errors"
 
 	"github.com/14mdzk/goscratch/internal/module/auth/dto"
 	"github.com/14mdzk/goscratch/internal/port"
+	"github.com/14mdzk/goscratch/pkg/apperr"
 )
 
-// AuditedUseCase wraps a UseCase and adds audit logging for Login and
-// Logout. Refresh is delegated as-is since it is not a security-sensitive
-// event that requires an audit trail in the existing implementation.
+// AuditedUseCase wraps a UseCase and adds audit logging for Login (success
+// and failure), Logout. Refresh is delegated as-is.
 type AuditedUseCase struct {
 	inner   UseCase
 	auditor port.Auditor
@@ -20,24 +21,25 @@ func NewAuditedUseCase(inner UseCase, auditor port.Auditor) *AuditedUseCase {
 	return &AuditedUseCase{inner: inner, auditor: auditor}
 }
 
-// Login authenticates a user and logs a LOGIN audit entry on success.
+// Login authenticates a user and logs a LOGIN audit entry on both success
+// and failure. On failure, ResourceID is the attempted email so brute-force
+// activity against a single email is detectable; the failure reason is
+// sanitized to a fixed category to avoid echoing raw error strings into the
+// audit log.
 func (d *AuditedUseCase) Login(ctx context.Context, req dto.LoginRequest) (*dto.LoginResponse, error) {
 	resp, err := d.inner.Login(ctx, req)
 	if err != nil {
+		entry := port.NewAuditEntry(ctx, port.AuditActionLogin, "user", req.Email)
+		entry.Metadata = map[string]any{
+			"outcome": "failed",
+			"reason":  classifyLoginFailure(err),
+		}
+		_ = d.auditor.Log(ctx, entry)
 		return nil, err
 	}
 
-	// The user ID is embedded in the JWT but we can derive it from context
-	// after the inner usecase propagates it. We use an empty resource ID
-	// consistent with how the concrete usecase extracted it previously via
-	// port.NewAuditEntry which reads from the context's user_id key. However
-	// the concrete usecase used the real user ID obtained from the DB, so we
-	// replicate that using a best-effort extraction. The inner call already
-	// wrote the user_id into the token, not into the context, so we cannot
-	// retrieve it here without coupling to implementation details. We keep
-	// the same behaviour as the original code: NewAuditEntry reads user_id
-	// from ctx (set by auth middleware on subsequent requests).
-	entry := port.NewAuditEntry(ctx, port.AuditActionLogin, "user", "")
+	entry := port.NewAuditEntry(ctx, port.AuditActionLogin, "user", resp.UserID)
+	entry.Metadata = map[string]any{"outcome": "success"}
 	_ = d.auditor.Log(ctx, entry)
 
 	return resp, nil
@@ -58,4 +60,21 @@ func (d *AuditedUseCase) Logout(ctx context.Context, refreshToken string) error 
 	_ = d.auditor.Log(ctx, entry)
 
 	return nil
+}
+
+// classifyLoginFailure maps a login error to a fixed sanitized category so
+// the audit log never echoes raw error strings (which could leak details or
+// vary across releases). Inner usecase wraps both bad-password and
+// no-such-user as ErrUnauthorized with the same generic message.
+func classifyLoginFailure(err error) string {
+	var ae *apperr.Error
+	if errors.As(err, &ae) {
+		switch ae.Code {
+		case apperr.CodeUnauthorized:
+			return "invalid_credentials"
+		case apperr.CodeForbidden:
+			return "user_inactive"
+		}
+	}
+	return "unknown"
 }

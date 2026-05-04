@@ -1,12 +1,14 @@
 package middleware
 
 import (
+	"context"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
 
+	"github.com/14mdzk/goscratch/pkg/logger"
 	"github.com/gofiber/fiber/v2"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/stretchr/testify/assert"
@@ -43,17 +45,20 @@ func TestAuth_ValidJWTInHeader(t *testing.T) {
 
 	var capturedUserID string
 	var capturedClaims *Claims
+	var capturedCtx context.Context
 
 	app.Use(Auth(cfg))
 	app.Get("/test", func(c *fiber.Ctx) error {
 		capturedClaims = GetClaims(c)
 		capturedUserID = GetUserID(c)
+		capturedCtx = c.UserContext()
 		return c.SendStatus(fiber.StatusOK)
 	})
 
 	token := generateTestToken(t, testJWTSecret, validClaims())
 	req := httptest.NewRequest(http.MethodGet, "/test", nil)
 	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("User-Agent", "Test-Agent/1.0")
 
 	resp, err := app.Test(req)
 	require.NoError(t, err)
@@ -62,6 +67,15 @@ func TestAuth_ValidJWTInHeader(t *testing.T) {
 	assert.Equal(t, "user-123", capturedUserID)
 	assert.Equal(t, "test@example.com", capturedClaims.Email)
 	assert.Equal(t, "Test User", capturedClaims.Name)
+
+	// Auth middleware writes typed context keys for downstream auditor/logger.
+	require.NotNil(t, capturedCtx)
+	assert.Equal(t, "user-123", capturedCtx.Value(logger.UserIDKey))
+	assert.Equal(t, "Test-Agent/1.0", capturedCtx.Value(logger.UserAgentKey))
+	// IPAddressKey is set from c.IP(); under app.Test with httptest the
+	// remote addr is non-empty but the exact value is not asserted to keep
+	// the test stable across Fiber versions.
+	assert.NotEmpty(t, capturedCtx.Value(logger.IPAddressKey))
 }
 
 func TestAuth_ValidJWTInCookie(t *testing.T) {

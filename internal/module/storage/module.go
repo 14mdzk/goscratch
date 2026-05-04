@@ -15,9 +15,13 @@ type Module struct {
 }
 
 // NewModule creates a new storage module
-func NewModule(storage port.Storage, jwtSecret string) *Module {
+func NewModule(storage port.Storage, auditor port.Auditor, jwtSecret string) *Module {
 	uc := usecase.NewUseCase(storage, nil)
-	h := handler.NewHandler(uc)
+	var ucIface usecase.UseCase = uc
+	if auditor != nil {
+		ucIface = usecase.NewAuditedUseCase(ucIface, auditor)
+	}
+	h := handler.NewHandler(ucIface)
 
 	return &Module{
 		handler:   h,

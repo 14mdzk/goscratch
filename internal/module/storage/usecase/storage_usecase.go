@@ -16,8 +16,10 @@ import (
 	"github.com/google/uuid"
 )
 
-// UseCase handles storage business logic
-type UseCase struct {
+// storageUseCase handles storage business logic.
+// Returned via the UseCase interface; the concrete type is unexported so
+// callers depend on the interface (enables the audit decorator).
+type storageUseCase struct {
 	storage             port.Storage
 	maxFileSize         int64
 	allowedContentTypes map[string]bool
@@ -30,7 +32,7 @@ type Config struct {
 }
 
 // NewUseCase creates a new storage use case
-func NewUseCase(storage port.Storage, cfg *Config) *UseCase {
+func NewUseCase(storage port.Storage, cfg *Config) UseCase {
 	maxSize := domain.DefaultMaxFileSize
 	allowed := domain.DefaultAllowedContentTypes
 
@@ -43,7 +45,7 @@ func NewUseCase(storage port.Storage, cfg *Config) *UseCase {
 		}
 	}
 
-	return &UseCase{
+	return &storageUseCase{
 		storage:             storage,
 		maxFileSize:         maxSize,
 		allowedContentTypes: allowed,
@@ -51,7 +53,7 @@ func NewUseCase(storage port.Storage, cfg *Config) *UseCase {
 }
 
 // Upload validates and uploads a file
-func (uc *UseCase) Upload(ctx context.Context, file multipart.File, header *multipart.FileHeader, directory string) (*dto.UploadResponse, error) {
+func (uc *storageUseCase) Upload(ctx context.Context, file multipart.File, header *multipart.FileHeader, directory string) (*dto.UploadResponse, error) {
 	// Validate file size
 	if header.Size > uc.maxFileSize {
 		return nil, apperr.BadRequestf("file size %d exceeds maximum allowed size %d", header.Size, uc.maxFileSize)
@@ -102,7 +104,7 @@ func (uc *UseCase) Upload(ctx context.Context, file multipart.File, header *mult
 }
 
 // Download retrieves a file and its content type
-func (uc *UseCase) Download(ctx context.Context, path string) (io.ReadCloser, string, error) {
+func (uc *storageUseCase) Download(ctx context.Context, path string) (io.ReadCloser, string, error) {
 	path = sanitizePath(path)
 	if path == "" {
 		return nil, "", apperr.BadRequestf("invalid file path")
@@ -142,7 +144,7 @@ func (uc *UseCase) Download(ctx context.Context, path string) (io.ReadCloser, st
 }
 
 // Delete removes a file
-func (uc *UseCase) Delete(ctx context.Context, path string) error {
+func (uc *storageUseCase) Delete(ctx context.Context, path string) error {
 	path = sanitizePath(path)
 	if path == "" {
 		return apperr.BadRequestf("invalid file path")
@@ -165,7 +167,7 @@ func (uc *UseCase) Delete(ctx context.Context, path string) error {
 }
 
 // GetURL returns a URL for accessing a file
-func (uc *UseCase) GetURL(ctx context.Context, path string, expires time.Duration) (*dto.FileResponse, error) {
+func (uc *storageUseCase) GetURL(ctx context.Context, path string, expires time.Duration) (*dto.FileResponse, error) {
 	path = sanitizePath(path)
 	if path == "" {
 		return nil, apperr.BadRequestf("invalid file path")
@@ -196,7 +198,7 @@ func (uc *UseCase) GetURL(ctx context.Context, path string, expires time.Duratio
 }
 
 // List lists files with the given prefix
-func (uc *UseCase) List(ctx context.Context, prefix string) (*dto.ListFilesResponse, error) {
+func (uc *storageUseCase) List(ctx context.Context, prefix string) (*dto.ListFilesResponse, error) {
 	prefix = sanitizePath(prefix)
 
 	files, err := uc.storage.List(ctx, prefix)

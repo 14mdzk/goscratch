@@ -3,6 +3,8 @@ package port
 import (
 	"context"
 	"time"
+
+	"github.com/14mdzk/goscratch/pkg/logger"
 )
 
 // Auditor defines the interface for audit logging
@@ -67,13 +69,13 @@ type AuditContext struct {
 func ExtractAuditContext(ctx context.Context) AuditContext {
 	ac := AuditContext{}
 
-	if userID, ok := ctx.Value("user_id").(string); ok {
+	if userID, ok := ctx.Value(logger.UserIDKey).(string); ok {
 		ac.UserID = userID
 	}
-	if ip, ok := ctx.Value("ip_address").(string); ok {
+	if ip, ok := ctx.Value(logger.IPAddressKey).(string); ok {
 		ac.IPAddress = ip
 	}
-	if ua, ok := ctx.Value("user_agent").(string); ok {
+	if ua, ok := ctx.Value(logger.UserAgentKey).(string); ok {
 		ac.UserAgent = ua
 	}
 

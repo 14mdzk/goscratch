@@ -10,11 +10,11 @@ import (
 
 // Handler handles job HTTP requests
 type Handler struct {
-	useCase *usecase.UseCase
+	useCase usecase.UseCase
 }
 
 // NewHandler creates a new job handler
-func NewHandler(useCase *usecase.UseCase) *Handler {
+func NewHandler(useCase usecase.UseCase) *Handler {
 	return &Handler{useCase: useCase}
 }
 

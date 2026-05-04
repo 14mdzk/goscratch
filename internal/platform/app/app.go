@@ -261,9 +261,9 @@ func New(ctx context.Context, cfg *config.Config) (*App, error) {
 	userModule := user.NewModule(pool, transactor, auditor, authorizer, cfg.JWT.Secret)
 	authModule := auth.NewModule(pool, cacheAdapter, auditor, cfg.JWT)
 	roleModule := role.NewModule(authorizer, cfg.JWT.Secret)
-	storageModule := storagemodule.NewModule(storageAdapter, cfg.JWT.Secret)
+	storageModule := storagemodule.NewModule(storageAdapter, auditor, cfg.JWT.Secret)
 	sseModule := ssemodule.NewModule(sseBroker, authorizer, cfg.JWT.Secret)
-	jobModule := job.NewModule(publisher, authorizer, cfg.JWT.Secret)
+	jobModule := job.NewModule(publisher, auditor, authorizer, cfg.JWT.Secret)
 
 	server.RegisterModules(docsModule, healthModule, userModule, authModule, roleModule, storageModule, sseModule, jobModule)
 

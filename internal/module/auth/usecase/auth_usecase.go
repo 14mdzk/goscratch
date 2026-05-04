@@ -66,6 +66,7 @@ func (uc *authUseCase) Login(ctx context.Context, req dto.LoginRequest) (*dto.Lo
 		RefreshToken: refreshToken,
 		ExpiresIn:    uc.jwtCfg.AccessTokenTTL * 60, // Convert minutes to seconds
 		TokenType:    "Bearer",
+		UserID:       user.ID.String(),
 	}, nil
 }
 

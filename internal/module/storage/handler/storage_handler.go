@@ -13,11 +13,11 @@ import (
 
 // Handler handles storage HTTP requests
 type Handler struct {
-	useCase *usecase.UseCase
+	useCase usecase.UseCase
 }
 
 // NewHandler creates a new storage handler
-func NewHandler(useCase *usecase.UseCase) *Handler {
+func NewHandler(useCase usecase.UseCase) *Handler {
 	return &Handler{useCase: useCase}
 }
 

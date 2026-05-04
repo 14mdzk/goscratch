@@ -19,6 +19,10 @@ const (
 	UserIDKey ContextKey = "user_id"
 	// TraceIDKey is the context key for trace ID
 	TraceIDKey ContextKey = "trace_id"
+	// IPAddressKey is the context key for the client IP address
+	IPAddressKey ContextKey = "ip_address"
+	// UserAgentKey is the context key for the client User-Agent header
+	UserAgentKey ContextKey = "user_agent"
 )
 
 // Logger wraps slog.Logger with additional functionality
@@ -106,6 +110,12 @@ func (l *Logger) WithContext(ctx context.Context) *Logger {
 	}
 	if traceID, ok := ctx.Value(TraceIDKey).(string); ok && traceID != "" {
 		attrs = append(attrs, "trace_id", traceID)
+	}
+	if ip, ok := ctx.Value(IPAddressKey).(string); ok && ip != "" {
+		attrs = append(attrs, "ip_address", ip)
+	}
+	if ua, ok := ctx.Value(UserAgentKey).(string); ok && ua != "" {
+		attrs = append(attrs, "user_agent", ua)
 	}
 
 	if len(attrs) == 0 {

@@ -4,6 +4,21 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Fixed
+
+- Audit log writing empty `user_id` / `ip_address` / `user_agent` for every row. Reader (`port.ExtractAuditContext`) used bare string keys while writers used typed `logger.ContextKey`, so reads never matched writes. A negative regression test in `internal/port/auditor_test.go` locks the bug from coming back.
+
+### Added
+
+- Typed context keys `logger.IPAddressKey` and `logger.UserAgentKey`; auth middleware now writes IP and User-Agent into the request context for downstream auditor and logger consumers.
+- Audit decorator for the storage module — `Upload` records `CREATE file`, `Delete` records `DELETE file`. Read paths (`Download`, `GetURL`, `List`) are not audited.
+- Audit decorator for the job module — `Dispatch` records `CREATE job` with `{job_type, max_retry}` metadata.
+- Failed-login audit entries — every `LOGIN` failure records `resource_id = attempted_email`, `metadata.outcome = failed`, and a sanitized `metadata.reason` (`invalid_credentials` / `user_inactive` / `unknown`). Brute-force activity against a single email is now visible.
+- Successful-login audit entries now populate `resource_id` with the authenticated user ID (was previously empty).
+- `UseCase` interface ports for `internal/module/storage/usecase` and `internal/module/job/usecase` so the decorator pattern can wrap the concrete implementations.
+
 ## [0.5.0] - 2026-03-27
 
 ### Added

@@ -7,6 +7,7 @@ import (
 
 	"github.com/14mdzk/goscratch/internal/module/auth/dto"
 	"github.com/14mdzk/goscratch/internal/port"
+	"github.com/14mdzk/goscratch/pkg/apperr"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 )
@@ -61,7 +62,7 @@ func TestAuthAuditDecorator_Login(t *testing.T) {
 	ctx := context.Background()
 	req := dto.LoginRequest{Email: "user@example.com", Password: "password123"}
 
-	t.Run("on success, logs LOGIN audit entry", func(t *testing.T) {
+	t.Run("on success, logs LOGIN audit entry with populated ResourceID", func(t *testing.T) {
 		inner := new(mockAuthUseCase)
 		auditor := &mockAuditorAuth{}
 		dec := NewAuditedUseCase(inner, auditor)
@@ -71,6 +72,7 @@ func TestAuthAuditDecorator_Login(t *testing.T) {
 			RefreshToken: "refresh",
 			ExpiresIn:    900,
 			TokenType:    "Bearer",
+			UserID:       "u-1",
 		}
 		inner.On("Login", ctx, req).Return(resp, nil)
 
@@ -83,21 +85,62 @@ func TestAuthAuditDecorator_Login(t *testing.T) {
 		entry := auditor.Entries[0]
 		assert.Equal(t, port.AuditActionLogin, entry.Action)
 		assert.Equal(t, "user", entry.Resource)
+		assert.Equal(t, "u-1", entry.ResourceID)
+		assert.Equal(t, "success", entry.Metadata["outcome"])
 
 		inner.AssertExpectations(t)
 	})
 
-	t.Run("on failure, does NOT log audit entry", func(t *testing.T) {
+	t.Run("on invalid credentials, logs failed LOGIN entry with sanitized reason and email as ResourceID", func(t *testing.T) {
 		inner := new(mockAuthUseCase)
 		auditor := &mockAuditorAuth{}
 		dec := NewAuditedUseCase(inner, auditor)
 
-		inner.On("Login", ctx, req).Return(nil, errors.New("invalid credentials"))
+		inner.On("Login", ctx, req).Return(nil, apperr.ErrUnauthorized.WithMessage("Invalid email or password"))
 
 		_, err := dec.Login(ctx, req)
 
 		assert.Error(t, err)
-		assert.Empty(t, auditor.Entries)
+		assert.Len(t, auditor.Entries, 1)
+		entry := auditor.Entries[0]
+		assert.Equal(t, port.AuditActionLogin, entry.Action)
+		assert.Equal(t, "user", entry.Resource)
+		assert.Equal(t, req.Email, entry.ResourceID)
+		assert.Equal(t, "failed", entry.Metadata["outcome"])
+		assert.Equal(t, "invalid_credentials", entry.Metadata["reason"])
+		inner.AssertExpectations(t)
+	})
+
+	t.Run("on user inactive (forbidden), classifies reason as user_inactive", func(t *testing.T) {
+		inner := new(mockAuthUseCase)
+		auditor := &mockAuditorAuth{}
+		dec := NewAuditedUseCase(inner, auditor)
+
+		inner.On("Login", ctx, req).Return(nil, apperr.ErrForbidden.WithMessage("Account is disabled"))
+
+		_, err := dec.Login(ctx, req)
+
+		assert.Error(t, err)
+		assert.Len(t, auditor.Entries, 1)
+		assert.Equal(t, "user_inactive", auditor.Entries[0].Metadata["reason"])
+		inner.AssertExpectations(t)
+	})
+
+	t.Run("on opaque error, classifies reason as unknown and never echoes raw message", func(t *testing.T) {
+		inner := new(mockAuthUseCase)
+		auditor := &mockAuditorAuth{}
+		dec := NewAuditedUseCase(inner, auditor)
+
+		raw := errors.New("connection refused: pq host=secret-internal.db.local")
+		inner.On("Login", ctx, req).Return(nil, raw)
+
+		_, err := dec.Login(ctx, req)
+
+		assert.Error(t, err)
+		assert.Len(t, auditor.Entries, 1)
+		assert.Equal(t, "unknown", auditor.Entries[0].Metadata["reason"])
+		// Raw error message must not leak into audit metadata.
+		assert.NotContains(t, auditor.Entries[0].Metadata["reason"], "secret-internal")
 		inner.AssertExpectations(t)
 	})
 }

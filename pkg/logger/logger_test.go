@@ -117,6 +117,30 @@ func TestWithContext(t *testing.T) {
 		assert.Contains(t, buf.String(), "trace-789")
 	})
 
+	t.Run("with_ip_address", func(t *testing.T) {
+		buf := &bytes.Buffer{}
+		log := New(Config{Level: "info", Format: "json", Output: buf})
+
+		ctx := context.WithValue(context.Background(), IPAddressKey, "203.0.113.42")
+		ctxLog := log.WithContext(ctx)
+
+		ctxLog.Info("with ip")
+		assert.Contains(t, buf.String(), "203.0.113.42")
+		assert.Contains(t, buf.String(), "ip_address")
+	})
+
+	t.Run("with_user_agent", func(t *testing.T) {
+		buf := &bytes.Buffer{}
+		log := New(Config{Level: "info", Format: "json", Output: buf})
+
+		ctx := context.WithValue(context.Background(), UserAgentKey, "Mozilla/5.0 (test)")
+		ctxLog := log.WithContext(ctx)
+
+		ctxLog.Info("with ua")
+		assert.Contains(t, buf.String(), "Mozilla/5.0")
+		assert.Contains(t, buf.String(), "user_agent")
+	})
+
 	t.Run("empty_context_returns_same_logger", func(t *testing.T) {
 		log := New(Config{Level: "info", Format: "json", Output: &bytes.Buffer{}})
 		ctxLog := log.WithContext(context.Background())
