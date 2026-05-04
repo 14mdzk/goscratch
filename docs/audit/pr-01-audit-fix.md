@@ -3,6 +3,11 @@
 Branch: `feat/audit-context-keys`
 Closes: block-ship #1 + audit should-fix gaps from `2026-05-02-preship-audit.md`.
 Risk: low. Estimate: ~2h.
+Status: **shipped via [#13](https://github.com/14mdzk/goscratch/pull/13)** (commit `fd6172c`).
+
+7.3 (`make test-integration`) blocked locally by pre-existing `uuidv7()` migration requirement (PostgreSQL 17+); confirm in CI.
+7.4 (manual smoke against running stack) deferred to review environment.
+9 (PR description checklist) covered in the PR body.
 
 ## Goal
 
@@ -20,22 +25,22 @@ The audit feature is shipped in the README but produces empty `user_id`, `ip_add
 
 ### 1. Typed context keys
 
-- [ ] **1.1** In `pkg/logger/logger.go`, add `IPAddressKey ContextKey = "ip_address"` and `UserAgentKey ContextKey = "user_agent"` next to existing `UserIDKey` and `RequestIDKey` constants.
-- [ ] **1.2** In `pkg/logger/logger_test.go`, mirror the existing `UserIDKey` test pattern: assert `WithContext` propagates the new keys to the log record. (Tests for these two keys do not need to assert audit behavior; that is covered in step 4.)
+- [x] **1.1** In `pkg/logger/logger.go`, add `IPAddressKey ContextKey = "ip_address"` and `UserAgentKey ContextKey = "user_agent"` next to existing `UserIDKey` and `RequestIDKey` constants.
+- [x] **1.2** In `pkg/logger/logger_test.go`, mirror the existing `UserIDKey` test pattern: assert `WithContext` propagates the new keys to the log record. (Tests for these two keys do not need to assert audit behavior; that is covered in step 4.)
 
 ### 2. Auth middleware writes IP + User-Agent
 
-- [ ] **2.1** In `internal/platform/http/middleware/auth.go`, after the existing `setContextValue(ctx, logger.UserIDKey, claims.UserID)` call (lines 67 and 91), add:
+- [x] **2.1** In `internal/platform/http/middleware/auth.go`, after the existing `setContextValue(ctx, logger.UserIDKey, claims.UserID)` call (lines 67 and 91), add:
       - `setContextValue(ctx, logger.IPAddressKey, c.IP())`
       - `setContextValue(ctx, logger.UserAgentKey, c.Get("User-Agent"))`
-- [ ] **2.2** Verify in tests (`auth_test.go`) that the request context after middleware contains all three values. Use the typed keys, not string literals.
+- [x] **2.2** Verify in tests (`auth_test.go`) that the request context after middleware contains all three values. Use the typed keys, not string literals.
 
 ### 3. Fix the auditor reader
 
-- [ ] **3.1** In `internal/port/auditor.go`:
+- [x] **3.1** In `internal/port/auditor.go`:
       - Add `import "github.com/14mdzk/goscratch/pkg/logger"` (verify no import cycle with `pkg/logger`; if cycle exists, move keys to a new `pkg/ctxkeys` package and update step 1 + 2.1 accordingly — this is the more robust shape and worth it if blocked).
       - Replace the three `ctx.Value("user_id")` / `"ip_address"` / `"user_agent"` reads with typed-key reads using `logger.UserIDKey`, `logger.IPAddressKey`, `logger.UserAgentKey`.
-- [ ] **3.2** Add a regression test in `internal/port/auditor_test.go` (create the file if absent) that:
+- [x] **3.2** Add a regression test in `internal/port/auditor_test.go` (create the file if absent) that:
       - Builds a context using `context.WithValue(ctx, logger.UserIDKey, "u-1")` (typed key).
       - Calls `ExtractAuditContext(ctx)`.
       - Asserts `UserID == "u-1"`. Same for IP / User-Agent.
@@ -43,29 +48,29 @@ The audit feature is shipped in the README but produces empty `user_id`, `ip_add
 
 ### 4. Storage audit decorator
 
-- [ ] **4.1** Create `internal/module/storage/usecase/audit_decorator.go` mirroring the shape of `internal/module/user/usecase/audit_decorator.go`.
-- [ ] **4.2** Decorate the operations that mutate state: `Upload`, `Delete`. (Skip `Download`, `GetURL`, `List` — read-only, noisy.) Audit action mapping: `Upload → CREATE`, `Delete → DELETE`. Resource = `"file"`, ResourceID = file path / object key.
-- [ ] **4.3** Wire the decorator in `internal/module/storage/module.go` exactly like `user/module.go` does — wrap the concrete usecase with the audited variant when an `Auditor` port is available.
-- [ ] **4.4** Add `internal/module/storage/usecase/audit_decorator_test.go` mirroring `user/usecase/audit_decorator_test.go`.
+- [x] **4.1** Create `internal/module/storage/usecase/audit_decorator.go` mirroring the shape of `internal/module/user/usecase/audit_decorator.go`.
+- [x] **4.2** Decorate the operations that mutate state: `Upload`, `Delete`. (Skip `Download`, `GetURL`, `List` — read-only, noisy.) Audit action mapping: `Upload → CREATE`, `Delete → DELETE`. Resource = `"file"`, ResourceID = file path / object key.
+- [x] **4.3** Wire the decorator in `internal/module/storage/module.go` exactly like `user/module.go` does — wrap the concrete usecase with the audited variant when an `Auditor` port is available.
+- [x] **4.4** Add `internal/module/storage/usecase/audit_decorator_test.go` mirroring `user/usecase/audit_decorator_test.go`.
 
 ### 5. Job audit decorator
 
-- [ ] **5.1** Create `internal/module/job/usecase/audit_decorator.go` following the same pattern.
-- [ ] **5.2** Decorate `Dispatch`. Resource = `"job"`, ResourceID = job ID, Action = `CREATE`. Capture the job type in `Metadata`.
-- [ ] **5.3** Wire in `internal/module/job/module.go`.
-- [ ] **5.4** Tests mirror the user decorator tests.
+- [x] **5.1** Create `internal/module/job/usecase/audit_decorator.go` following the same pattern.
+- [x] **5.2** Decorate `Dispatch`. Resource = `"job"`, ResourceID = job ID, Action = `CREATE`. Capture the job type in `Metadata`.
+- [x] **5.3** Wire in `internal/module/job/module.go`.
+- [x] **5.4** Tests mirror the user decorator tests.
 
 ### 6. Failed-login audit
 
-- [ ] **6.1** In `internal/module/auth/usecase/audit_decorator.go`, extend the `Login` wrapper so that on the inner usecase returning a non-nil error, an audit entry is written with `Action = LOGIN`, `ResourceID = email-from-request` (so brute-force on a single email is detectable), and `Metadata = {"outcome":"failed", "reason":<sanitized error category>}`.
+- [x] **6.1** In `internal/module/auth/usecase/audit_decorator.go`, extend the `Login` wrapper so that on the inner usecase returning a non-nil error, an audit entry is written with `Action = LOGIN`, `ResourceID = email-from-request` (so brute-force on a single email is detectable), and `Metadata = {"outcome":"failed", "reason":<sanitized error category>}`.
       - Sanitize `reason` to `"invalid_credentials"` or `"user_inactive"` — never echo the raw error string back into the audit row.
-- [ ] **6.2** On success, the existing success-path entry already writes `UserID` from the inner result; verify `ResourceID` is also populated with the user ID (the audit currently records LOGIN with empty ResourceID per security audit findings).
-- [ ] **6.3** Add a test in `audit_decorator_test.go` covering both branches: success → 1 row with action LOGIN + populated ResourceID; failure → 1 row with action LOGIN + outcome=failed + ResourceID = email.
+- [x] **6.2** On success, the existing success-path entry already writes `UserID` from the inner result; verify `ResourceID` is also populated with the user ID (the audit currently records LOGIN with empty ResourceID per security audit findings).
+- [x] **6.3** Add a test in `audit_decorator_test.go` covering both branches: success → 1 row with action LOGIN + populated ResourceID; failure → 1 row with action LOGIN + outcome=failed + ResourceID = email.
 
 ### 7. Verification
 
-- [ ] **7.1** `make lint` clean.
-- [ ] **7.2** `make test` clean (unit).
+- [x] **7.1** `make lint` clean.
+- [x] **7.2** `make test` clean (unit).
 - [ ] **7.3** `make test-integration` clean (touches the postgres-backed audit adapter).
 - [ ] **7.4** Run `make dev` locally; hit `/auth/login` (success and failure) + `/api/v1/users/me` + a storage upload; query `audit_logs` directly:
       ```sql
@@ -76,9 +81,9 @@ The audit feature is shipped in the README but produces empty `user_id`, `ip_add
 
 ### 8. Docs
 
-- [ ] **8.1** Update `docs/features/authentication.md` — add a paragraph: "Failed login attempts are recorded in `audit_logs` with `action=LOGIN`, `resource_id=<attempted_email>`, `metadata.outcome=failed`."
-- [ ] **8.2** Update `docs/features/file-storage.md` and `docs/features/background-jobs.md` — add a sentence noting upload/delete/dispatch are audited.
-- [ ] **8.3** Add `[Unreleased]` section to `CHANGELOG.md` if absent; entry: `Fixed audit log producing empty user_id/ip_address/user_agent (typed context-key bug). Added audit coverage for storage upload/delete, job dispatch, and failed login attempts.`
+- [x] **8.1** Update `docs/features/authentication.md` — add a paragraph: "Failed login attempts are recorded in `audit_logs` with `action=LOGIN`, `resource_id=<attempted_email>`, `metadata.outcome=failed`."
+- [x] **8.2** Update `docs/features/file-storage.md` and `docs/features/background-jobs.md` — add a sentence noting upload/delete/dispatch are audited.
+- [x] **8.3** Add `[Unreleased]` section to `CHANGELOG.md` if absent; entry: `Fixed audit log producing empty user_id/ip_address/user_agent (typed context-key bug). Added audit coverage for storage upload/delete, job dispatch, and failed login attempts.`
 
 ### 9. PR description checklist
 

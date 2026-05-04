@@ -22,9 +22,12 @@ Do NOT read the wiki for general coding questions or tasks unrelated to this pro
 - Sub-agent prompt MUST include: branch name, scope file (e.g. `docs/audit/pr-XX-*.md`), and "do not commit / push / open PR — main thread reviews then ships".
 - Main thread reviews the worktree diff before any merge.
 
-### PR Auto-Open
+### PR Auto-Open + Task Marking
 - After committing a completed task, immediately push the branch and open the PR via `gh pr create`. No waiting for confirmation.
 - PR title = the task subject. Body links audit doc + finding IDs.
+- Same commit (or follow-up commit on the same branch) MUST tick the task's checkboxes in its task file (`docs/audit/pr-NN-*.md`) and update the matching row in `docs/audit/punch-list.md` (e.g., add a status column or strikethrough).
+- Also update `TaskList` (TaskUpdate status=completed) so in-conversation tracking matches the audit file.
+- Never claim a task done in chat without ticking its file.
 
 ### PR Acceptance (per audit punch-list)
 1. Tests added or updated for changed behavior.
