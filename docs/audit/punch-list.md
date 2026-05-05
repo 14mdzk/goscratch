@@ -10,7 +10,7 @@ Each PR closes a coherent set of findings. Order chosen so each PR is independen
 | 2 | [Secure defaults](./pr-02-secure-defaults.md) — JWT secret guard, `sslmode=require`, prod stack-trace gate, generic error handler, `/metrics` lockdown | Block-ship #2, #6, #7, #8, #9 + `/metrics` should-fix | low | 2h | ready for review |
 | 3 | Auth hardening — logout authn, Casbin fail-fast, refresh-on-NoOp gate, rate-limit fail-closed, iss/aud strict | Block-ship #3, #4, #5 + 4 should-fix | medium | 4h | blocked by #1 |
 | 4 | Shutdown rewrite — `Authorizer` wired + closed, sub-budgets, tracer last, SSE per-conn UUID, worker `wg` covers real work, retry select on ctx | Block-ship #10, #11, #12, #14 + lifecycle should-fix | medium-high | 1d | blocked by #3 |
-| 5 | Storage download streaming + path-prefix guard + content-type sniff | Block-ship #13 + 2 should-fix | low | 3h | blocked by #1 |
+| 5 | [Storage download streaming + path-prefix guard + content-type sniff](./pr-05-storage-download-streaming.md) | Block-ship #13 + 2 should-fix | low | 3h | implemented in `fix/storage-download-streaming` (worktree, awaiting review) |
 | 6 | Pattern alignment — UseCase interfaces for role/storage/job, auth user-repo reuse, Claims to domain, `errors.Is` | Idiom should-fix batch | low | 3h | partial (storage+job ports landed in #1) |
 | 7 | RabbitMQ correctness — per-goroutine channels, `Qos`, NotifyClose reconnect | Concurrency should-fix | medium | 4h | pending |
 | 8 | SMTP + Postgres rollback context discipline | 2 should-fix | low | 1h | pending |

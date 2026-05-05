@@ -19,6 +19,29 @@ type LocalStorage struct {
 	baseURL  string // Optional base URL for serving files
 }
 
+// ErrPathEscapesBase is returned when a resolved key would escape the
+// configured base directory. This is defense-in-depth: the usecase layer
+// already strips `..` segments via sanitizePath, but a bug or future caller
+// that bypasses the usecase must still not be able to read files outside
+// the storage root.
+var ErrPathEscapesBase = fmt.Errorf("storage: path escapes base directory")
+
+// resolveWithinBase joins key onto basePath and verifies the cleaned result
+// is still rooted at basePath. Returns the absolute joined path or an error.
+func (s *LocalStorage) resolveWithinBase(key string) (string, error) {
+	fullPath := filepath.Join(s.basePath, key)
+	cleanedFull := filepath.Clean(fullPath)
+	cleanedBase := filepath.Clean(s.basePath)
+	// Allow the base directory itself (used by List with empty prefix).
+	if cleanedFull == cleanedBase {
+		return cleanedFull, nil
+	}
+	if !strings.HasPrefix(cleanedFull, cleanedBase+string(os.PathSeparator)) {
+		return "", ErrPathEscapesBase
+	}
+	return cleanedFull, nil
+}
+
 // NewLocalStorage creates a new local storage instance
 func NewLocalStorage(basePath, baseURL string) (*LocalStorage, error) {
 	// Ensure base path exists
@@ -35,8 +58,11 @@ func NewLocalStorage(basePath, baseURL string) (*LocalStorage, error) {
 func (s *LocalStorage) Upload(ctx context.Context, path string, data io.Reader, opts ...port.UploadOption) (string, error) {
 	cfg := port.ApplyOptions(opts)
 
-	// Build full path
-	fullPath := filepath.Join(s.basePath, path)
+	// Build full path with path-prefix guard.
+	fullPath, err := s.resolveWithinBase(path)
+	if err != nil {
+		return "", err
+	}
 
 	// Ensure directory exists
 	dir := filepath.Dir(fullPath)
@@ -66,7 +92,10 @@ func (s *LocalStorage) Upload(ctx context.Context, path string, data io.Reader, 
 }
 
 func (s *LocalStorage) Download(ctx context.Context, path string) (io.ReadCloser, error) {
-	fullPath := filepath.Join(s.basePath, path)
+	fullPath, err := s.resolveWithinBase(path)
+	if err != nil {
+		return nil, err
+	}
 
 	file, err := os.Open(fullPath)
 	if err != nil {
@@ -80,7 +109,10 @@ func (s *LocalStorage) Download(ctx context.Context, path string) (io.ReadCloser
 }
 
 func (s *LocalStorage) Delete(ctx context.Context, path string) error {
-	fullPath := filepath.Join(s.basePath, path)
+	fullPath, err := s.resolveWithinBase(path)
+	if err != nil {
+		return err
+	}
 
 	if err := os.Remove(fullPath); err != nil {
 		if os.IsNotExist(err) {
@@ -93,9 +125,12 @@ func (s *LocalStorage) Delete(ctx context.Context, path string) error {
 }
 
 func (s *LocalStorage) Exists(ctx context.Context, path string) (bool, error) {
-	fullPath := filepath.Join(s.basePath, path)
+	fullPath, err := s.resolveWithinBase(path)
+	if err != nil {
+		return false, err
+	}
 
-	_, err := os.Stat(fullPath)
+	_, err = os.Stat(fullPath)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return false, nil
@@ -116,10 +151,13 @@ func (s *LocalStorage) GetURL(ctx context.Context, path string, expires time.Dur
 }
 
 func (s *LocalStorage) List(ctx context.Context, prefix string) ([]port.FileInfo, error) {
-	searchPath := filepath.Join(s.basePath, prefix)
+	searchPath, err := s.resolveWithinBase(prefix)
+	if err != nil {
+		return nil, err
+	}
 	var files []port.FileInfo
 
-	err := filepath.Walk(searchPath, func(path string, info os.FileInfo, err error) error {
+	err = filepath.Walk(searchPath, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
 		}

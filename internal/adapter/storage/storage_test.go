@@ -254,6 +254,37 @@ func TestLocalStorage_Close_ReturnsNil(t *testing.T) {
 	assert.NoError(t, s.Close())
 }
 
+// TestLocalStorage_PathTraversalRejected is the defense-in-depth check
+// for audit should-fix: even if the usecase layer's sanitizePath is
+// bypassed or buggy, the adapter must refuse to resolve any key whose
+// cleaned absolute path would escape the configured base directory.
+func TestLocalStorage_PathTraversalRejected(t *testing.T) {
+	s := newTestLocalStorage(t)
+	ctx := context.Background()
+
+	cases := []string{
+		"../../etc/passwd",
+		"../" + filepath.Base(s.basePath) + "-sibling/file.txt",
+		"a/b/../../../escape.txt",
+	}
+
+	for _, key := range cases {
+		t.Run(key, func(t *testing.T) {
+			_, err := s.Download(ctx, key)
+			assert.ErrorIs(t, err, ErrPathEscapesBase)
+
+			_, err = s.Upload(ctx, key, bytes.NewReader([]byte("nope")))
+			assert.ErrorIs(t, err, ErrPathEscapesBase)
+
+			err = s.Delete(ctx, key)
+			assert.ErrorIs(t, err, ErrPathEscapesBase)
+
+			_, err = s.Exists(ctx, key)
+			assert.ErrorIs(t, err, ErrPathEscapesBase)
+		})
+	}
+}
+
 func TestLocalStorage_Upload_EmptyFile(t *testing.T) {
 	s := newTestLocalStorage(t)
 	ctx := context.Background()

@@ -86,15 +86,39 @@ Query parameter `expires` is optional (seconds, default: 3600).
 | Max file size | 10 MB (`DefaultMaxFileSize`) |
 | Allowed content types | `image/jpeg`, `image/png`, `image/gif`, `image/webp`, `application/pdf` |
 
-These defaults are set in `domain/file.go` and can be overridden via the `usecase.Config` struct.
+These defaults are set in `domain/file.go` and can be overridden via the
+`usecase.Config` struct (`AllowedContentTypes` map).
+
+### Content-Type Detection
+
+The upload pipeline does **not** trust the client-supplied multipart
+`Content-Type` header. The first 512 bytes of the upload stream are
+passed through `http.DetectContentType`, and the resulting MIME type is
+matched against the configured allowlist. Mismatched or
+non-allowlisted types are rejected with HTTP `415 Unsupported Media
+Type` (`apperr.ErrUnsupportedMediaType`). The buffered prefix is
+re-streamed to the storage adapter so no bytes are dropped.
+
+Operators extending the allowlist (for example to accept `text/csv` or
+`text/plain` for a data-import endpoint) should override
+`Config.AllowedContentTypes` rather than editing
+`domain.DefaultAllowedContentTypes`.
 
 ## Path Sanitization
 
-All file paths are sanitized to prevent path traversal attacks:
-- Null bytes removed
-- `filepath.Clean` applied
-- Leading `/` and `.` stripped
-- `..` segments rejected
+File paths are sanitized in two layers:
+
+1. **Usecase layer** (`internal/module/storage/usecase`):
+   - Null bytes removed.
+   - `filepath.Clean` applied.
+   - Leading `/` and `.` stripped.
+   - `..` segments rejected.
+2. **Adapter layer** (`internal/adapter/storage/local.go`): defense in
+   depth — every key is joined onto the configured base path and the
+   cleaned absolute result must remain prefixed by the base directory.
+   Any key that would resolve outside the base (e.g. via symlinks or a
+   bypass of the usecase sanitizer) is rejected with
+   `ErrPathEscapesBase` before any filesystem operation runs.
 
 ## Configuration
 
