@@ -2,6 +2,7 @@ package handler
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"io"
 	"mime/multipart"
@@ -10,8 +11,11 @@ import (
 	"net/textproto"
 	"testing"
 
+	storageadapter "github.com/14mdzk/goscratch/internal/adapter/storage"
+	"github.com/14mdzk/goscratch/internal/module/storage/usecase"
 	"github.com/gofiber/fiber/v2"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestUploadHandler(t *testing.T) {
@@ -284,6 +288,40 @@ func TestListHandler(t *testing.T) {
 		assert.NoError(t, err)
 		assert.Equal(t, http.StatusOK, resp.StatusCode)
 	})
+}
+
+// TestDownloadHandler_StreamingLifetime is a regression test for audit
+// finding #13: the handler used to `defer reader.Close()` before calling
+// `c.SendStream(reader)`, which closed the underlying file before
+// fasthttp's BodyStreamWriter actually streamed it, producing empty or
+// truncated downloads. This test wires the real Handler + UseCase +
+// LocalStorage and asserts the full byte content round-trips intact.
+func TestDownloadHandler_StreamingLifetime(t *testing.T) {
+	tmpDir := t.TempDir()
+	store, err := storageadapter.NewLocalStorage(tmpDir, "")
+	require.NoError(t, err)
+
+	// Seed a known payload large enough that any premature Close would
+	// truncate the response.
+	payload := bytes.Repeat([]byte("goscratch-streaming-regression-"), 4096)
+	_, err = store.Upload(context.Background(), "regression/sample.bin", bytes.NewReader(payload))
+	require.NoError(t, err)
+
+	uc := usecase.NewUseCase(store, nil)
+	h := NewHandler(uc)
+
+	app := fiber.New()
+	app.Get("/files/download/*", h.Download)
+
+	req := httptest.NewRequest(http.MethodGet, "/files/download/regression/sample.bin", nil)
+	resp, err := app.Test(req, -1)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+
+	got, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+	assert.Equal(t, len(payload), len(got), "downloaded length must match upload")
+	assert.Equal(t, payload, got, "downloaded bytes must match upload exactly")
 }
 
 func TestSanitizeHeaderValue(t *testing.T) {

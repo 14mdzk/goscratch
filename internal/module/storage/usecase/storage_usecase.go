@@ -1,10 +1,13 @@
 package usecase
 
 import (
+	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"mime/multipart"
+	"net/http"
 	"path/filepath"
 	"strings"
 	"time"
@@ -15,6 +18,9 @@ import (
 	"github.com/14mdzk/goscratch/pkg/apperr"
 	"github.com/google/uuid"
 )
+
+// sniffSize is the number of leading bytes inspected by http.DetectContentType.
+const sniffSize = 512
 
 // storageUseCase handles storage business logic.
 // Returned via the UseCase interface; the concrete type is unexported so
@@ -59,13 +65,28 @@ func (uc *storageUseCase) Upload(ctx context.Context, file multipart.File, heade
 		return nil, apperr.BadRequestf("file size %d exceeds maximum allowed size %d", header.Size, uc.maxFileSize)
 	}
 
-	// Validate content type
-	contentType := header.Header.Get("Content-Type")
-	if contentType == "" {
-		contentType = "application/octet-stream"
+	// Sniff the actual content type from the first 512 bytes rather than
+	// trusting the client-supplied multipart Content-Type header (which is
+	// attacker-controlled). The buffered reader is then re-used as the
+	// upload source so the peeked bytes are not consumed.
+	//
+	// Operators: extend `domain.DefaultAllowedContentTypes` (or pass a
+	// custom map via Config.AllowedContentTypes) to widen the allowlist —
+	// the default set covers images and PDFs.
+	bufReader := bufio.NewReaderSize(file, sniffSize)
+	head, err := bufReader.Peek(sniffSize)
+	if err != nil && !errors.Is(err, io.EOF) && !errors.Is(err, bufio.ErrBufferFull) {
+		return nil, apperr.Internalf("failed to inspect uploaded file: %v", err)
 	}
-	if !uc.allowedContentTypes[contentType] {
-		return nil, apperr.BadRequestf("content type %q is not allowed", contentType)
+	contentType := http.DetectContentType(head)
+	// http.DetectContentType returns "<base>; charset=..." for some types;
+	// strip the parameters before allowlist lookup.
+	baseContentType := contentType
+	if idx := strings.Index(baseContentType, ";"); idx >= 0 {
+		baseContentType = strings.TrimSpace(baseContentType[:idx])
+	}
+	if !uc.allowedContentTypes[baseContentType] {
+		return nil, apperr.UnsupportedMediaTypef("content type %q is not allowed", baseContentType)
 	}
 
 	// Generate unique filename preserving original extension
@@ -83,8 +104,9 @@ func (uc *storageUseCase) Upload(ctx context.Context, file multipart.File, heade
 		storagePath = uniqueName
 	}
 
-	// Upload via storage adapter
-	path, err := uc.storage.Upload(ctx, storagePath, file, port.WithContentType(contentType))
+	// Upload via storage adapter — reuse the buffered reader so the peeked
+	// bytes are still part of the stream.
+	path, err := uc.storage.Upload(ctx, storagePath, bufReader, port.WithContentType(baseContentType))
 	if err != nil {
 		return nil, apperr.Internalf("failed to upload file: %v", err)
 	}

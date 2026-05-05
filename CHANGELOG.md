@@ -9,9 +9,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Fixed
 
 - Audit log writing empty `user_id` / `ip_address` / `user_agent` for every row. Reader (`port.ExtractAuditContext`) used bare string keys while writers used typed `logger.ContextKey`, so reads never matched writes. A negative regression test in `internal/port/auditor_test.go` locks the bug from coming back.
+- File downloads served via `GET /api/files/download/*` were returning empty or truncated bodies because the handler closed the underlying `io.ReadCloser` before fasthttp's `BodyStreamWriter` finished streaming it. The handler now lets the stream writer own the close, matching fasthttp's contract. Regression-locked by `TestDownloadHandler_StreamingLifetime`.
+
+### Security
+
+- Local storage adapter now enforces a path-prefix guard: any key whose cleaned absolute path would resolve outside the configured base directory is rejected with `ErrPathEscapesBase` before any filesystem call. Defense-in-depth on top of the usecase-layer `..` sanitizer.
+- Upload endpoint no longer trusts the client-supplied multipart `Content-Type` header. The first 512 bytes are sniffed via `http.DetectContentType` and validated against the allowlist; mismatches are rejected with HTTP 415 (`apperr.ErrUnsupportedMediaType`). The peeked prefix is re-streamed to the storage adapter so no bytes are lost.
 
 ### Added
 
+- `apperr.ErrUnsupportedMediaType` and `apperr.UnsupportedMediaTypef` for HTTP 415 responses.
 - Typed context keys `logger.IPAddressKey` and `logger.UserAgentKey`; auth middleware now writes IP and User-Agent into the request context for downstream auditor and logger consumers.
 - Audit decorator for the storage module — `Upload` records `CREATE file`, `Delete` records `DELETE file`. Read paths (`Download`, `GetURL`, `List`) are not audited.
 - Audit decorator for the job module — `Dispatch` records `CREATE job` with `{job_type, max_retry}` metadata.

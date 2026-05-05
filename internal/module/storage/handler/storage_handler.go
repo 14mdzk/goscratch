@@ -59,7 +59,10 @@ func (h *Handler) Download(c *fiber.Ctx) error {
 	if err != nil {
 		return response.Fail(c, err)
 	}
-	defer reader.Close()
+	// NOTE: do NOT `defer reader.Close()` here. fasthttp's BodyStreamWriter
+	// streams the body asynchronously after this handler returns and will
+	// invoke Close on the io.ReadCloser once streaming is complete. Closing
+	// early produces empty or truncated downloads (audit finding #13).
 
 	// Use only the filename portion for Content-Disposition
 	filename := filepath.Base(path)

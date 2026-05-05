@@ -57,6 +57,13 @@ func (m *MockStorage) Close() error {
 	return nil
 }
 
+// pngMagic is the 8-byte PNG file signature; http.DetectContentType
+// reports "image/png" for any payload starting with these bytes.
+var pngMagic = []byte{0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A}
+
+// jpegMagic is the standard JFIF JPEG header.
+var jpegMagic = []byte{0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10, 'J', 'F', 'I', 'F', 0x00}
+
 // createMultipartFileHeader creates a multipart.FileHeader for testing
 func createMultipartFileHeader(filename string, contentType string, content []byte) (*multipart.FileHeader, *bytes.Buffer) {
 	body := &bytes.Buffer{}
@@ -84,7 +91,7 @@ func TestUseCase_Upload(t *testing.T) {
 		mockStorage := new(MockStorage)
 		uc := NewUseCase(mockStorage, nil)
 
-		content := []byte("test file content")
+		content := append(append([]byte{}, pngMagic...), []byte(" the rest of the file")...)
 		fh, _ := createMultipartFileHeader("test.png", "image/png", content)
 
 		// The storage path will contain a UUID, so match any string
@@ -109,7 +116,7 @@ func TestUseCase_Upload(t *testing.T) {
 		mockStorage := new(MockStorage)
 		uc := NewUseCase(mockStorage, &Config{MaxFileSize: 10}) // 10 bytes max
 
-		content := []byte("this content is definitely more than 10 bytes")
+		content := append(append([]byte{}, pngMagic...), []byte("this content is definitely more than 10 bytes")...)
 		fh, _ := createMultipartFileHeader("test.png", "image/png", content)
 
 		file, _ := fh.Open()
@@ -127,7 +134,9 @@ func TestUseCase_Upload(t *testing.T) {
 		mockStorage := new(MockStorage)
 		uc := NewUseCase(mockStorage, nil)
 
-		content := []byte("test")
+		// MZ executable header — http.DetectContentType returns
+		// "application/octet-stream" which is not on the allowlist.
+		content := []byte{'M', 'Z', 0x90, 0x00, 0x03, 0x00, 0x00, 0x00, 0x04, 0x00, 0x00, 0x00, 0xFF, 0xFF}
 		fh, _ := createMultipartFileHeader("test.exe", "application/x-executable", content)
 
 		file, _ := fh.Open()
@@ -138,14 +147,46 @@ func TestUseCase_Upload(t *testing.T) {
 		assert.Error(t, err)
 		appErr, ok := apperr.AsAppError(err)
 		assert.True(t, ok)
-		assert.Equal(t, apperr.CodeBadRequest, appErr.Code)
+		assert.Equal(t, apperr.CodeUnsupportedMedia, appErr.Code)
+	})
+
+	t.Run("sniff_overrides_client_header", func(t *testing.T) {
+		// Client claims text/plain in the multipart Content-Type header,
+		// but the actual bytes are JPEG. The usecase must sniff the real
+		// type, accept it (since image/jpeg is allowed), and pass the
+		// sniffed type to the storage adapter.
+		mockStorage := new(MockStorage)
+		uc := NewUseCase(mockStorage, nil)
+
+		content := append(append([]byte{}, jpegMagic...), bytes.Repeat([]byte{0x00}, 64)...)
+		fh, _ := createMultipartFileHeader("evil.txt", "text/plain", content)
+
+		mockStorage.On(
+			"Upload",
+			ctx,
+			mock.AnythingOfType("string"),
+			mock.Anything,
+			mock.MatchedBy(func(opts []port.UploadOption) bool {
+				cfg := port.ApplyOptions(opts)
+				return cfg.ContentType == "image/jpeg"
+			}),
+		).Return("sniffed.txt", nil)
+		mockStorage.On("GetURL", ctx, "sniffed.txt", 24*time.Hour).Return("http://x/sniffed.txt", nil)
+
+		file, _ := fh.Open()
+		defer file.Close()
+
+		result, err := uc.Upload(ctx, file, fh, "")
+		assert.NoError(t, err)
+		assert.NotNil(t, result)
+		mockStorage.AssertExpectations(t)
 	})
 
 	t.Run("with_directory", func(t *testing.T) {
 		mockStorage := new(MockStorage)
 		uc := NewUseCase(mockStorage, nil)
 
-		content := []byte("test file content")
+		content := append(append([]byte{}, pngMagic...), []byte("test file content")...)
 		fh, _ := createMultipartFileHeader("test.png", "image/png", content)
 
 		mockStorage.On("Upload", ctx, mock.MatchedBy(func(path string) bool {

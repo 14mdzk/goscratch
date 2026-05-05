@@ -92,6 +92,7 @@ const (
 	CodeNotFound            = "NOT_FOUND"
 	CodeConflict            = "CONFLICT"
 	CodeUnprocessableEntity = "UNPROCESSABLE_ENTITY"
+	CodeUnsupportedMedia    = "UNSUPPORTED_MEDIA_TYPE"
 	CodeInternalError       = "INTERNAL_ERROR"
 	CodeServiceUnavailable  = "SERVICE_UNAVAILABLE"
 	CodeValidation          = "VALIDATION_ERROR"
@@ -135,6 +136,12 @@ var (
 		http.StatusUnprocessableEntity,
 	)
 
+	ErrUnsupportedMediaType = New(
+		CodeUnsupportedMedia,
+		"The uploaded media type is not supported",
+		http.StatusUnsupportedMediaType,
+	)
+
 	ErrInternal = New(
 		CodeInternalError,
 		"An internal error occurred",
@@ -171,4 +178,9 @@ func Conflictf(format string, args ...any) *Error {
 // Internalf creates an internal error with a formatted message
 func Internalf(format string, args ...any) *Error {
 	return New(CodeInternalError, fmt.Sprintf(format, args...), http.StatusInternalServerError)
+}
+
+// UnsupportedMediaTypef creates an unsupported-media-type error with a formatted message
+func UnsupportedMediaTypef(format string, args ...any) *Error {
+	return New(CodeUnsupportedMedia, fmt.Sprintf(format, args...), http.StatusUnsupportedMediaType)
 }
