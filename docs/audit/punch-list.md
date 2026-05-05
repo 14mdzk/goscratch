@@ -12,7 +12,7 @@ Each PR closes a coherent set of findings. Order chosen so each PR is independen
 | 4 | Shutdown rewrite — `Authorizer` wired + closed, sub-budgets, tracer last, SSE per-conn UUID, worker `wg` covers real work, retry select on ctx | Block-ship #10, #11, #12, #14 + lifecycle should-fix | medium-high | 1d | blocked by #3 |
 | 5 | [Storage download streaming + path-prefix guard + content-type sniff](./pr-05-storage-download-streaming.md) | Block-ship #13 + 2 should-fix | low | 3h | implemented in `fix/storage-download-streaming` (worktree, awaiting review) |
 | 6 | Pattern alignment — UseCase interfaces for role/storage/job, auth user-repo reuse, Claims to domain, `errors.Is` | Idiom should-fix batch | low | 3h | partial (storage+job ports landed in #1) |
-| 7 | RabbitMQ correctness — per-goroutine channels, `Qos`, NotifyClose reconnect | Concurrency should-fix | medium | 4h | pending |
+| 7 | [RabbitMQ correctness](./pr-07-rabbitmq-correctness.md) — per-goroutine channels, `Qos`, NotifyClose reconnect | Concurrency should-fix | medium | 4h | in-progress (worktree) |
 | 8 | SMTP + Postgres rollback context discipline | 2 should-fix | low | 1h | pending |
 | 9 | Rate-limit hardening — sliding window Redis, ProxyHeader, memory cleanup stop chan | 3 should-fix | low | 3h | blocked by #3 |
 

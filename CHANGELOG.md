@@ -22,6 +22,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - File downloads served via `GET /api/files/download/*` were returning empty or truncated bodies because the handler closed the underlying `io.ReadCloser` before fasthttp's `BodyStreamWriter` finished streaming it. The handler now lets the stream writer own the close, matching fasthttp's contract. Regression-locked by `TestDownloadHandler_StreamingLifetime`.
 - SMTP `Send` now honours the caller's `ctx` deadline. Previously `internal/adapter/email/smtp.go` called `net/smtp.SendMail`, which has no timeout — a blackhole SMTP server (TCP accepts, never replies) would wedge the worker for the OS TCP timeout (often >2 minutes). The adapter now dials with `net.Dialer.DialContext`, applies the ctx deadline to the conn, and walks the SMTP exchange manually with a cancel-watcher goroutine. A 30s default deadline is applied when the caller did not set one.
 - Postgres `Transactor.WithTx` now rolls back with a fresh `context.Background()`-derived ctx (5s timeout) instead of the outer ctx. On shutdown the outer ctx is cancelled, so the previous code returned `context.Canceled` from `tx.Rollback` and the rollback never reached the server, leaving transactions `idle in transaction` until the server-side timeout fired.
+- RabbitMQ adapter (`internal/adapter/queue/rabbitmq.go`) shared a single `*amqp.Channel` for publish + consume + retries. AMQP channels are not goroutine-safe and the adapter is now restructured: a cached publisher channel guarded by a mutex, and a dedicated channel per `Consume` call. `channel.Qos(prefetch, 0, false)` is now invoked before `Consume`. A `NotifyClose` reconnect loop with exponential backoff (capped at 30s, 5 attempts) re-establishes the consumer channel on broker drop and exits cleanly on parent context cancellation.
 
 ### Security
 
@@ -37,6 +38,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Failed-login audit entries — every `LOGIN` failure records `resource_id = attempted_email`, `metadata.outcome = failed`, and a sanitized `metadata.reason` (`invalid_credentials` / `user_inactive` / `unknown`). Brute-force activity against a single email is now visible.
 - Successful-login audit entries now populate `resource_id` with the authenticated user ID (was previously empty).
 - `UseCase` interface ports for `internal/module/storage/usecase` and `internal/module/job/usecase` so the decorator pattern can wrap the concrete implementations.
+- `rabbitmq.prefetch_count` config (default `10`, env `RABBITMQ_PREFETCH_COUNT`) caps the per-consumer unacknowledged message backlog.
 
 ## [0.5.0] - 2026-03-27
 

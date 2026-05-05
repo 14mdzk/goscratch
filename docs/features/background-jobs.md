@@ -106,6 +106,26 @@ The worker runs as a separate process (or goroutine) that:
 | `worker.exchange` | `WORKER_EXCHANGE` | `""` | RabbitMQ exchange name |
 | `rabbitmq.enabled` | `RABBITMQ_ENABLED` | `false` | Enable RabbitMQ connection |
 | `rabbitmq.url` | `RABBITMQ_URL` | (none) | RabbitMQ connection URL |
+| `rabbitmq.prefetch_count` | `RABBITMQ_PREFETCH_COUNT` | `10` | Per-consumer unacknowledged message limit |
+
+## Channel & Reconnect Behavior
+
+The RabbitMQ adapter (`internal/adapter/queue/rabbitmq.go`) follows two rules
+that matter for operators:
+
+1. **Channel isolation.** AMQP channels are not goroutine-safe, so the adapter
+   keeps a cached publisher channel (guarded by a mutex; used by `Publish`,
+   `PublishJSON`, `DeclareQueue`, `DeclareExchange`, `BindQueue`) and opens a
+   dedicated channel per `Consume` call. A consumer goroutine never shares a
+   channel with another consumer or with the publisher.
+2. **Prefetch + bounded reconnect.** Before `Consume`, the adapter calls
+   `channel.Qos(prefetch_count, 0, false)` so a single consumer never pulls an
+   unbounded backlog into memory. If the consumer channel or underlying
+   connection is dropped, the adapter receives `NotifyClose`, closes the dead
+   channel, and tries to redial / reopen with exponential backoff capped at
+   30s. After 5 failed attempts the consumer halts and the failure is logged;
+   the parent context cancellation is honored on every wait so shutdown is
+   never blocked by a reconnect loop.
 
 ## Architecture
 
