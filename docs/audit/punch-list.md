@@ -7,14 +7,16 @@ Each PR closes a coherent set of findings. Order chosen so each PR is independen
 | PR | Title | Closes | Risk | Est | Status |
 |----|-------|--------|------|-----|--------|
 | 1 | [Audit fix](./pr-01-audit-fix.md) — context keys, decorators on storage/job, failed-login | Block-ship #1; should-fix audit gaps | low | 2h | ✅ shipped [#13](https://github.com/14mdzk/goscratch/pull/13) |
-| 2 | [Secure defaults](./pr-02-secure-defaults.md) — JWT secret guard, `sslmode=require`, prod stack-trace gate, generic error handler, `/metrics` lockdown | Block-ship #2, #6, #7, #8, #9 + `/metrics` should-fix | low | 2h | ready for review |
-| 3 | Auth hardening — logout authn, Casbin fail-fast, refresh-on-NoOp gate, rate-limit fail-closed, iss/aud strict | Block-ship #3, #4, #5 + 4 should-fix | medium | 4h | blocked by #1 |
-| 4 | Shutdown rewrite — `Authorizer` wired + closed, sub-budgets, tracer last, SSE per-conn UUID, worker `wg` covers real work, retry select on ctx | Block-ship #10, #11, #12, #14 + lifecycle should-fix | medium-high | 1d | blocked by #3 |
-| 5 | [Storage download streaming + path-prefix guard + content-type sniff](./pr-05-storage-download-streaming.md) | Block-ship #13 + 2 should-fix | low | 3h | implemented in `fix/storage-download-streaming` (worktree, awaiting review) |
-| 6 | Pattern alignment — UseCase interfaces for role/storage/job, auth user-repo reuse, Claims to domain, `errors.Is` | Idiom should-fix batch | low | 3h | partial (storage+job ports landed in #1) |
-| 7 | [RabbitMQ correctness](./pr-07-rabbitmq-correctness.md) — per-goroutine channels, `Qos`, NotifyClose reconnect | Concurrency should-fix | medium | 4h | in-progress (worktree) |
-| 8 | SMTP + Postgres rollback context discipline | 2 should-fix | low | 1h | pending |
+| 2 | [Secure defaults](./pr-02-secure-defaults.md) — JWT secret guard, `sslmode=require`, prod stack-trace gate, generic error handler, `/metrics` lockdown | Block-ship #2, #6, #7, #8, #9 + `/metrics` should-fix | low | 2h | ✅ shipped [#15](https://github.com/14mdzk/goscratch/pull/15) |
+| 3 | [Auth hardening](./pr-03-auth-hardening.md) — logout authn, Casbin fail-fast, refresh-on-NoOp gate, rate-limit fail-closed, iss/aud strict, dual-key revoke | Block-ship #3, #4, #5 + 4 should-fix | medium | 4h | in review [#19](https://github.com/14mdzk/goscratch/pull/19) |
+| 3b | [Authz cache infra](./pr-03b-authz-cache-infra.md) — `Authorizer` interface + lifecycle, pluggable `persist.Watcher` (noop/memory/redis), backstop reload tick, incremental policy load, raw-SQL lint guard | Cross-cutting (auth lifecycle + perf) | medium | 6h | blocked by #3 |
+| 4 | Shutdown rewrite — `Authorizer` wired + closed, sub-budgets, tracer last, SSE per-conn UUID, worker `wg` covers real work, retry select on ctx | Block-ship #10, #11, #12, #14 + lifecycle should-fix | medium-high | 1d | blocked by #3b |
+| 5 | [Storage download streaming + path-prefix guard + content-type sniff](./pr-05-storage-download-streaming.md) | Block-ship #13 + 2 should-fix | low | 3h | ✅ shipped [#16](https://github.com/14mdzk/goscratch/pull/16) |
+| 6 | Pattern alignment — UseCase interfaces for role/storage/job, auth user-repo reuse, Claims to domain, `errors.Is` | Idiom should-fix batch | low | 3h | partial (storage+job ports landed in #1); parallelizable after #3 |
+| 7 | [RabbitMQ correctness](./pr-07-rabbitmq-correctness.md) — per-goroutine channels, `Qos`, NotifyClose reconnect | Concurrency should-fix | medium | 4h | ✅ shipped [#17](https://github.com/14mdzk/goscratch/pull/17) |
+| 8 | [SMTP + Postgres rollback context discipline](./pr-08-smtp-and-tx-context.md) | 2 should-fix | low | 1h | ✅ shipped [#18](https://github.com/14mdzk/goscratch/pull/18) |
 | 9 | Rate-limit hardening — sliding window Redis, ProxyHeader, memory cleanup stop chan | 3 should-fix | low | 3h | blocked by #3 |
+| 10 | Authz decision cache — `subject:obj:act → bool` cache with explicit invalidation matrix + bench evidence | Perf follow-up | medium | 4h | blocked by #3b |
 
 ---
 
@@ -24,6 +26,7 @@ Each PR closes a coherent set of findings. Order chosen so each PR is independen
 feat/audit-context-keys
 feat/secure-defaults
 feat/auth-hardening
+feat/authz-cache-infra
 refactor/shutdown-rewrite
 fix/storage-download-streaming
 refactor/usecase-port-alignment
