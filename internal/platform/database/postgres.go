@@ -58,9 +58,16 @@ func NewPostgresPool(ctx context.Context, cfg config.DatabaseConfig) (*pgxpool.P
 	return pool, nil
 }
 
+// txBeginner is the minimal subset of *pgxpool.Pool needed to start a
+// transaction. It exists so unit tests can inject a fake pool / tx and
+// exercise the rollback-context path without a live database.
+type txBeginner interface {
+	Begin(ctx context.Context) (pgx.Tx, error)
+}
+
 // Transactor provides transaction support
 type Transactor struct {
-	pool *pgxpool.Pool
+	pool txBeginner
 }
 
 // NewTransactor creates a new transactor
@@ -83,13 +90,19 @@ func (t *Transactor) WithTx(ctx context.Context, fn TxFunc) error {
 
 	defer func() {
 		if p := recover(); p != nil {
-			_ = tx.Rollback(ctx)
+			// outer ctx may already be cancelled on shutdown; rollback must still run.
+			rbCtx, cancel := context.WithTimeout(context.Background(), rollbackTimeout)
+			defer cancel()
+			_ = tx.Rollback(rbCtx)
 			panic(p) // Re-throw panic after rollback
 		}
 	}()
 
 	if err := fn(ctx); err != nil {
-		if rbErr := tx.Rollback(ctx); rbErr != nil {
+		// outer ctx may already be cancelled on shutdown; rollback must still run.
+		rbCtx, cancel := context.WithTimeout(context.Background(), rollbackTimeout)
+		defer cancel()
+		if rbErr := tx.Rollback(rbCtx); rbErr != nil {
 			return fmt.Errorf("tx error: %w, rollback error: %v", err, rbErr)
 		}
 		return err
@@ -101,6 +114,12 @@ func (t *Transactor) WithTx(ctx context.Context, fn TxFunc) error {
 
 	return nil
 }
+
+// rollbackTimeout bounds how long a rollback is allowed to take when the outer
+// context has already been cancelled (typically on shutdown). Without a fresh
+// context the rollback would observe ctx.Err() immediately and never reach the
+// database, leaking the in-flight transaction on the server.
+const rollbackTimeout = 5 * time.Second
 
 // txKey is the context key for transactions
 type txKey struct{}

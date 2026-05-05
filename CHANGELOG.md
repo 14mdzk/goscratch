@@ -20,6 +20,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - Audit log writing empty `user_id` / `ip_address` / `user_agent` for every row. Reader (`port.ExtractAuditContext`) used bare string keys while writers used typed `logger.ContextKey`, so reads never matched writes. A negative regression test in `internal/port/auditor_test.go` locks the bug from coming back.
 - File downloads served via `GET /api/files/download/*` were returning empty or truncated bodies because the handler closed the underlying `io.ReadCloser` before fasthttp's `BodyStreamWriter` finished streaming it. The handler now lets the stream writer own the close, matching fasthttp's contract. Regression-locked by `TestDownloadHandler_StreamingLifetime`.
+- SMTP `Send` now honours the caller's `ctx` deadline. Previously `internal/adapter/email/smtp.go` called `net/smtp.SendMail`, which has no timeout — a blackhole SMTP server (TCP accepts, never replies) would wedge the worker for the OS TCP timeout (often >2 minutes). The adapter now dials with `net.Dialer.DialContext`, applies the ctx deadline to the conn, and walks the SMTP exchange manually with a cancel-watcher goroutine. A 30s default deadline is applied when the caller did not set one.
+- Postgres `Transactor.WithTx` now rolls back with a fresh `context.Background()`-derived ctx (5s timeout) instead of the outer ctx. On shutdown the outer ctx is cancelled, so the previous code returned `context.Canceled` from `tx.Rollback` and the rollback never reached the server, leaving transactions `idle in transaction` until the server-side timeout fired.
 
 ### Security
 

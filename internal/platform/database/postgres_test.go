@@ -2,8 +2,11 @@ package database
 
 import (
 	"context"
+	"errors"
 	"testing"
+	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -45,5 +48,97 @@ func TestDBFromContext(t *testing.T) {
 		// The integration tests validate the full round-trip.
 		ctx := context.Background()
 		require.Nil(t, GetTx(ctx))
+	})
+}
+
+// fakeTx is a minimal pgx.Tx stand-in. Only Rollback and Commit are exercised
+// by the WithTx tests; the embedded pgx.Tx interface lets the struct satisfy
+// the type without re-declaring every method (calling any non-overridden
+// method would nil-deref, which is fine — the tests never call them).
+type fakeTx struct {
+	pgx.Tx
+	rollbackCalled      bool
+	commitCalled        bool
+	rollbackErrAtCall   error // ctx.Err() captured at rollback time
+	rollbackHadDeadline bool
+	rollbackDeadline    time.Time
+	rollbackErrFunc     func(ctx context.Context) error
+}
+
+func (f *fakeTx) Rollback(ctx context.Context) error {
+	f.rollbackCalled = true
+	f.rollbackErrAtCall = ctx.Err()
+	if d, ok := ctx.Deadline(); ok {
+		f.rollbackHadDeadline = true
+		f.rollbackDeadline = d
+	}
+	if f.rollbackErrFunc != nil {
+		return f.rollbackErrFunc(ctx)
+	}
+	return nil
+}
+
+func (f *fakeTx) Commit(ctx context.Context) error {
+	f.commitCalled = true
+	return nil
+}
+
+// fakeBeginner returns the same fakeTx for every Begin call.
+type fakeBeginner struct {
+	tx       *fakeTx
+	beginErr error
+}
+
+func (f *fakeBeginner) Begin(ctx context.Context) (pgx.Tx, error) {
+	if f.beginErr != nil {
+		return nil, f.beginErr
+	}
+	return f.tx, nil
+}
+
+// TestWithTx_RollbackUsesFreshContext is the regression test for the bug fixed
+// in this PR: the rollback path must NOT use the outer ctx, because on shutdown
+// that ctx is already cancelled and pgx would short-circuit the rollback,
+// leaving the transaction open on the server.
+func TestWithTx_RollbackUsesFreshContext(t *testing.T) {
+	t.Run("fn_error_with_cancelled_outer_ctx", func(t *testing.T) {
+		tx := &fakeTx{}
+		tor := &Transactor{pool: &fakeBeginner{tx: tx}}
+
+		// Cancel the outer ctx BEFORE calling fn so the rollback path sees a
+		// dead parent. A naive implementation would forward this ctx straight
+		// to tx.Rollback and the rollback would observe context.Canceled.
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+
+		fnErr := errors.New("boom")
+		gotErr := tor.WithTx(ctx, func(ctx context.Context) error {
+			return fnErr
+		})
+
+		require.ErrorIs(t, gotErr, fnErr)
+		require.True(t, tx.rollbackCalled, "rollback must be invoked even when outer ctx is cancelled")
+
+		// The rollback ctx must NOT be the outer (cancelled) ctx — captured
+		// at the moment Rollback was called, before WithTx's defer cancel().
+		require.NoError(t, tx.rollbackErrAtCall,
+			"rollback ctx must be live at call time (not the outer cancelled ctx)")
+
+		// And it must carry a bounded deadline so a slow server cannot wedge
+		// shutdown indefinitely.
+		require.True(t, tx.rollbackHadDeadline, "rollback ctx must carry a deadline")
+		require.WithinDuration(t, time.Now().Add(rollbackTimeout), tx.rollbackDeadline, rollbackTimeout)
+	})
+
+	t.Run("fn_success_commits_on_outer_ctx", func(t *testing.T) {
+		tx := &fakeTx{}
+		tor := &Transactor{pool: &fakeBeginner{tx: tx}}
+
+		err := tor.WithTx(context.Background(), func(ctx context.Context) error {
+			return nil
+		})
+		require.NoError(t, err)
+		require.False(t, tx.rollbackCalled)
+		require.True(t, tx.commitCalled)
 	})
 }
