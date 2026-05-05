@@ -43,7 +43,8 @@
   },
   "rabbitmq": {
     "enabled": false,
-    "url": "amqp://guest:guest@localhost:5672/"
+    "url": "amqp://guest:guest@localhost:5672/",
+    "prefetch_count": 10
   },
   "storage": {
     "mode": "local",

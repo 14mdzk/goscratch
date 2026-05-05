@@ -20,6 +20,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - Audit log writing empty `user_id` / `ip_address` / `user_agent` for every row. Reader (`port.ExtractAuditContext`) used bare string keys while writers used typed `logger.ContextKey`, so reads never matched writes. A negative regression test in `internal/port/auditor_test.go` locks the bug from coming back.
 - File downloads served via `GET /api/files/download/*` were returning empty or truncated bodies because the handler closed the underlying `io.ReadCloser` before fasthttp's `BodyStreamWriter` finished streaming it. The handler now lets the stream writer own the close, matching fasthttp's contract. Regression-locked by `TestDownloadHandler_StreamingLifetime`.
+- RabbitMQ adapter (`internal/adapter/queue/rabbitmq.go`) shared a single `*amqp.Channel` for publish + consume + retries. AMQP channels are not goroutine-safe and the adapter is now restructured: a cached publisher channel guarded by a mutex, and a dedicated channel per `Consume` call. `channel.Qos(prefetch, 0, false)` is now invoked before `Consume`. A `NotifyClose` reconnect loop with exponential backoff (capped at 30s, 5 attempts) re-establishes the consumer channel on broker drop and exits cleanly on parent context cancellation.
 
 ### Security
 
@@ -35,6 +36,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Failed-login audit entries — every `LOGIN` failure records `resource_id = attempted_email`, `metadata.outcome = failed`, and a sanitized `metadata.reason` (`invalid_credentials` / `user_inactive` / `unknown`). Brute-force activity against a single email is now visible.
 - Successful-login audit entries now populate `resource_id` with the authenticated user ID (was previously empty).
 - `UseCase` interface ports for `internal/module/storage/usecase` and `internal/module/job/usecase` so the decorator pattern can wrap the concrete implementations.
+- `rabbitmq.prefetch_count` config (default `10`, env `RABBITMQ_PREFETCH_COUNT`) caps the per-consumer unacknowledged message backlog.
 
 ## [0.5.0] - 2026-03-27
 
