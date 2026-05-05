@@ -7,7 +7,7 @@ Each PR closes a coherent set of findings. Order chosen so each PR is independen
 | PR | Title | Closes | Risk | Est | Status |
 |----|-------|--------|------|-----|--------|
 | 1 | [Audit fix](./pr-01-audit-fix.md) — context keys, decorators on storage/job, failed-login | Block-ship #1; should-fix audit gaps | low | 2h | ✅ shipped [#13](https://github.com/14mdzk/goscratch/pull/13) |
-| 2 | Secure defaults — JWT secret guard, `sslmode=require`, prod stack-trace gate, generic error handler, `/metrics` lockdown | Block-ship #2, #6, #7, #8, #9 + `/metrics` should-fix | low | 2h | pending |
+| 2 | [Secure defaults](./pr-02-secure-defaults.md) — JWT secret guard, `sslmode=require`, prod stack-trace gate, generic error handler, `/metrics` lockdown | Block-ship #2, #6, #7, #8, #9 + `/metrics` should-fix | low | 2h | ready for review |
 | 3 | Auth hardening — logout authn, Casbin fail-fast, refresh-on-NoOp gate, rate-limit fail-closed, iss/aud strict | Block-ship #3, #4, #5 + 4 should-fix | medium | 4h | blocked by #1 |
 | 4 | Shutdown rewrite — `Authorizer` wired + closed, sub-budgets, tracer last, SSE per-conn UUID, worker `wg` covers real work, retry select on ctx | Block-ship #10, #11, #12, #14 + lifecycle should-fix | medium-high | 1d | blocked by #3 |
 | 5 | Storage download streaming + path-prefix guard + content-type sniff | Block-ship #13 + 2 should-fix | low | 3h | blocked by #1 |

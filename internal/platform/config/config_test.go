@@ -198,6 +198,35 @@ func TestRedisAddr(t *testing.T) {
 	assert.Equal(t, "localhost:6379", r.Addr())
 }
 
+func TestValidate_RejectsPlaceholderJWTSecret(t *testing.T) {
+	cfg := &Config{JWT: JWTConfig{Secret: PlaceholderJWTSecret}}
+	err := cfg.Validate()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "JWT_SECRET")
+	assert.Contains(t, err.Error(), "placeholder")
+}
+
+func TestValidate_RejectsShortJWTSecret(t *testing.T) {
+	cfg := &Config{JWT: JWTConfig{Secret: "too-short"}}
+	err := cfg.Validate()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "JWT_SECRET")
+}
+
+func TestValidate_RejectsEmptyJWTSecret(t *testing.T) {
+	cfg := &Config{JWT: JWTConfig{Secret: ""}}
+	err := cfg.Validate()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "JWT_SECRET")
+}
+
+func TestValidate_AcceptsLongUniqueJWTSecret(t *testing.T) {
+	// 32 bytes, not the placeholder.
+	cfg := &Config{JWT: JWTConfig{Secret: "a-32-byte-real-secret-xxxxxxxxxx"}}
+	require.Len(t, cfg.JWT.Secret, MinJWTSecretLen)
+	require.NoError(t, cfg.Validate())
+}
+
 func TestJWTDurations(t *testing.T) {
 	j := JWTConfig{
 		AccessTokenTTL:  15,

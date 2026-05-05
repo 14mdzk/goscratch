@@ -205,10 +205,16 @@ func (a *Adapter) Close() error {
 	return a.db.Close()
 }
 
-// BuildDatabaseURL constructs a PostgreSQL connection string
-func BuildDatabaseURL(host string, port int, user, password, dbname string) string {
-	return fmt.Sprintf("postgres://%s:%s@%s:%d/%s?sslmode=disable",
-		user, password, host, port, dbname)
+// BuildDatabaseURL constructs a PostgreSQL connection string. sslMode is
+// threaded through so the Casbin connection honors the same TLS posture as
+// the main application pool. Empty sslMode falls back to "require" (safe
+// default); callers must explicitly opt out for local dev.
+func BuildDatabaseURL(host string, port int, user, password, dbname, sslMode string) string {
+	if sslMode == "" {
+		sslMode = "require"
+	}
+	return fmt.Sprintf("postgres://%s:%s@%s:%d/%s?sslmode=%s",
+		user, password, host, port, dbname, sslMode)
 }
 
 // Ensure Adapter implements port.Authorizer
