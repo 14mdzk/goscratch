@@ -2,7 +2,10 @@ package email
 
 import (
 	"context"
+	"net"
+	"strconv"
 	"testing"
+	"time"
 
 	"github.com/14mdzk/goscratch/internal/port"
 	"github.com/14mdzk/goscratch/pkg/logger"
@@ -118,6 +121,74 @@ func TestSMTPSender_Send_ConnectionError(t *testing.T) {
 	err := sender.Send(context.Background(), msg)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to send email via SMTP")
+}
+
+// TestSMTPSender_Send_ContextDeadline asserts that Send returns within the
+// context deadline when the SMTP server accepts the TCP connection but never
+// responds — proving that a blackhole SMTP server cannot wedge the worker for
+// the OS TCP timeout (which is the bug this test locks in place).
+func TestSMTPSender_Send_ContextDeadline(t *testing.T) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+
+	// Accept connections but never write the SMTP greeting. The accept loop
+	// owns the conns it accepts and closes them itself when the listener
+	// shuts down, avoiding any cross-goroutine ownership of the conn slice.
+	acceptDone := make(chan struct{})
+	go func() {
+		defer close(acceptDone)
+		var conns []net.Conn
+		defer func() {
+			for _, c := range conns {
+				_ = c.Close()
+			}
+		}()
+		for {
+			conn, err := listener.Accept()
+			if err != nil {
+				return
+			}
+			conns = append(conns, conn)
+		}
+	}()
+	t.Cleanup(func() {
+		_ = listener.Close()
+		<-acceptDone
+	})
+
+	host, portStr, err := net.SplitHostPort(listener.Addr().String())
+	require.NoError(t, err)
+	portNum, err := strconv.Atoi(portStr)
+	require.NoError(t, err)
+
+	sender := NewSMTPSender(SMTPConfig{
+		Host: host,
+		Port: portNum,
+		From: "test@example.com",
+	})
+
+	msg := port.EmailMessage{
+		To:      []string{"user@example.com"},
+		Subject: "Test",
+		Body:    "Body",
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	defer cancel()
+
+	// Hard upper bound: if Send hangs for 5s we fail fast instead of blocking
+	// the whole test binary on the OS TCP timeout.
+	hardStop := time.AfterFunc(5*time.Second, func() {
+		_ = listener.Close()
+	})
+	defer hardStop.Stop()
+
+	start := time.Now()
+	sendErr := sender.Send(ctx, msg)
+	elapsed := time.Since(start)
+
+	require.Error(t, sendErr, "blackhole SMTP server must produce an error, not hang forever")
+	require.Less(t, elapsed, 3*time.Second, "Send must honour ctx deadline (~500ms), got %s", elapsed)
 }
 
 // TestEmailSenderInterface verifies both adapters satisfy the port interface

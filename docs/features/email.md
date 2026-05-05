@@ -40,6 +40,7 @@ type EmailMessage struct {
 - Supports plain auth when username is configured
 - Builds RFC-compliant email messages with proper headers
 - Sets `MIME-Version` and `Content-Type` headers for HTML emails
+- `Send(ctx, msg)` honours the caller's context deadline for every network operation (dial + SMTP exchange). If the context has no deadline, a 30-second default is applied so a blackhole SMTP server cannot wedge the worker on the OS TCP timeout. Cancelling `ctx` mid-send closes the underlying connection and unblocks the in-flight read/write.
 
 ### NoOp Adapter (`email.NoOpSender`)
 
