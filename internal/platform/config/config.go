@@ -244,6 +244,29 @@ func applyEnvOverrides(cfg interface{}) {
 	}
 }
 
+// PlaceholderJWTSecret is the insecure placeholder shipped in
+// config/config.default.json. Any deployment using this value (or any secret
+// shorter than MinJWTSecretLen) is rejected at startup.
+const (
+	PlaceholderJWTSecret = "your-super-secret-key-change-in-production"
+	MinJWTSecretLen      = 32
+)
+
+// Validate enforces secure-defaults invariants on the loaded configuration.
+// It MUST be called before any adapter is constructed.
+func (c *Config) Validate() error {
+	if c.JWT.Secret == "" {
+		return fmt.Errorf("jwt.secret is required: set the JWT_SECRET env override to a value of at least %d bytes", MinJWTSecretLen)
+	}
+	if c.JWT.Secret == PlaceholderJWTSecret {
+		return fmt.Errorf("jwt.secret is the committed placeholder %q: set the JWT_SECRET env override to a real value of at least %d bytes", PlaceholderJWTSecret, MinJWTSecretLen)
+	}
+	if len(c.JWT.Secret) < MinJWTSecretLen {
+		return fmt.Errorf("jwt.secret is %d bytes; minimum is %d: set the JWT_SECRET env override to a longer value", len(c.JWT.Secret), MinJWTSecretLen)
+	}
+	return nil
+}
+
 // IsDevelopment returns true if the app is running in development mode
 func (c *Config) IsDevelopment() bool {
 	return c.App.Env == "development"

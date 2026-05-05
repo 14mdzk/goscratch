@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Security
+
+- **Breaking.** `app.New` now hard-fails at startup if `jwt.secret` is empty, equals the committed placeholder `your-super-secret-key-change-in-production`, or is shorter than 32 bytes. Operators upgrading must set a real `JWT_SECRET` (≥ 32 bytes) before the API will boot. Closes block-ship #2.
+- **Breaking.** `config/config.default.json` default `database.ssl_mode` flipped from `"disable"` to `"require"`. Local dev must set `DB_SSL_MODE=disable` explicitly (Docker Compose dev stack already does). Closes block-ship #9.
+- `internal/adapter/casbin.BuildDatabaseURL` now threads the configured `sslMode` instead of hard-coding `disable`; empty value defaults to `require`. Closes block-ship #8.
+- `deploy/docker/docker-compose.prod.yml` migrate container reads `${POSTGRES_SSLMODE:-require}` instead of hard-coded `sslmode=disable`.
+- Production no longer leaks Go stack traces on panic. `recover` middleware's `EnableStackTrace` is now gated on `!cfg.IsProduction()`. Closes block-ship #6.
+- HTTP error handler returns a generic `INTERNAL_ERROR` body for non-`apperr` errors and logs the original via the structured logger. `apperr`-typed responses (developer-chosen messages) are unchanged. Closes block-ship #7.
+- `/metrics` no longer registers on the public Fiber listener. A separate `127.0.0.1:<observability.metrics.port>` `net/http` server now serves Prometheus scrapes. Operators must scrape from inside the host (or via a sidecar) instead of the public address. Closes the `/metrics` should-fix.
+
 ### Fixed
 
 - Audit log writing empty `user_id` / `ip_address` / `user_agent` for every row. Reader (`port.ExtractAuditContext`) used bare string keys while writers used typed `logger.ContextKey`, so reads never matched writes. A negative regression test in `internal/port/auditor_test.go` locks the bug from coming back.

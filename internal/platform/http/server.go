@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/14mdzk/goscratch/internal/platform/config"
+	"github.com/14mdzk/goscratch/internal/platform/http/middleware"
 	"github.com/14mdzk/goscratch/pkg/logger"
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/recover"
@@ -18,21 +19,26 @@ type Server struct {
 	logger *logger.Logger
 }
 
-// NewServer creates a new HTTP server
-func NewServer(cfg config.ServerConfig, log *logger.Logger) *Server {
+// NewServer creates a new HTTP server. The error handler is wired to the
+// generic middleware variant so 5xx responses do not echo the original
+// error.Error() to the client; production also disables stack traces from
+// the recover middleware.
+func NewServer(cfg config.ServerConfig, log *logger.Logger, isProduction bool) *Server {
 	app := fiber.New(fiber.Config{
 		ReadTimeout:  time.Duration(cfg.ReadTimeout) * time.Second,
 		WriteTimeout: time.Duration(cfg.WriteTimeout) * time.Second,
 		IdleTimeout:  time.Duration(cfg.IdleTimeout) * time.Second,
-		// Disable Fiber's default error handler (we use custom middleware)
-		ErrorHandler: defaultErrorHandler,
+		// Centralized error handler returns a generic message for unknown
+		// errors and preserves apperr-typed structured responses.
+		ErrorHandler: middleware.ErrorHandler(log),
 		// Disable startup message
 		DisableStartupMessage: true,
 	})
 
-	// Add recovery middleware
+	// Add recovery middleware. Stack traces are gated on non-production to
+	// avoid leaking the Go stack to clients via the panic body.
 	app.Use(recover.New(recover.Config{
-		EnableStackTrace: true,
+		EnableStackTrace: !isProduction,
 	}))
 
 	return &Server{
@@ -58,24 +64,6 @@ func (s *Server) Start() error {
 func (s *Server) Shutdown(ctx context.Context) error {
 	s.logger.Info("Shutting down HTTP server")
 	return s.app.ShutdownWithContext(ctx)
-}
-
-// defaultErrorHandler is the default error handler
-func defaultErrorHandler(c *fiber.Ctx, err error) error {
-	code := fiber.StatusInternalServerError
-
-	// Check if it's a Fiber error
-	if e, ok := err.(*fiber.Error); ok {
-		code = e.Code
-	}
-
-	return c.Status(code).JSON(fiber.Map{
-		"success": false,
-		"error": fiber.Map{
-			"code":    "INTERNAL_ERROR",
-			"message": err.Error(),
-		},
-	})
 }
 
 // RouteRegistrar is an interface for modules to register their routes

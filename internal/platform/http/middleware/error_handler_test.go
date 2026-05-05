@@ -128,6 +128,62 @@ func TestErrorHandler_UnknownError(t *testing.T) {
 	assert.Contains(t, logBuf.String(), "Unexpected error occurred")
 }
 
+func TestErrorHandler_GenericMessageHidesOriginalError(t *testing.T) {
+	var logBuf bytes.Buffer
+	log := newTestLogger(&logBuf)
+
+	app := fiber.New(fiber.Config{
+		ErrorHandler: ErrorHandler(log),
+	})
+
+	const leakedSecret = "pgx: password authentication failed for user 'postgres' at /internal/repo.go:42"
+	app.Get("/test", func(c *fiber.Ctx) error {
+		return errors.New(leakedSecret)
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/test", nil)
+	resp, err := app.Test(req)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusInternalServerError, resp.StatusCode)
+
+	body, _ := io.ReadAll(resp.Body)
+	// Critical: response body must NOT contain the original error string.
+	assert.NotContains(t, string(body), leakedSecret)
+	assert.NotContains(t, string(body), "password authentication failed")
+	assert.NotContains(t, string(body), "/internal/repo.go")
+
+	// And the structured log must contain the original error for debugging.
+	assert.Contains(t, logBuf.String(), "Unexpected error occurred")
+	assert.Contains(t, logBuf.String(), "password authentication failed")
+}
+
+func TestErrorHandler_AppErrorPreservesStructuredMessage(t *testing.T) {
+	var logBuf bytes.Buffer
+	log := newTestLogger(&logBuf)
+
+	app := fiber.New(fiber.Config{
+		ErrorHandler: ErrorHandler(log),
+	})
+
+	app.Get("/test", func(c *fiber.Ctx) error {
+		return apperr.New(apperr.CodeBadRequest, "email already taken", http.StatusBadRequest)
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/test", nil)
+	resp, err := app.Test(req)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
+
+	body, _ := io.ReadAll(resp.Body)
+	var result map[string]any
+	require.NoError(t, json.Unmarshal(body, &result))
+	errObj := result["error"].(map[string]any)
+	// apperr-typed responses keep their exact structured message; they are
+	// safe-by-construction (the developer chose the wording).
+	assert.Equal(t, "email already taken", errObj["message"])
+	assert.Equal(t, apperr.CodeBadRequest, errObj["code"])
+}
+
 func TestFiberStatusToCode(t *testing.T) {
 	tests := []struct {
 		status   int

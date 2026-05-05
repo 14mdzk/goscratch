@@ -91,9 +91,11 @@ JWT-based authentication with stateless access tokens and cached refresh tokens.
 
 | Key | Env | Default | Description |
 |-----|-----|---------|-------------|
-| `jwt.secret` | `JWT_SECRET` | (none) | HMAC-SHA256 signing secret |
+| `jwt.secret` | `JWT_SECRET` | (none — startup fails) | HMAC-SHA256 signing secret. Must be ≥ 32 bytes and must not equal the committed placeholder `your-super-secret-key-change-in-production`. |
 | `jwt.access_token_ttl` | `JWT_ACCESS_TOKEN_TTL` | (none) | Access token lifetime in minutes |
 | `jwt.refresh_token_ttl` | `JWT_REFRESH_TOKEN_TTL` | (none) | Refresh token lifetime in minutes |
+
+> **Operator note.** `app.New` calls `cfg.Validate()` before any adapter is constructed. If `JWT_SECRET` is unset, equals the committed placeholder, or is shorter than 32 bytes, the process refuses to start with a message naming the env var. This guard exists because the boilerplate previously shipped a forgeable token if the operator forgot the override.
 
 ## Architecture
 

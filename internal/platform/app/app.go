@@ -2,6 +2,9 @@ package app
 
 import (
 	"context"
+	"errors"
+	"fmt"
+	nethttp "net/http"
 	"time"
 
 	"github.com/14mdzk/goscratch/internal/adapter/audit"
@@ -28,6 +31,7 @@ import (
 	"github.com/14mdzk/goscratch/internal/worker"
 	"github.com/14mdzk/goscratch/pkg/logger"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 // App holds all application dependencies
@@ -43,11 +47,19 @@ type App struct {
 	Auditor        port.Auditor
 	Authorizer     port.Authorizer
 	Email          port.EmailSender
+	metricsServer  *nethttp.Server
 	tracerShutdown func(context.Context) error
 }
 
 // New creates a new App instance with all dependencies
 func New(ctx context.Context, cfg *config.Config) (*App, error) {
+	// Validate secure-defaults invariants before constructing any adapter.
+	// A bad JWT secret (placeholder or too short) means every issued token
+	// is forgeable, so we hard-fail rather than silently boot.
+	if err := cfg.Validate(); err != nil {
+		return nil, fmt.Errorf("config validation failed: %w", err)
+	}
+
 	// Initialize logger
 	logLevel := "info"
 	if cfg.IsDevelopment() {
@@ -188,7 +200,7 @@ func New(ctx context.Context, cfg *config.Config) (*App, error) {
 	}
 
 	// Initialize HTTP server
-	server := http.NewServer(cfg.Server, log)
+	server := http.NewServer(cfg.Server, log, cfg.IsProduction())
 
 	// Apply middleware
 	app := server.App()
@@ -221,12 +233,28 @@ func New(ctx context.Context, cfg *config.Config) (*App, error) {
 		app.Use(observability.TracingMiddleware(cfg.App.Name))
 	}
 
-	// Add metrics middleware if enabled
+	// Add metrics middleware if enabled. The middleware records counters on
+	// the public listener; the /metrics scrape endpoint is bound to a
+	// separate localhost-only listener so the public surface does not leak
+	// process internals to unauthenticated callers.
+	var metricsServer *nethttp.Server
 	if cfg.Observability.Metrics.Enabled {
 		app.Use(observability.PrometheusMiddleware())
-		// Register metrics endpoint
-		app.Get("/metrics", observability.MetricsHandler())
-		log.Info("Metrics endpoint enabled", "path", "/metrics")
+
+		mux := nethttp.NewServeMux()
+		mux.Handle("/metrics", promhttp.Handler())
+		metricsAddr := fmt.Sprintf("127.0.0.1:%d", cfg.Observability.Metrics.Port)
+		metricsServer = &nethttp.Server{
+			Addr:              metricsAddr,
+			Handler:           mux,
+			ReadHeaderTimeout: 5 * time.Second,
+		}
+		go func() {
+			log.Info("Metrics endpoint enabled", "addr", metricsAddr, "path", "/metrics")
+			if err := metricsServer.ListenAndServe(); err != nil && !errors.Is(err, nethttp.ErrServerClosed) {
+				log.Error("Metrics server failed", "error", err)
+			}
+		}()
 	}
 
 	app.Use(middleware.Logger(log))
@@ -278,6 +306,7 @@ func New(ctx context.Context, cfg *config.Config) (*App, error) {
 		SSE:            sseBroker,
 		Auditor:        auditor,
 		Email:          emailSender,
+		metricsServer:  metricsServer,
 		tracerShutdown: tracerShutdown,
 	}, nil
 }
@@ -295,6 +324,14 @@ func (a *App) Shutdown(ctx context.Context) error {
 	// Close server
 	if err := a.Server.Shutdown(ctx); err != nil {
 		a.Logger.Error("Failed to shutdown server", "error", err)
+	}
+
+	// Shutdown metrics listener before the tracer so any final metrics-
+	// related logs still flow through the configured exporter.
+	if a.metricsServer != nil {
+		if err := a.metricsServer.Shutdown(ctx); err != nil {
+			a.Logger.Error("Failed to shutdown metrics server", "error", err)
+		}
 	}
 
 	// Shutdown tracer

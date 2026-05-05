@@ -364,6 +364,18 @@ func TestParsePermission(t *testing.T) {
 }
 
 func TestBuildDatabaseURL(t *testing.T) {
-	url := BuildDatabaseURL("localhost", 5432, "user", "pass", "mydb")
-	assert.Equal(t, "postgres://user:pass@localhost:5432/mydb?sslmode=disable", url)
+	t.Run("sslmode propagates", func(t *testing.T) {
+		url := BuildDatabaseURL("localhost", 5432, "user", "pass", "mydb", "require")
+		assert.Equal(t, "postgres://user:pass@localhost:5432/mydb?sslmode=require", url)
+	})
+
+	t.Run("explicit disable still allowed for local dev", func(t *testing.T) {
+		url := BuildDatabaseURL("localhost", 5432, "user", "pass", "mydb", "disable")
+		assert.Equal(t, "postgres://user:pass@localhost:5432/mydb?sslmode=disable", url)
+	})
+
+	t.Run("empty sslmode defaults to require", func(t *testing.T) {
+		url := BuildDatabaseURL("localhost", 5432, "user", "pass", "mydb", "")
+		assert.Equal(t, "postgres://user:pass@localhost:5432/mydb?sslmode=require", url)
+	})
 }
