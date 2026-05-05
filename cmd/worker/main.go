@@ -69,7 +69,9 @@ func run() error {
 	appLogger.Info("Database connected successfully")
 
 	appLogger.Info("Connecting to RabbitMQ...")
-	queueAdapter, err := queue.NewRabbitMQ(cfg.RabbitMQ.URL)
+	queueAdapter, err := queue.NewRabbitMQWithOptions(cfg.RabbitMQ.URL, queue.Options{
+		PrefetchCount: cfg.RabbitMQ.PrefetchCount,
+	})
 	if err != nil {
 		return fmt.Errorf("failed to connect to RabbitMQ: %w", err)
 	}

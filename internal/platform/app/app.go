@@ -116,7 +116,9 @@ func New(ctx context.Context, cfg *config.Config) (*App, error) {
 	var queueAdapter port.Queue
 	if cfg.RabbitMQ.Enabled {
 		log.Info("Connecting to RabbitMQ...")
-		queueAdapter, err = queue.NewRabbitMQ(cfg.RabbitMQ.URL)
+		queueAdapter, err = queue.NewRabbitMQWithOptions(cfg.RabbitMQ.URL, queue.Options{
+			PrefetchCount: cfg.RabbitMQ.PrefetchCount,
+		})
 		if err != nil {
 			log.Warn("Failed to connect to RabbitMQ, using no-op queue", "error", err)
 			queueAdapter = queue.NewNoOpQueue()

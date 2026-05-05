@@ -103,8 +103,9 @@ func (c RedisConfig) Addr() string {
 }
 
 type RabbitMQConfig struct {
-	Enabled bool   `json:"enabled" env:"RABBITMQ_ENABLED"`
-	URL     string `json:"url" env:"RABBITMQ_URL"`
+	Enabled       bool   `json:"enabled" env:"RABBITMQ_ENABLED"`
+	URL           string `json:"url" env:"RABBITMQ_URL"`
+	PrefetchCount int    `json:"prefetch_count" env:"RABBITMQ_PREFETCH_COUNT"`
 }
 
 type StorageConfig struct {
