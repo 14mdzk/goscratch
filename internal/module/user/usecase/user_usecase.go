@@ -2,28 +2,57 @@ package usecase
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	userdomain "github.com/14mdzk/goscratch/internal/module/user/domain"
 	"github.com/14mdzk/goscratch/internal/module/user/dto"
 	"github.com/14mdzk/goscratch/internal/module/user/repository"
 	"github.com/14mdzk/goscratch/internal/platform/database"
+	"github.com/14mdzk/goscratch/internal/port"
 	shareddomain "github.com/14mdzk/goscratch/internal/shared/domain"
 	"github.com/14mdzk/goscratch/pkg/apperr"
 	"golang.org/x/crypto/bcrypt"
 )
 
-// userUseCase handles user business logic
-type userUseCase struct {
-	repo       *repository.Repository
-	transactor *database.Transactor
+// userRepo is the narrow repository interface that userUseCase depends on.
+// The concrete *repository.Repository satisfies it; tests use a mock.
+type userRepo interface {
+	GetByID(ctx context.Context, id string) (*userdomain.User, error)
+	GetByEmail(ctx context.Context, email string) (*userdomain.User, error)
+	List(ctx context.Context, filter userdomain.UserFilter) ([]userdomain.User, error)
+	Create(ctx context.Context, email, passwordHash, name string) (*userdomain.User, error)
+	Update(ctx context.Context, id, name, email string) (*userdomain.User, error)
+	UpdatePassword(ctx context.Context, id, passwordHash string) error
+	Delete(ctx context.Context, id string) error
+	ExistsByEmail(ctx context.Context, email string) (bool, error)
+	Activate(ctx context.Context, id string) error
+	Deactivate(ctx context.Context, id string) error
 }
 
-// NewUseCase creates a new user use case
-func NewUseCase(repo *repository.Repository, transactor *database.Transactor) UseCase {
+// userUseCase handles user business logic
+type userUseCase struct {
+	repo        userRepo
+	transactor  *database.Transactor
+	cache       port.Cache
+	authRevoker AuthRevoker
+}
+
+// NewUseCase creates a new user use case.
+// authRevoker is the auth module's session-revocation interface; it may be nil
+// in tests that do not exercise ChangePassword revocation.
+func NewUseCase(repo *repository.Repository, transactor *database.Transactor, cache port.Cache, authRevoker AuthRevoker) UseCase {
+	return newUseCase(repo, transactor, cache, authRevoker)
+}
+
+// newUseCase is the internal constructor that accepts the userRepo interface,
+// enabling unit tests (same package) to inject mock repositories.
+func newUseCase(repo userRepo, transactor *database.Transactor, cache port.Cache, authRevoker AuthRevoker) UseCase {
 	return &userUseCase{
-		repo:       repo,
-		transactor: transactor,
+		repo:        repo,
+		transactor:  transactor,
+		cache:       cache,
+		authRevoker: authRevoker,
 	}
 }
 
@@ -128,7 +157,11 @@ func (uc *userUseCase) Update(ctx context.Context, id string, req dto.UpdateUser
 	return toUserResponse(user), nil
 }
 
-// ChangePassword changes a user's password
+// ChangePassword changes a user's password and revokes all active refresh
+// tokens for that user. Revocation is mandatory: if the cache backend is
+// unavailable (ErrCacheUnavailable from NoOpCache or a Redis error) the
+// password update is still applied but the error is returned so the caller
+// knows sessions were not revoked.
 func (uc *userUseCase) ChangePassword(ctx context.Context, id string, req dto.ChangePasswordRequest) error {
 	// Get user to verify current password
 	user, err := uc.repo.GetByID(ctx, id)
@@ -150,6 +183,17 @@ func (uc *userUseCase) ChangePassword(ctx context.Context, id string, req dto.Ch
 	// Update password
 	if err := uc.repo.UpdatePassword(ctx, id, string(passwordHash)); err != nil {
 		return err
+	}
+
+	// Revoke all active refresh tokens for this user via the auth module's
+	// Revoker. The Revoker knows the dual-key cache shape and deletes both the
+	// lookup key and the per-user index key for every active session.
+	// On NoOpCache this returns ErrCacheUnavailable — propagate it so the
+	// caller (audit decorator, handler) knows revocation did not happen.
+	if uc.authRevoker != nil {
+		if err := uc.authRevoker.RevokeAllForUser(ctx, id); err != nil {
+			return fmt.Errorf("password updated but refresh token revocation failed: %w", err)
+		}
 	}
 
 	return nil

@@ -265,6 +265,12 @@ func (c *Config) Validate() error {
 	if len(c.JWT.Secret) < MinJWTSecretLen {
 		return fmt.Errorf("jwt.secret is %d bytes; minimum is %d: set the JWT_SECRET env override to a longer value", len(c.JWT.Secret), MinJWTSecretLen)
 	}
+	if c.JWT.Issuer == "" {
+		return fmt.Errorf("jwt.issuer is required: set JWT_ISSUER to the service identifier (e.g. \"goscratch\")")
+	}
+	if c.JWT.Audience == "" {
+		return fmt.Errorf("jwt.audience is required: set JWT_AUDIENCE to the expected audience (e.g. \"goscratch-api\")")
+	}
 	return nil
 }
 

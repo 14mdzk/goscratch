@@ -221,10 +221,36 @@ func TestValidate_RejectsEmptyJWTSecret(t *testing.T) {
 }
 
 func TestValidate_AcceptsLongUniqueJWTSecret(t *testing.T) {
-	// 32 bytes, not the placeholder.
-	cfg := &Config{JWT: JWTConfig{Secret: "a-32-byte-real-secret-xxxxxxxxxx"}}
+	// 32 bytes, not the placeholder, with non-empty issuer and audience.
+	cfg := &Config{JWT: JWTConfig{
+		Secret:   "a-32-byte-real-secret-xxxxxxxxxx",
+		Issuer:   "goscratch",
+		Audience: "goscratch-api",
+	}}
 	require.Len(t, cfg.JWT.Secret, MinJWTSecretLen)
 	require.NoError(t, cfg.Validate())
+}
+
+func TestValidate_RejectsEmptyIssuer(t *testing.T) {
+	cfg := &Config{JWT: JWTConfig{
+		Secret:   "a-32-byte-real-secret-xxxxxxxxxx",
+		Issuer:   "",
+		Audience: "goscratch-api",
+	}}
+	err := cfg.Validate()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "jwt.issuer")
+}
+
+func TestValidate_RejectsEmptyAudience(t *testing.T) {
+	cfg := &Config{JWT: JWTConfig{
+		Secret:   "a-32-byte-real-secret-xxxxxxxxxx",
+		Issuer:   "goscratch",
+		Audience: "",
+	}}
+	err := cfg.Validate()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "jwt.audience")
 }
 
 func TestJWTDurations(t *testing.T) {

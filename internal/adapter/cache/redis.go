@@ -59,6 +59,29 @@ func (c *RedisCache) Delete(ctx context.Context, key string) error {
 	return nil
 }
 
+// DeleteByPrefix removes all keys whose name starts with prefix using SCAN +
+// DEL. It is used by ChangePassword to revoke all active refresh tokens for a
+// user without knowing each individual token hash.
+func (c *RedisCache) DeleteByPrefix(ctx context.Context, prefix string) error {
+	var cursor uint64
+	for {
+		keys, nextCursor, err := c.client.Scan(ctx, cursor, prefix+"*", 100).Result()
+		if err != nil {
+			return fmt.Errorf("redis scan error: %w", err)
+		}
+		if len(keys) > 0 {
+			if err := c.client.Del(ctx, keys...).Err(); err != nil {
+				return fmt.Errorf("redis del error: %w", err)
+			}
+		}
+		cursor = nextCursor
+		if cursor == 0 {
+			break
+		}
+	}
+	return nil
+}
+
 func (c *RedisCache) Exists(ctx context.Context, key string) (bool, error) {
 	n, err := c.client.Exists(ctx, key).Result()
 	if err != nil {

@@ -20,3 +20,12 @@ type UseCase interface {
 	Activate(ctx context.Context, id string) error
 	Deactivate(ctx context.Context, id string) error
 }
+
+// AuthRevoker is a narrow port for revoking auth sessions. The user module
+// depends on this interface rather than on the concrete auth usecase, avoiding
+// a circular import. The auth module satisfies this interface via its Revoker()
+// accessor.
+type AuthRevoker interface {
+	// RevokeAllForUser terminates all active refresh tokens for the given user.
+	RevokeAllForUser(ctx context.Context, userID string) error
+}

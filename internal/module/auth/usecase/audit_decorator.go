@@ -51,12 +51,12 @@ func (d *AuditedUseCase) Refresh(ctx context.Context, req dto.RefreshRequest) (*
 }
 
 // Logout invalidates the refresh token and logs a LOGOUT audit entry on success.
-func (d *AuditedUseCase) Logout(ctx context.Context, refreshToken string) error {
-	if err := d.inner.Logout(ctx, refreshToken); err != nil {
+func (d *AuditedUseCase) Logout(ctx context.Context, callerID, refreshToken string) error {
+	if err := d.inner.Logout(ctx, callerID, refreshToken); err != nil {
 		return err
 	}
 
-	entry := port.NewAuditEntry(ctx, port.AuditActionLogout, "user", "")
+	entry := port.NewAuditEntry(ctx, port.AuditActionLogout, "user", callerID)
 	_ = d.auditor.Log(ctx, entry)
 
 	return nil

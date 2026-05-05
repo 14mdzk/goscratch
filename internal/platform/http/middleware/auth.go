@@ -124,16 +124,22 @@ func extractToken(c *fiber.Ctx, lookup string) (string, error) {
 	}
 }
 
-// parseToken parses and validates a JWT token, including issuer and audience claims
+// parseToken parses and validates a JWT token, including strict issuer and
+// audience checks. Both iss and aud must be non-empty in the server config; a
+// token that omits or mismatches either claim is unconditionally rejected
+// (should-fix: audit middleware/auth.go:129).
 func parseToken(tokenString, secret, issuer, audience string) (*Claims, error) {
+	// Strict: the server config must provide both iss and aud (enforced by
+	// config.Validate). A call with empty issuer or audience is a programming
+	// error — reject the token immediately rather than skipping validation.
+	if issuer == "" || audience == "" {
+		return nil, apperr.ErrUnauthorized
+	}
+
 	parserOpts := []jwt.ParserOption{
 		jwt.WithValidMethods([]string{"HS256"}),
-	}
-	if issuer != "" {
-		parserOpts = append(parserOpts, jwt.WithIssuer(issuer))
-	}
-	if audience != "" {
-		parserOpts = append(parserOpts, jwt.WithAudience(audience))
+		jwt.WithIssuer(issuer),
+		jwt.WithAudience(audience),
 	}
 
 	token, err := jwt.ParseWithClaims(tokenString, &Claims{}, func(token *jwt.Token) (interface{}, error) {

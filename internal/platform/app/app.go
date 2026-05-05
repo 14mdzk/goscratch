@@ -97,7 +97,12 @@ func New(ctx context.Context, cfg *config.Config) (*App, error) {
 	}
 	log.Info("Database connected successfully")
 
-	// Initialize cache (Redis or NoOp)
+	// Initialize cache (Redis or NoOp).
+	// WARNING: NoOpCache is a no-op that cannot store or revoke refresh tokens.
+	// Running with NoOpCache means:
+	//   - Login will be rejected (fail-closed refresh-token gating).
+	//   - ChangePassword session revocation will not function.
+	// Enable Redis (redis.enabled=true) for any environment that issues JWTs.
 	var cacheAdapter port.Cache
 	if cfg.Redis.Enabled {
 		log.Info("Connecting to Redis...")
@@ -105,10 +110,12 @@ func New(ctx context.Context, cfg *config.Config) (*App, error) {
 		if err != nil {
 			log.Warn("Failed to connect to Redis, using no-op cache", "error", err)
 			cacheAdapter = cache.NewNoOpCache()
+			log.Warn("SECURITY WARNING: cache is unavailable; login will be rejected and refresh-token revocation will not function")
 		} else {
 			log.Info("Redis connected successfully")
 		}
 	} else {
+		log.Warn("SECURITY WARNING: Redis is disabled (redis.enabled=false); login will be rejected and refresh-token revocation will not function")
 		cacheAdapter = cache.NewNoOpCache()
 	}
 
@@ -169,7 +176,10 @@ func New(ctx context.Context, cfg *config.Config) (*App, error) {
 		auditor = audit.NewNoOpAuditor()
 	}
 
-	// Initialize authorizer (Casbin)
+	// Initialize authorizer (Casbin).
+	// Fail-fast when authorization is explicitly enabled: a transient DB blip at
+	// boot must NOT silently open every authenticated endpoint (block-ship #3).
+	// The NoOpAdapter is intentionally NOT used as a fallback here.
 	var authorizer port.Authorizer
 	if cfg.Authorization.Enabled {
 		log.Info("Initializing Casbin authorization...")
@@ -177,12 +187,12 @@ func New(ctx context.Context, cfg *config.Config) (*App, error) {
 			DatabaseURL: cfg.Database.DSN(),
 		})
 		if err != nil {
-			log.Warn("Failed to initialize Casbin, using no-op authorizer", "error", err)
-			authorizer = casbinadapter.NewNoOpAdapter()
-		} else {
-			log.Info("Casbin authorization initialized successfully")
+			return nil, fmt.Errorf("authorization enabled but Casbin init failed: %w", err)
 		}
+		log.Info("Casbin authorization initialized successfully")
 	} else {
+		// Authorization is explicitly disabled — use NoOp (e.g. local dev without DB).
+		log.Warn("Authorization is disabled (authorization.enabled=false); all permission checks are bypassed")
 		authorizer = casbinadapter.NewNoOpAdapter()
 	}
 
@@ -288,8 +298,10 @@ func New(ctx context.Context, cfg *config.Config) (*App, error) {
 	// Register modules
 	docsModule := docs.NewModule()
 	healthModule := health.NewModule()
-	userModule := user.NewModule(pool, transactor, auditor, authorizer, cfg.JWT.Secret)
+	// Auth module is constructed first so its Revoker can be injected into the
+	// user module (ChangePassword must revoke auth sessions cross-module).
 	authModule := auth.NewModule(pool, cacheAdapter, auditor, cfg.JWT)
+	userModule := user.NewModule(pool, transactor, auditor, authorizer, cacheAdapter, cfg.JWT.Secret, authModule.Revoker())
 	roleModule := role.NewModule(authorizer, cfg.JWT.Secret)
 	storageModule := storagemodule.NewModule(storageAdapter, auditor, cfg.JWT.Secret)
 	sseModule := ssemodule.NewModule(sseBroker, authorizer, cfg.JWT.Secret)

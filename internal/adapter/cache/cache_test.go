@@ -85,6 +85,12 @@ func TestNoOpCache_Close_ReturnsNil(t *testing.T) {
 	assert.NoError(t, err)
 }
 
+func TestNoOpCache_DeleteByPrefix_ReturnsErrCacheUnavailable(t *testing.T) {
+	c := NewNoOpCache()
+	err := c.DeleteByPrefix(context.Background(), "refresh:user:abc:")
+	assert.ErrorIs(t, err, port.ErrCacheUnavailable)
+}
+
 // =============================================================================
 // RedisCache Tests (using miniredis)
 // =============================================================================
@@ -283,6 +289,40 @@ func TestRedisCache_SetJSON_MarshalError(t *testing.T) {
 	// Verify key was not set
 	_, getErr := rc.Get(ctx, "bad")
 	assert.ErrorIs(t, getErr, port.ErrCacheMiss)
+}
+
+func TestRedisCache_DeleteByPrefix(t *testing.T) {
+	rc, _ := newTestRedisCache(t)
+	ctx := context.Background()
+
+	// Store three keys with the same prefix
+	require.NoError(t, rc.Set(ctx, "refresh:user:u1:aaa", []byte("v1"), time.Minute))
+	require.NoError(t, rc.Set(ctx, "refresh:user:u1:bbb", []byte("v2"), time.Minute))
+	require.NoError(t, rc.Set(ctx, "refresh:user:u2:ccc", []byte("v3"), time.Minute)) // different user
+
+	// Delete by prefix for u1 only
+	err := rc.DeleteByPrefix(ctx, "refresh:user:u1:")
+	require.NoError(t, err)
+
+	// u1 keys are gone
+	_, err = rc.Get(ctx, "refresh:user:u1:aaa")
+	assert.ErrorIs(t, err, port.ErrCacheMiss)
+	_, err = rc.Get(ctx, "refresh:user:u1:bbb")
+	assert.ErrorIs(t, err, port.ErrCacheMiss)
+
+	// u2 key is untouched
+	val, err := rc.Get(ctx, "refresh:user:u2:ccc")
+	require.NoError(t, err)
+	assert.Equal(t, []byte("v3"), val)
+}
+
+func TestRedisCache_DeleteByPrefix_NoMatchingKeys(t *testing.T) {
+	rc, _ := newTestRedisCache(t)
+	ctx := context.Background()
+
+	// Should not error even if no keys match
+	err := rc.DeleteByPrefix(ctx, "refresh:user:nonexistent:")
+	assert.NoError(t, err)
 }
 
 func TestRedisCache_SetAndGet_BinaryData(t *testing.T) {

@@ -82,6 +82,8 @@ func TestAuth_ValidJWTInCookie(t *testing.T) {
 	app := fiber.New()
 	cfg := AuthConfig{
 		JWTSecret:   testJWTSecret,
+		JWTIssuer:   "goscratch",
+		JWTAudience: "goscratch-api",
 		TokenLookup: "cookie:token",
 		ContextKey:  "user",
 	}
@@ -289,4 +291,57 @@ func TestGetUserID_NoUserID(t *testing.T) {
 	_, err := app.Test(req)
 	require.NoError(t, err)
 	assert.Equal(t, "", result)
+}
+
+// TestParseToken_StrictIssAud verifies that parseToken rejects tokens when the
+// server config has empty issuer or audience (should-fix: middleware/auth.go:129).
+func TestParseToken_StrictIssAud(t *testing.T) {
+	validToken := generateTestToken(t, testJWTSecret, validClaims())
+
+	t.Run("empty issuer in config rejects token", func(t *testing.T) {
+		_, err := parseToken(validToken, testJWTSecret, "", "goscratch-api")
+		assert.Error(t, err)
+	})
+
+	t.Run("empty audience in config rejects token", func(t *testing.T) {
+		_, err := parseToken(validToken, testJWTSecret, "goscratch", "")
+		assert.Error(t, err)
+	})
+
+	t.Run("both empty rejects token", func(t *testing.T) {
+		_, err := parseToken(validToken, testJWTSecret, "", "")
+		assert.Error(t, err)
+	})
+
+	t.Run("correct issuer and audience accepts token", func(t *testing.T) {
+		claims, err := parseToken(validToken, testJWTSecret, "goscratch", "goscratch-api")
+		assert.NoError(t, err)
+		assert.Equal(t, "user-123", claims.UserID)
+	})
+}
+
+// TestAuth_RejectsWhenIssuerOrAudienceEmpty verifies the Auth middleware itself
+// refuses requests when its config has empty issuer/audience.
+func TestAuth_RejectsWhenIssuerOrAudienceEmpty(t *testing.T) {
+	app := fiber.New()
+	cfg := AuthConfig{
+		JWTSecret:   testJWTSecret,
+		JWTIssuer:   "", // intentionally empty
+		JWTAudience: "goscratch-api",
+		TokenLookup: "header:Authorization",
+		ContextKey:  "user",
+	}
+
+	app.Use(Auth(cfg))
+	app.Get("/test", func(c *fiber.Ctx) error {
+		return c.SendStatus(fiber.StatusOK)
+	})
+
+	token := generateTestToken(t, testJWTSecret, validClaims())
+	req := httptest.NewRequest(http.MethodGet, "/test", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+
+	resp, err := app.Test(req)
+	require.NoError(t, err)
+	assert.Equal(t, fiber.StatusUnauthorized, resp.StatusCode)
 }
