@@ -95,6 +95,11 @@ func (a *NoOpAdapter) SavePolicy() error {
 	return nil
 }
 
+// Start is a no-op
+func (a *NoOpAdapter) Start(_ context.Context) error {
+	return nil
+}
+
 // Close is a no-op
 func (a *NoOpAdapter) Close() error {
 	return nil

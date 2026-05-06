@@ -3,13 +3,17 @@ package casbin
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
+	"time"
 
 	sqladapter "github.com/Blank-Xu/sql-adapter"
 	"github.com/casbin/casbin/v3"
 	"github.com/casbin/casbin/v3/model"
+	"github.com/casbin/casbin/v3/persist"
 	_ "github.com/jackc/pgx/v5/stdlib" // pgx stdlib driver
 
 	"github.com/14mdzk/goscratch/internal/port"
@@ -17,14 +21,45 @@ import (
 
 // Adapter implements port.Authorizer using Casbin
 type Adapter struct {
-	enforcer *casbin.Enforcer
-	db       *sql.DB
+	enforcer       *casbin.Enforcer
+	db             *sql.DB
+	reloadInterval time.Duration
+	watcher        persist.Watcher
 }
 
 // Config holds configuration for the Casbin adapter
 type Config struct {
-	DatabaseURL string
-	ModelText   string // Optional: inline model text (if not using file)
+	DatabaseURL    string
+	ModelText      string          // Optional: inline model text (if not using file)
+	ReloadInterval time.Duration   // 0 = default 5 minutes
+	Watcher        persist.Watcher // nil = backstop tick only
+}
+
+// ErrInvalidPolicyArg is returned when a policy argument contains disallowed bytes.
+var ErrInvalidPolicyArg = errors.New("invalid policy argument")
+
+// watcherOp is the JSON envelope for incremental policy updates.
+type watcherOp struct {
+	Op     string   `json:"op"`
+	Sec    string   `json:"sec"`
+	Ptype  string   `json:"ptype"`
+	Params []string `json:"params"`
+}
+
+// validatePolicyArgs returns ErrInvalidPolicyArg if any arg contains null bytes.
+func validatePolicyArgs(args ...string) error {
+	for _, arg := range args {
+		if strings.ContainsAny(arg, "\x00") {
+			return fmt.Errorf("invalid policy arg %q: %w", arg, ErrInvalidPolicyArg)
+		}
+	}
+	return nil
+}
+
+// encodeOp serialises a watcherOp into a JSON string for use by watchers.
+func encodeOp(op, sec, ptype string, params []string) string {
+	b, _ := json.Marshal(watcherOp{Op: op, Sec: sec, Ptype: ptype, Params: params})
+	return string(b)
 }
 
 // Default RBAC model with permission-based enforcement
@@ -101,9 +136,82 @@ func NewAdapter(cfg Config) (*Adapter, error) {
 	}
 
 	return &Adapter{
-		enforcer: enforcer,
-		db:       db,
+		enforcer:       enforcer,
+		db:             db,
+		reloadInterval: cfg.ReloadInterval,
+		watcher:        cfg.Watcher,
 	}, nil
+}
+
+// Start wires the watcher (if configured) and launches the backstop reload tick.
+// It must be called after NewAdapter and before the adapter is used in production.
+// The goroutine exits when ctx is cancelled.
+func (a *Adapter) Start(ctx context.Context) error {
+	if a.watcher != nil {
+		if err := a.watcher.SetUpdateCallback(a.makeUpdateCallback()); err != nil {
+			return fmt.Errorf("casbin: set watcher callback: %w", err)
+		}
+		if err := a.enforcer.SetWatcher(a.watcher); err != nil {
+			return fmt.Errorf("casbin: set watcher on enforcer: %w", err)
+		}
+	}
+
+	interval := a.reloadInterval
+	if interval == 0 {
+		interval = 5 * time.Minute
+	}
+
+	go func() {
+		t := time.NewTicker(interval)
+		defer t.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-t.C:
+				if err := a.enforcer.LoadPolicy(); err != nil {
+					slog.Error("casbin backstop reload failed", "error", err)
+				}
+			}
+		}
+	}()
+
+	return nil
+}
+
+// makeUpdateCallback returns a callback that applies incremental policy updates
+// received from the watcher. Unknown ops fall back to a full LoadPolicy.
+func (a *Adapter) makeUpdateCallback() func(string) {
+	return func(msg string) {
+		var op watcherOp
+		if err := json.Unmarshal([]byte(msg), &op); err != nil {
+			// Unknown format — full reload as fallback.
+			_ = a.enforcer.LoadPolicy()
+			return
+		}
+		ifaces := stringsToIfaces(op.Params)
+		switch op.Op {
+		case "add_policy":
+			_, _ = a.enforcer.AddPolicy(ifaces...)
+		case "remove_policy":
+			_, _ = a.enforcer.RemovePolicy(ifaces...)
+		case "add_grouping":
+			_, _ = a.enforcer.AddGroupingPolicy(ifaces...)
+		case "remove_grouping":
+			_, _ = a.enforcer.RemoveGroupingPolicy(ifaces...)
+		default:
+			_ = a.enforcer.LoadPolicy()
+		}
+	}
+}
+
+// stringsToIfaces converts a []string to []any for Casbin v3 API calls.
+func stringsToIfaces(ss []string) []any {
+	out := make([]any, len(ss))
+	for i, s := range ss {
+		out[i] = s
+	}
+	return out
 }
 
 // Enforce checks if subject has permission to perform action on object
@@ -126,12 +234,18 @@ func (a *Adapter) EnforceWithContext(ctx context.Context, sub, obj, act string) 
 
 // AddRoleForUser assigns a role to a user
 func (a *Adapter) AddRoleForUser(userID, role string) error {
+	if err := validatePolicyArgs(userID, role); err != nil {
+		return err
+	}
 	_, err := a.enforcer.AddGroupingPolicy(userID, role)
 	return err
 }
 
 // RemoveRoleForUser removes a role from a user
 func (a *Adapter) RemoveRoleForUser(userID, role string) error {
+	if err := validatePolicyArgs(userID, role); err != nil {
+		return err
+	}
 	_, err := a.enforcer.RemoveGroupingPolicy(userID, role)
 	return err
 }
@@ -153,12 +267,18 @@ func (a *Adapter) HasRoleForUser(userID, role string) (bool, error) {
 
 // AddPermissionForRole adds a permission to a role
 func (a *Adapter) AddPermissionForRole(role, obj, act string) error {
+	if err := validatePolicyArgs(role, obj, act); err != nil {
+		return err
+	}
 	_, err := a.enforcer.AddPolicy(role, obj, act)
 	return err
 }
 
 // RemovePermissionForRole removes a permission from a role
 func (a *Adapter) RemovePermissionForRole(role, obj, act string) error {
+	if err := validatePolicyArgs(role, obj, act); err != nil {
+		return err
+	}
 	_, err := a.enforcer.RemovePolicy(role, obj, act)
 	return err
 }
@@ -170,12 +290,18 @@ func (a *Adapter) GetPermissionsForRole(role string) ([][]string, error) {
 
 // AddPermissionForUser adds a direct permission to a user
 func (a *Adapter) AddPermissionForUser(userID, obj, act string) error {
+	if err := validatePolicyArgs(userID, obj, act); err != nil {
+		return err
+	}
 	_, err := a.enforcer.AddPolicy(userID, obj, act)
 	return err
 }
 
 // RemovePermissionForUser removes a direct permission from a user
 func (a *Adapter) RemovePermissionForUser(userID, obj, act string) error {
+	if err := validatePolicyArgs(userID, obj, act); err != nil {
+		return err
+	}
 	_, err := a.enforcer.RemovePolicy(userID, obj, act)
 	return err
 }

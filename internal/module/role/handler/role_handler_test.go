@@ -101,6 +101,10 @@ func (m *MockAuthorizer) SavePolicy() error {
 	return args.Error(0)
 }
 
+func (m *MockAuthorizer) Start(_ context.Context) error {
+	return nil
+}
+
 func (m *MockAuthorizer) Close() error {
 	args := m.Called()
 	return args.Error(0)

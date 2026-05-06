@@ -35,6 +35,7 @@ type Authorizer interface {
 	SavePolicy() error
 
 	// Lifecycle
+	Start(ctx context.Context) error
 	Close() error
 }
 

@@ -50,9 +50,10 @@ func (m *mockAuthorizer) GetPermissionsForUser(_ string) ([][]string, error) { r
 func (m *mockAuthorizer) GetImplicitPermissionsForUser(_ string) ([][]string, error) {
 	return nil, nil
 }
-func (m *mockAuthorizer) LoadPolicy() error { return nil }
-func (m *mockAuthorizer) SavePolicy() error { return nil }
-func (m *mockAuthorizer) Close() error      { return nil }
+func (m *mockAuthorizer) LoadPolicy() error             { return nil }
+func (m *mockAuthorizer) SavePolicy() error             { return nil }
+func (m *mockAuthorizer) Start(_ context.Context) error { return nil }
+func (m *mockAuthorizer) Close() error                  { return nil }
 
 // setupAuthzApp creates a fiber app with user_id pre-set in locals
 func setupAuthzApp(handler fiber.Handler, userID string) *fiber.App {
