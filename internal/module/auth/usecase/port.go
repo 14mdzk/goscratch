@@ -12,5 +12,7 @@ import (
 type UseCase interface {
 	Login(ctx context.Context, req dto.LoginRequest) (*dto.LoginResponse, error)
 	Refresh(ctx context.Context, req dto.RefreshRequest) (*dto.RefreshResponse, error)
-	Logout(ctx context.Context, refreshToken string) error
+	// Logout invalidates the refresh token for the authenticated caller.
+	// callerID is the user ID extracted from the JWT by the auth middleware.
+	Logout(ctx context.Context, callerID, refreshToken string) error
 }

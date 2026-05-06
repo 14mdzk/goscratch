@@ -88,6 +88,57 @@ func (m *MockRepository) Deactivate(ctx context.Context, id string) error {
 	return args.Error(0)
 }
 
+// MockCache is a testify mock for port.Cache, used to verify ChangePassword
+// revocation behaviour in isolation.
+type MockCache struct {
+	mock.Mock
+}
+
+func (m *MockCache) Get(ctx context.Context, key string) ([]byte, error) {
+	args := m.Called(ctx, key)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]byte), args.Error(1)
+}
+func (m *MockCache) Set(ctx context.Context, key string, val []byte, ttl time.Duration) error {
+	args := m.Called(ctx, key, val, ttl)
+	return args.Error(0)
+}
+func (m *MockCache) Delete(ctx context.Context, key string) error {
+	args := m.Called(ctx, key)
+	return args.Error(0)
+}
+func (m *MockCache) DeleteByPrefix(ctx context.Context, prefix string) error {
+	args := m.Called(ctx, prefix)
+	return args.Error(0)
+}
+func (m *MockCache) Exists(ctx context.Context, key string) (bool, error) {
+	args := m.Called(ctx, key)
+	return args.Bool(0), args.Error(1)
+}
+func (m *MockCache) SetJSON(ctx context.Context, key string, value any, ttl time.Duration) error {
+	args := m.Called(ctx, key, value, ttl)
+	return args.Error(0)
+}
+func (m *MockCache) GetJSON(ctx context.Context, key string, dest any) error {
+	args := m.Called(ctx, key, dest)
+	return args.Error(0)
+}
+func (m *MockCache) Increment(ctx context.Context, key string) (int64, error) {
+	args := m.Called(ctx, key)
+	return args.Get(0).(int64), args.Error(1)
+}
+func (m *MockCache) Decrement(ctx context.Context, key string) (int64, error) {
+	args := m.Called(ctx, key)
+	return args.Get(0).(int64), args.Error(1)
+}
+func (m *MockCache) Expire(ctx context.Context, key string, ttl time.Duration) error {
+	args := m.Called(ctx, key, ttl)
+	return args.Error(0)
+}
+func (m *MockCache) Close() error { return nil }
+
 // MockAuditor is a mock implementation of the auditor
 type MockAuditor struct {
 	mock.Mock
@@ -687,4 +738,96 @@ func TestAuditLogging_UpdateUser(t *testing.T) {
 	err := mockAuditor.Log(ctx, entry)
 	assert.NoError(t, err)
 	mockAuditor.AssertExpectations(t)
+}
+
+// ---------------------------------------------------------------------------
+// ChangePassword — refresh token revocation via AuthRevoker (dual-key design)
+// ---------------------------------------------------------------------------
+
+// MockAuthRevoker mocks the AuthRevoker interface injected into userUseCase.
+type MockAuthRevoker struct {
+	mock.Mock
+}
+
+func (m *MockAuthRevoker) RevokeAllForUser(ctx context.Context, userID string) error {
+	args := m.Called(ctx, userID)
+	return args.Error(0)
+}
+
+// TestChangePassword_AuthRevokerCalled verifies that ChangePassword delegates
+// session revocation to AuthRevoker.RevokeAllForUser with the correct userID.
+func TestChangePassword_AuthRevokerCalled(t *testing.T) {
+	ctx := context.Background()
+	testID := uuid.MustParse("01234567-89ab-cdef-0123-456789abcdef")
+
+	currentPassword := "oldpassword"
+	currentHash, _ := bcrypt.GenerateFromPassword([]byte(currentPassword), bcrypt.MinCost)
+
+	t.Run("success: RevokeAllForUser called with correct userID", func(t *testing.T) {
+		mockRepo := new(MockRepository)
+		mockRepo.On("GetByID", ctx, testID.String()).Return(&userdomain.User{
+			ID:           testID,
+			Email:        "test@example.com",
+			PasswordHash: string(currentHash),
+		}, nil)
+		mockRepo.On("UpdatePassword", ctx, testID.String(), mock.AnythingOfType("string")).Return(nil)
+
+		mockRevoker := new(MockAuthRevoker)
+		mockRevoker.On("RevokeAllForUser", ctx, testID.String()).Return(nil)
+
+		uc := newUseCase(mockRepo, nil, nil, mockRevoker)
+		err := uc.ChangePassword(ctx, testID.String(), dto.ChangePasswordRequest{
+			CurrentPassword: currentPassword,
+			NewPassword:     "newpassword123",
+		})
+
+		assert.NoError(t, err)
+		mockRepo.AssertExpectations(t)
+		mockRevoker.AssertExpectations(t)
+	})
+
+	t.Run("revoker error is propagated: password still updated", func(t *testing.T) {
+		mockRepo := new(MockRepository)
+		mockRepo.On("GetByID", ctx, testID.String()).Return(&userdomain.User{
+			ID:           testID,
+			Email:        "test@example.com",
+			PasswordHash: string(currentHash),
+		}, nil)
+		mockRepo.On("UpdatePassword", ctx, testID.String(), mock.AnythingOfType("string")).Return(nil)
+
+		mockRevoker := new(MockAuthRevoker)
+		mockRevoker.On("RevokeAllForUser", ctx, testID.String()).Return(port.ErrCacheUnavailable)
+
+		uc := newUseCase(mockRepo, nil, nil, mockRevoker)
+		err := uc.ChangePassword(ctx, testID.String(), dto.ChangePasswordRequest{
+			CurrentPassword: currentPassword,
+			NewPassword:     "newpassword123",
+		})
+
+		// Error propagated so caller knows revocation did not happen.
+		assert.Error(t, err)
+		assert.ErrorIs(t, err, port.ErrCacheUnavailable)
+		mockRepo.AssertExpectations(t)
+		mockRevoker.AssertExpectations(t)
+	})
+
+	t.Run("nil revoker: ChangePassword succeeds without revocation", func(t *testing.T) {
+		// Nil revoker is allowed for environments where auth sessions are not used.
+		mockRepo := new(MockRepository)
+		mockRepo.On("GetByID", ctx, testID.String()).Return(&userdomain.User{
+			ID:           testID,
+			Email:        "test@example.com",
+			PasswordHash: string(currentHash),
+		}, nil)
+		mockRepo.On("UpdatePassword", ctx, testID.String(), mock.AnythingOfType("string")).Return(nil)
+
+		uc := newUseCase(mockRepo, nil, nil, nil)
+		err := uc.ChangePassword(ctx, testID.String(), dto.ChangePasswordRequest{
+			CurrentPassword: currentPassword,
+			NewPassword:     "newpassword123",
+		})
+
+		assert.NoError(t, err)
+		mockRepo.AssertExpectations(t)
+	})
 }

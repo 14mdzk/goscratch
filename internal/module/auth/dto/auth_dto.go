@@ -18,7 +18,9 @@ type LoginResponse struct {
 	UserID       string `json:"-"`
 }
 
-// RefreshRequest represents the token refresh request
+// RefreshRequest represents the token refresh request.
+// Only the opaque refresh token is required; the server resolves the user ID
+// from the lookup key and does not accept a client-supplied user_id hint.
 type RefreshRequest struct {
 	RefreshToken string `json:"refresh_token" validate:"required"`
 }
@@ -29,4 +31,11 @@ type RefreshResponse struct {
 	RefreshToken string `json:"refresh_token"`
 	ExpiresIn    int    `json:"expires_in"`
 	TokenType    string `json:"token_type"`
+}
+
+// LogoutRequest represents the logout request.
+// The caller ID is populated from the JWT claims by the handler, not from the
+// request body — the handler extracts it after the Auth middleware runs.
+type LogoutRequest struct {
+	RefreshToken string `json:"refresh_token" validate:"required"`
 }

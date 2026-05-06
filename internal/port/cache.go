@@ -16,6 +16,10 @@ type Cache interface {
 	// Delete removes a value from the cache
 	Delete(ctx context.Context, key string) error
 
+	// DeleteByPrefix removes all keys with the given prefix.
+	// NoOpCache returns ErrCacheUnavailable; Redis uses SCAN + DEL.
+	DeleteByPrefix(ctx context.Context, prefix string) error
+
 	// Exists checks if a key exists in the cache
 	Exists(ctx context.Context, key string) (bool, error)
 
@@ -45,4 +49,17 @@ type CacheMissError struct{}
 
 func (e CacheMissError) Error() string {
 	return "cache: key not found"
+}
+
+// ErrCacheUnavailable is returned by security-critical operations (refresh-token
+// gating, DeleteByPrefix on NoOp) to signal that the cache backend is not
+// functional. Callers on auth paths must treat this as a hard failure rather
+// than a miss.
+var ErrCacheUnavailable = CacheUnavailableError{}
+
+// CacheUnavailableError is the concrete type for ErrCacheUnavailable.
+type CacheUnavailableError struct{}
+
+func (e CacheUnavailableError) Error() string {
+	return "cache: backend unavailable"
 }

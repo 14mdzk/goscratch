@@ -7,8 +7,11 @@ import (
 	"github.com/14mdzk/goscratch/internal/port"
 )
 
-// NoOpCache implements port.Cache as a no-op (does nothing)
-// Used when Redis is disabled
+// NoOpCache implements port.Cache as a no-op (does nothing).
+// It is intended for development and testing only — it must NOT be used in
+// production for security-critical adapters (see ADR-006 carve-out).
+// Methods that would silently weaken auth controls return ErrCacheUnavailable
+// so callers fail closed rather than open.
 type NoOpCache struct{}
 
 // NewNoOpCache creates a new no-op cache
@@ -26,6 +29,13 @@ func (c *NoOpCache) Set(ctx context.Context, key string, value []byte, ttl time.
 
 func (c *NoOpCache) Delete(ctx context.Context, key string) error {
 	return nil
+}
+
+// DeleteByPrefix returns ErrCacheUnavailable on the NoOp implementation.
+// ChangePassword calls this to revoke all refresh tokens; the NoOp cannot
+// honour that guarantee, so callers must treat this as a hard failure.
+func (c *NoOpCache) DeleteByPrefix(ctx context.Context, prefix string) error {
+	return port.ErrCacheUnavailable
 }
 
 func (c *NoOpCache) Exists(ctx context.Context, key string) (bool, error) {

@@ -3,6 +3,7 @@ package handler
 import (
 	"github.com/14mdzk/goscratch/internal/module/auth/dto"
 	"github.com/14mdzk/goscratch/internal/module/auth/usecase"
+	"github.com/14mdzk/goscratch/internal/platform/http/middleware"
 	"github.com/14mdzk/goscratch/internal/platform/validator"
 	"github.com/14mdzk/goscratch/pkg/response"
 	"github.com/gofiber/fiber/v2"
@@ -33,7 +34,9 @@ func (h *Handler) Login(c *fiber.Ctx) error {
 	return response.Success(c, result)
 }
 
-// Refresh refreshes an access token
+// Refresh refreshes an access token.
+// The request body must include both user_id and refresh_token so the server
+// can derive the per-user cache key.
 func (h *Handler) Refresh(c *fiber.Ctx) error {
 	var req dto.RefreshRequest
 	if err := validator.ValidateAndBind(c, &req); err != nil {
@@ -48,14 +51,21 @@ func (h *Handler) Refresh(c *fiber.Ctx) error {
 	return response.Success(c, result)
 }
 
-// Logout invalidates the refresh token
+// Logout invalidates the refresh token.
+// This handler requires the Auth middleware (applied in module.go); the caller
+// ID is taken from the JWT claims, not from the request body.
 func (h *Handler) Logout(c *fiber.Ctx) error {
-	var req dto.RefreshRequest
+	callerID := middleware.GetUserID(c)
+	if callerID == "" {
+		return response.Unauthorized(c, "Missing or invalid token")
+	}
+
+	var req dto.LogoutRequest
 	if err := validator.ValidateAndBind(c, &req); err != nil {
 		return validator.HandleValidationError(c, err)
 	}
 
-	if err := h.useCase.Logout(c.UserContext(), req.RefreshToken); err != nil {
+	if err := h.useCase.Logout(c.UserContext(), callerID, req.RefreshToken); err != nil {
 		return response.Fail(c, err)
 	}
 

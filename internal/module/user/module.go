@@ -18,10 +18,13 @@ type Module struct {
 	jwtSecret  string
 }
 
-// NewModule creates a new user module
-func NewModule(pool *pgxpool.Pool, transactor *database.Transactor, auditor port.Auditor, authorizer port.Authorizer, jwtSecret string) *Module {
+// NewModule creates a new user module.
+// authRevoker is the auth module's session-revocation interface, injected so
+// ChangePassword can terminate all active refresh tokens for the user without
+// importing the auth package (avoiding a circular dependency).
+func NewModule(pool *pgxpool.Pool, transactor *database.Transactor, auditor port.Auditor, authorizer port.Authorizer, cache port.Cache, jwtSecret string, authRevoker usecase.AuthRevoker) *Module {
 	repo := repository.NewRepository(pool)
-	uc := usecase.NewUseCase(repo, transactor)
+	uc := usecase.NewUseCase(repo, transactor, cache, authRevoker)
 	audited := usecase.NewAuditedUseCase(uc, auditor)
 	h := handler.NewHandler(audited)
 

@@ -33,8 +33,8 @@ func (m *mockAuthUseCase) Refresh(ctx context.Context, req dto.RefreshRequest) (
 	return args.Get(0).(*dto.RefreshResponse), args.Error(1)
 }
 
-func (m *mockAuthUseCase) Logout(ctx context.Context, refreshToken string) error {
-	args := m.Called(ctx, refreshToken)
+func (m *mockAuthUseCase) Logout(ctx context.Context, callerID, refreshToken string) error {
+	args := m.Called(ctx, callerID, refreshToken)
 	return args.Error(0)
 }
 
@@ -195,22 +195,24 @@ func TestAuthAuditDecorator_Refresh(t *testing.T) {
 
 func TestAuthAuditDecorator_Logout(t *testing.T) {
 	ctx := context.Background()
+	callerID := "user-42"
 	refreshToken := "some-refresh-token"
 
-	t.Run("on success, logs LOGOUT audit entry", func(t *testing.T) {
+	t.Run("on success, logs LOGOUT audit entry with callerID as ResourceID", func(t *testing.T) {
 		inner := new(mockAuthUseCase)
 		auditor := &mockAuditorAuth{}
 		dec := NewAuditedUseCase(inner, auditor)
 
-		inner.On("Logout", ctx, refreshToken).Return(nil)
+		inner.On("Logout", ctx, callerID, refreshToken).Return(nil)
 
-		err := dec.Logout(ctx, refreshToken)
+		err := dec.Logout(ctx, callerID, refreshToken)
 
 		assert.NoError(t, err)
 		assert.Len(t, auditor.Entries, 1)
 		entry := auditor.Entries[0]
 		assert.Equal(t, port.AuditActionLogout, entry.Action)
 		assert.Equal(t, "user", entry.Resource)
+		assert.Equal(t, callerID, entry.ResourceID)
 
 		inner.AssertExpectations(t)
 	})
@@ -220,9 +222,9 @@ func TestAuthAuditDecorator_Logout(t *testing.T) {
 		auditor := &mockAuditorAuth{}
 		dec := NewAuditedUseCase(inner, auditor)
 
-		inner.On("Logout", ctx, refreshToken).Return(errors.New("logout failed"))
+		inner.On("Logout", ctx, callerID, refreshToken).Return(errors.New("logout failed"))
 
-		err := dec.Logout(ctx, refreshToken)
+		err := dec.Logout(ctx, callerID, refreshToken)
 
 		assert.Error(t, err)
 		assert.Empty(t, auditor.Entries)

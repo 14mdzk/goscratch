@@ -3,6 +3,7 @@ package middleware
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"strconv"
 	"sync"
 	"time"
@@ -15,10 +16,11 @@ import (
 
 // RateLimitConfig holds rate limiting configuration
 type RateLimitConfig struct {
-	Max      int                     // Max requests per window (default: 100)
-	Window   time.Duration           // Time window (default: 1 minute)
-	KeyFunc  func(*fiber.Ctx) string // Custom key extraction
-	UseRedis bool                    // Use Redis backend
+	Max        int                     // Max requests per window (default: 100)
+	Window     time.Duration           // Time window (default: 1 minute)
+	KeyFunc    func(*fiber.Ctx) string // Custom key extraction
+	UseRedis   bool                    // Use Redis backend
+	FailClosed bool                    // On backend error: reject (true) or allow (false)
 }
 
 // rateLimitBackend defines the interface for rate limit storage backends
@@ -52,7 +54,12 @@ func RateLimit(cfg RateLimitConfig, cache port.Cache) fiber.Handler {
 
 		allowed, remaining, resetAt, err := backend.Allow(c.UserContext(), key, cfg.Max, cfg.Window)
 		if err != nil {
-			// On error, allow the request through (fail open)
+			slog.Error("rate limit backend error", "path", c.Path(), "key", key, "error", err)
+			if cfg.FailClosed {
+				// Reject rather than allow — critical for auth endpoints.
+				return response.Fail(c, apperr.New("RATE_LIMIT_ERROR", "Service temporarily unavailable, please try again later", fiber.StatusServiceUnavailable))
+			}
+			// Non-auth paths: fail open (legacy behaviour preserved)
 			return c.Next()
 		}
 
