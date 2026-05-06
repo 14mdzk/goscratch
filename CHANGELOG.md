@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- `port.Authorizer` interface gains `Start(ctx context.Context) error` for lifecycle management. All implementors (`Adapter`, `NoOpAdapter`, and test mocks) updated. Closes PR-03b task 1.
+- `casbin.Config` extended with `ReloadInterval time.Duration` (0 → 5-minute default) and `Watcher persist.Watcher` (nil = backstop-tick only). Closes PR-03b task 3.
+- `casbin.Adapter.Start(ctx)` wires the watcher callback and launches the backstop-reload tick goroutine that calls `LoadPolicy()` every `ReloadInterval`, cancelling on `ctx.Done()`. Closes PR-03b task 4.
+- `casbin.NoopWatcher` — `persist.WatcherEx` stub; all methods are no-ops. Useful for single-instance deployments that rely solely on the backstop tick. Closes PR-03b task 5.
+- `casbin.MemoryWatcher` — `persist.WatcherEx` backed by a buffered in-process channel (size 64). `UpdateForAddPolicy` / `UpdateForRemovePolicy` send delta messages; `Update` / `UpdateForSavePolicy` / `UpdateForRemoveFilteredPolicy` send full-reload signals. Background goroutine dispatches messages to the registered callback. Closes PR-03b task 6.
+- `casbin.RedisWatcher` — `persist.WatcherEx` backed by Redis Pub/Sub on channel `casbin:policy:update` (configurable). Same delta/reload message protocol as `MemoryWatcher`. `Close()` releases the subscription. Closes PR-03b task 7.
+- Incremental policy apply in `Adapter.makeUpdateCallback`: decodes the watcher message and calls `enforcer.AddPolicy` / `enforcer.RemovePolicy` etc. instead of always doing `LoadPolicy`. Falls back to full reload for unknown op codes. Closes PR-03b task 8.
+- `casbin.validatePolicyArgs` — package-private guard that rejects any policy argument containing null bytes (`\x00`), returning an error wrapping `casbin.ErrInvalidPolicyArg`. Applied in `AddRoleForUser`, `RemoveRoleForUser`, `AddPermissionForRole`, `RemovePermissionForRole`, `AddPermissionForUser`, `RemovePermissionForUser`. Closes PR-03b task 9.
+- `docs/features/authorization.md` — documents `Start`, watcher options, backstop tick, incremental load, and input validation. Closes PR-03b docs task.
+
 ### Security
 
 - **Breaking.** `/auth/logout` now requires a valid JWT (`Authorization: Bearer <access_token>`). Previously any caller could hit the endpoint. Closes block-ship #5.
