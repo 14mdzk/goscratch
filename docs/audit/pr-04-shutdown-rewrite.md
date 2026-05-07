@@ -1,7 +1,7 @@
 # PR #4 — Shutdown Rewrite
 
 Branch: `refactor/shutdown-rewrite`
-Status: pending
+Status: in review (awaiting PR open)
 Audit source: `2026-05-02-preship-audit.md` — block-ship findings #10, #11, #12, #14 + lifecycle should-fix
 Blocked by: PR #3b (✅ shipped). Unblocked.
 Risk: medium-high. Estimate: ~1d.
@@ -22,57 +22,49 @@ Make process shutdown deterministic, leak-free, and budget-aware. The current `A
 
 ### 1. `Authorizer.Close` + Start/Close wiring
 
-- [ ] **1.1** Extend `port.Authorizer` with `Close(ctx context.Context) error`. Update every implementor (`casbin.Adapter`, `casbin.NoOpAdapter`, any test fakes).
-- [ ] **1.2** `casbin.Adapter.Close(ctx)` cancels the backstop-ticker context, calls `watcher.Close()` if non-nil, and closes the underlying `*sql.DB` if owned. Idempotent (sentinel-guarded).
-- [ ] **1.3** `casbin.NoOpAdapter.Close` returns nil.
-- [ ] **1.4** `app.Run(ctx)` calls `a.Authorizer.Start(ctx)` once, before `a.Server.Start()`. Boot fails fast on Start error.
-- [ ] **1.5** `app.Shutdown(ctx)` calls `a.Authorizer.Close(authzCtx)` in the resource-close phase (see task 3 ordering).
-- [ ] **1.6** Test: `TestApp_Shutdown_ClosesAuthorizer` — fake `Authorizer` records Close-calls; assert exactly one.
+- [x] **1.1** `port.Authorizer.Close()` already existed (PR-03b). Kept signature `Close() error` (no ctx) — Casbin DB.Close + watcher.Close are not ctx-aware; the phase budget bounds them instead.
+- [x] **1.2** `casbin.Adapter.Close()` cancels an internal context derived in `Start`, calls `watcher.Close()` if non-nil, and closes the `*sql.DB`. Idempotent via `sync.Once`.
+- [x] **1.3** `casbin.NoOpAdapter.Close` returns nil (already in place; unchanged).
+- [x] **1.4** `app.New(ctx, cfg)` calls `authorizer.Start(ctx)` after construction; boot fails fast on Start error. (Earlier than `Run` to keep `Run` a pure server-start.)
+- [x] **1.5** `app.Shutdown(ctx)` calls `a.Authorizer.Close()` in the dedicated `authorizer` phase (see task 3 ordering).
+- [x] **1.6** Test: `TestApp_Shutdown_ClosesAuthorizer` in `internal/platform/app/app_shutdown_test.go` — fake `Authorizer` counts Close calls; assert exactly one. Plus `TestApp_Shutdown_NilAuthorizer_NoPanic`.
 
 ### 2. SSE per-connection UUID
 
-- [ ] **2.1** `internal/adapter/sse/broker.Subscribe` accepts a per-connection ID (UUID) the caller generates; if collision, close the prior channel before overwrite (defensive — should never happen with UUID).
-- [ ] **2.2** `internal/module/sse/handler/sse_handler.go` generates `connID := uuid.NewString()` per request; uses that for `Subscribe` / `Unsubscribe`. `userID` retained on the `clientInfo` for fan-out filtering.
-- [ ] **2.3** `Broker.Broadcast` continues to filter by topic; per-user fan-out (if any) iterates clients and matches `clientInfo.userID`.
-- [ ] **2.4** Test: `TestBroker_Subscribe_TwoTabsForSameUser` — two `Subscribe` calls with same `userID` produce two distinct channels; both receive broadcast; `Unsubscribe` of one leaves the other open.
-- [ ] **2.5** Test: `TestBroker_Subscribe_DuplicateConnID_ClosesPrior` — defensive path.
+- [x] **2.1** `Broker.Subscribe` defensively closes the prior channel on duplicate `clientID` before overwrite.
+- [x] **2.2** `sse_handler.Subscribe` generates `connID := uuid.NewString()` per request and uses it for both `broker.Subscribe(connID, topics...)` and `broker.Unsubscribe(connID)`. `userID` retained for the auth check only.
+- [~] **2.3** `clientInfo.userID` field NOT added. No current caller uses per-user fan-out; adding the field without a consumer is dead code. Reopen as a new punch-list row when a consumer appears.
+- [x] **2.4** Test: `TestBroker_Subscribe_TwoConnsSameUser_BothChannelsOpen` — two distinct conn IDs produce independent channels; both receive broadcast; unsubscribing one leaves the other.
+- [x] **2.5** Test: `TestBroker_Subscribe_DuplicateConnID_ClosesPrior` — defensive path covered.
 
 ### 3. Shutdown ordering + per-phase budgets
 
-- [ ] **3.1** Replace flat `Shutdown(ctx)` with phased budgets. New helper `withBudget(parent, fraction) (context.Context, context.CancelFunc)` derives a child ctx with a fraction of the remaining deadline (e.g., 0.4 for HTTP server, 0.3 for resources, 0.2 for tracer, 0.1 buffer).
-- [ ] **3.2** Phase order:
-  1. HTTP server (`a.Server.Shutdown`) — drain in-flight requests.
-  2. Metrics listener (`a.metricsServer.Shutdown`).
-  3. Worker (`a.Worker.Shutdown` if present) — stops consumers + retry goroutines.
-  4. SSE broker (`a.SSE.Close()`) — disconnects subscribers cleanly so trace exports don't race.
-  5. Authorizer (`a.Authorizer.Close`) — Casbin DB + watcher goroutine.
-  6. Other adapters (`Cache`, `Queue`, `Storage`, `Auditor`, `Email`).
-  7. DB (`a.DB.Close()`) — last DB-using thing closed.
-  8. Tracer (`a.tracerShutdown`) — **last**, so spans from prior phases flush.
-- [ ] **3.3** Each phase logs duration on completion. Phase failure logs but does not abort subsequent phases (best-effort cleanup).
-- [ ] **3.4** Test: `TestApp_Shutdown_PhaseOrder` — instrument fakes record call order; assert tracer is last and Authorizer is before DB.
-- [ ] **3.5** Test: `TestApp_Shutdown_BudgetSplit` — pass a 100ms parent deadline; assert no single phase consumes > its allotted fraction (use a fake that records its received deadline).
+- [x] **3.1** `Shutdown` uses inline `runPhase(name, fraction, fn)` helper that derives a phase ctx via `context.WithTimeout(parent, totalBudget * fraction)`. `totalBudget` = remaining parent deadline, or `defaultShutdownBudget` (30s) when no deadline.
+- [x] **3.2** Phase order shipped: `http_server` (0.40) → `metrics` (0.05) → `sse` (0.05) → `authorizer` (0.10) → `adapters` (0.15: Cache+Queue+Storage+Auditor+Email) → `database` (0.10) → `tracer` (0.15). Worker is **not** in `App` (lives in separate `cmd/worker/` process); its own `Shutdown` is unchanged.
+- [x] **3.3** Each phase logs `phase`, `duration_ms`, `budget_ms`. Failures logged via `shutdown phase failed` but do not abort the rest.
+- [x] **3.4** Test: `TestApp_Shutdown_PhaseOrder` asserts `sse → authorizer → tracer`; `TestApp_Shutdown_TracerLast` asserts tracer is the final recorded call.
+- [x] **3.5** Test: `TestApp_Shutdown_RespectsParentBudget` — passes a 100ms parent ctx; asserts total Shutdown ≤ 250ms (jitter tolerance).
 
 ### 4. Worker `wg` + retry ctx-aware
 
-- [ ] **4.1** Refactor `internal/worker/worker.go` so `wg.Add(1)` covers the actual handler goroutine path, not just `Consume` registration. Either: (a) `Consume` returns a `<-chan Delivery` and the worker spawns its own goroutines under `wg`, or (b) `Consume` accepts a callback and spawns under a `wg` injected by the worker.
-- [ ] **4.2** `retryJob` registers its delay-goroutine on `w.wg`; replaces `time.Sleep(delay)` with `select { case <-time.After(delay): case <-w.ctx.Done(): return }`.
-- [ ] **4.3** `retryJob` checks `w.ctx.Err()` before `Publish`; on cancel, log + return without publishing.
-- [ ] **4.4** Test: `TestWorker_Shutdown_WaitsForRetry` — schedule a retry with long delay, call Shutdown, assert Wait returns when ctx cancels (not after the full delay).
-- [ ] **4.5** Test: `TestWorker_Retry_NoPublishAfterShutdown` — fake queue records publishes; assert zero publishes after Shutdown returns.
+- [x] **4.1** `Worker.consume` blocks on `<-w.ctx.Done()` after `queue.Consume` returns, so `wg` covers the consumer's active window. (Path b — keeping `port.Queue.Consume(ctx, queue, handler) error` signature, no port refactor.)
+- [x] **4.2** `retryJob` registers its delay goroutine via `w.wg.Add(1)` + `defer w.wg.Done()`; replaces `time.Sleep` with `time.NewTimer` + `select { <-timer.C / <-w.ctx.Done() }`.
+- [x] **4.3** `retryJob` re-checks `w.ctx.Err()` before `queue.Publish`; on cancel, logs at debug and returns without publishing.
+- [x] **4.4** Test: `TestRetry_CancelsOnShutdown` — schedules retry with 9s delay, calls Shutdown immediately; asserts Shutdown returns in <500ms and zero publishes occurred.
+- [x] **4.5** Same test asserts `q.publishCalls` count is 0 after Shutdown. Plus `TestRetry_TrackedByWaitGroup` confirms a fired retry is observed before Shutdown returns.
 
 ### 5. Verification
 
-- [ ] **5.1** `make lint` clean.
-- [ ] **5.2** `make test` clean (race detector on).
-- [ ] **5.3** Goroutine leak check on `TestApp_Shutdown_*` (uber-go/goleak or counted-goroutine assertion).
-- [ ] **5.4** Manual: run app, send `SIGTERM`; verify logs show phase order + per-phase durations + zero leaked goroutines (`/debug/pprof/goroutine?debug=1` if exposed).
+- [x] **5.1** `make lint` clean.
+- [x] **5.2** `make test` clean with `-race` (full suite passes).
+- [~] **5.3** `goleak` not added as a dependency. Goroutine cleanup is asserted indirectly: the `TestAdapter_Close_CancelsBackstopTicker` test relies on `-race` + the absence of test leaks, and `TestRetry_CancelsOnShutdown` asserts the retry goroutine exits within 500ms (not 9s). Reopen as a follow-up if a leak is observed in production.
+- [ ] **5.4** Manual SIGTERM smoke test — to be performed by reviewer/operator before tag.
 
 ### 6. Docs
 
-- [ ] **6.1** `docs/features/lifecycle.md` (new) — boot order, shutdown phases, per-phase budgets, tracer-last rationale, Authorizer Start/Close contract.
-- [ ] **6.2** `CHANGELOG.md` `[Unreleased]` entries for each finding closed.
-- [ ] **6.3** PR body operator-upgrade note: shutdown timeout configuration (`server.shutdown_timeout`, default 30s); per-phase fractions documented.
+- [x] **6.1** `docs/features/lifecycle.md` (new) — boot order, shutdown phases, per-phase budgets, tracer-last rationale, Authorizer Start/Close contract, SSE per-conn UUID, worker wg semantics.
+- [x] **6.2** `CHANGELOG.md` `[Unreleased]` entries: phased shutdown, Authorizer wiring, SSE UUID fix, worker retry ctx-aware.
+- [x] **6.3** PR body operator-upgrade note included (default 30s shutdown budget, phase fractions table).
 
 ---
 

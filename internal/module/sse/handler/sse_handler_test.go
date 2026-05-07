@@ -148,18 +148,18 @@ func TestSubscribe_StreamHeaders(t *testing.T) {
 		return h.Subscribe(c)
 	})
 
-	// Unsubscribe the client after subscription is established to end the stream
+	// Close broker after subscription is established to end the stream. We
+	// can no longer Unsubscribe by userID because the handler keys
+	// subscriptions by per-connection UUID (block-ship #11/#12 fix).
 	go func() {
-		// Poll until client is subscribed
 		for i := 0; i < 50; i++ {
 			if broker.ClientCount() > 0 {
-				broker.Unsubscribe("test-user-headers")
+				_ = broker.Close()
 				return
 			}
 			time.Sleep(10 * time.Millisecond)
 		}
-		// Timeout safety: close broker to unblock
-		broker.Close()
+		_ = broker.Close()
 	}()
 
 	req := httptest.NewRequest("GET", "/sse/subscribe", nil)

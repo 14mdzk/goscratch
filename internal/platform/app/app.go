@@ -309,6 +309,13 @@ func New(ctx context.Context, cfg *config.Config) (*App, error) {
 
 	server.RegisterModules(docsModule, healthModule, userModule, authModule, roleModule, storageModule, sseModule, jobModule)
 
+	// Start the authorizer lifecycle (backstop reload tick + watcher subscription).
+	// Failure here is fatal: a half-initialised authorizer would silently drop
+	// policy updates from peer pods.
+	if err := authorizer.Start(ctx); err != nil {
+		return nil, fmt.Errorf("authorizer start: %w", err)
+	}
+
 	return &App{
 		Config:         cfg,
 		Logger:         log,
@@ -319,6 +326,7 @@ func New(ctx context.Context, cfg *config.Config) (*App, error) {
 		Storage:        storageAdapter,
 		SSE:            sseBroker,
 		Auditor:        auditor,
+		Authorizer:     authorizer,
 		Email:          emailSender,
 		metricsServer:  metricsServer,
 		tracerShutdown: tracerShutdown,
@@ -331,38 +339,117 @@ func (a *App) Start() error {
 	return a.Server.Start()
 }
 
-// Shutdown gracefully shuts down the application
+// defaultShutdownBudget is the fallback total budget when the parent context
+// has no deadline. The runPhase fractions are calibrated against this.
+const defaultShutdownBudget = 30 * time.Second
+
+// Shutdown gracefully shuts down the application in deterministic phases.
+//
+// Phase order is chosen so that downstream emitters drain before their sinks
+// close: HTTP requests finish (server), policy bus quiets (authorizer), SSE
+// streams disconnect cleanly, then DB closes, then the tracer is stopped LAST
+// so spans emitted by prior phases still flush. Each phase gets a fraction of
+// the total deadline budget so a slow first phase cannot starve later ones.
 func (a *App) Shutdown(ctx context.Context) error {
 	a.Logger.Info("Shutting down application...")
 
-	// Close server
-	if err := a.Server.Shutdown(ctx); err != nil {
-		a.Logger.Error("Failed to shutdown server", "error", err)
-	}
-
-	// Shutdown metrics listener before the tracer so any final metrics-
-	// related logs still flow through the configured exporter.
-	if a.metricsServer != nil {
-		if err := a.metricsServer.Shutdown(ctx); err != nil {
-			a.Logger.Error("Failed to shutdown metrics server", "error", err)
+	totalBudget := defaultShutdownBudget
+	if deadline, ok := ctx.Deadline(); ok {
+		if remaining := time.Until(deadline); remaining > 0 {
+			totalBudget = remaining
 		}
 	}
 
-	// Shutdown tracer
-	if a.tracerShutdown != nil {
-		if err := a.tracerShutdown(ctx); err != nil {
-			a.Logger.Error("Failed to shutdown tracer", "error", err)
+	runPhase := func(name string, fraction float64, fn func(context.Context) error) {
+		budget := time.Duration(float64(totalBudget) * fraction)
+		if budget <= 0 {
+			budget = 100 * time.Millisecond
 		}
+		phaseCtx, cancel := context.WithTimeout(ctx, budget)
+		defer cancel()
+		start := time.Now()
+		if err := fn(phaseCtx); err != nil {
+			a.Logger.Error("shutdown phase failed", "phase", name, "error", err)
+		}
+		a.Logger.Info("shutdown phase complete",
+			"phase", name,
+			"duration_ms", time.Since(start).Milliseconds(),
+			"budget_ms", budget.Milliseconds(),
+		)
 	}
 
-	// Close resources
-	a.Cache.Close()
-	a.Queue.Close()
-	a.Storage.Close()
-	a.SSE.Close()
-	a.Auditor.Close()
-	a.Email.Close()
-	a.DB.Close()
+	// 1. HTTP server — drain in-flight requests. Gets the largest slice
+	//    because clients may be mid-stream.
+	runPhase("http_server", 0.40, func(ctx context.Context) error {
+		if a.Server == nil {
+			return nil
+		}
+		return a.Server.Shutdown(ctx)
+	})
+
+	// 2. Metrics listener — internal, fast.
+	runPhase("metrics", 0.05, func(ctx context.Context) error {
+		if a.metricsServer == nil {
+			return nil
+		}
+		return a.metricsServer.Shutdown(ctx)
+	})
+
+	// 3. SSE broker — close subscriber channels so range loops exit before
+	//    we yank their downstream adapters.
+	runPhase("sse", 0.05, func(_ context.Context) error {
+		if a.SSE == nil {
+			return nil
+		}
+		return a.SSE.Close()
+	})
+
+	// 4. Authorizer — Casbin DB handle + watcher goroutine + backstop ticker.
+	//    Closed before the main DB pool so no in-flight policy load races
+	//    against a shutting-down pool.
+	runPhase("authorizer", 0.10, func(_ context.Context) error {
+		if a.Authorizer == nil {
+			return nil
+		}
+		return a.Authorizer.Close()
+	})
+
+	// 5. Bulk adapters. None of these accept a ctx; we run them under the
+	//    phase budget so a hung Close cannot stall the rest.
+	runPhase("adapters", 0.15, func(_ context.Context) error {
+		if a.Cache != nil {
+			_ = a.Cache.Close()
+		}
+		if a.Queue != nil {
+			_ = a.Queue.Close()
+		}
+		if a.Storage != nil {
+			_ = a.Storage.Close()
+		}
+		if a.Auditor != nil {
+			_ = a.Auditor.Close()
+		}
+		if a.Email != nil {
+			_ = a.Email.Close()
+		}
+		return nil
+	})
+
+	// 6. DB — last database-using thing closed.
+	runPhase("database", 0.10, func(_ context.Context) error {
+		if a.DB != nil {
+			a.DB.Close()
+		}
+		return nil
+	})
+
+	// 7. Tracer — LAST so spans from every prior phase flush through it.
+	runPhase("tracer", 0.15, func(ctx context.Context) error {
+		if a.tracerShutdown == nil {
+			return nil
+		}
+		return a.tracerShutdown(ctx)
+	})
 
 	a.Logger.Info("Application shutdown complete")
 	return nil

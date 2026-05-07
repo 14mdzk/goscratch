@@ -29,9 +29,19 @@ func NewBroker(bufferSize int) *Broker {
 	}
 }
 
+// Subscribe registers a new client identified by clientID. clientID must be a
+// per-connection identifier (e.g. UUID) — block-ship #11/#12: keying by userID
+// caused a second tab to silently overwrite the first subscription, leaking the
+// first stream's goroutine. If a collision is detected (defense-in-depth — UUIDs
+// should not collide), the prior channel is closed before overwrite so the
+// reader exits its range loop.
 func (b *Broker) Subscribe(clientID string, topics ...string) <-chan port.Event {
 	b.mu.Lock()
 	defer b.mu.Unlock()
+
+	if prior, exists := b.clients[clientID]; exists {
+		close(prior.channel)
+	}
 
 	ch := make(chan port.Event, b.bufferSize)
 	topicSet := make(map[string]struct{})

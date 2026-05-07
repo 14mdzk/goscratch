@@ -89,20 +89,27 @@ func (w *Worker) Start() error {
 	return nil
 }
 
-// consume handles incoming messages for a single worker goroutine
+// consume handles incoming messages for a single worker goroutine.
+//
+// queue.Consume registers a delivery goroutine and returns immediately, so the
+// worker.wg would otherwise mark itself done before any handler ran (block-ship
+// #14). We block on w.ctx.Done() so the wg actually covers the consumer's
+// active window — Shutdown's wg.Wait will not return until ctx is cancelled and
+// the underlying delivery goroutine has its cancel signal in hand.
 func (w *Worker) consume(workerID int) {
 	defer w.wg.Done()
 
 	w.logger.Debug("Worker goroutine started", "worker_id", workerID)
 
-	// Consume uses a callback handler
 	err := w.queue.Consume(w.ctx, w.queueName, func(body []byte) error {
 		return w.handleMessage(workerID, body)
 	})
-
 	if err != nil {
 		w.logger.Error("Consumer error", "error", err, "worker_id", workerID)
+		return
 	}
+
+	<-w.ctx.Done()
 
 	w.logger.Debug("Worker goroutine stopped", "worker_id", workerID)
 }
@@ -179,9 +186,14 @@ func (w *Worker) handleMessage(workerID int, msg []byte) error {
 	return nil
 }
 
-// retryJob re-queues a failed job for retry
+// retryJob re-queues a failed job for retry after an exponential backoff.
+//
+// The retry goroutine is registered on w.wg so Shutdown's wg.Wait() does not
+// return until pending retries either fire or cancel. The delay uses a Timer
+// + select on w.ctx.Done() instead of time.Sleep so a long backoff cannot
+// outlive a shutdown signal (block-ship #14: prior code slept past ctx and
+// then attempted Publish on a closed channel).
 func (w *Worker) retryJob(job *Job) {
-	// Exponential backoff delay
 	delay := time.Duration(job.Attempts*job.Attempts) * time.Second
 
 	w.logger.Info("Scheduling job retry",
@@ -191,16 +203,33 @@ func (w *Worker) retryJob(job *Job) {
 		"delay", delay,
 	)
 
-	// Re-encode and publish
 	data, err := job.Encode()
 	if err != nil {
 		w.logger.Error("Failed to encode job for retry", "error", err, "job_id", job.ID)
 		return
 	}
 
-	// Simple retry - publish back to queue after delay
+	w.wg.Add(1)
 	go func() {
-		time.Sleep(delay)
+		defer w.wg.Done()
+
+		timer := time.NewTimer(delay)
+		defer timer.Stop()
+
+		select {
+		case <-timer.C:
+		case <-w.ctx.Done():
+			w.logger.Debug("Retry cancelled by shutdown", "job_id", job.ID)
+			return
+		}
+
+		// Re-check ctx before publishing — Shutdown may have closed the queue
+		// channel between timer fire and this point.
+		if err := w.ctx.Err(); err != nil {
+			w.logger.Debug("Retry skipped: ctx cancelled before publish", "job_id", job.ID)
+			return
+		}
+
 		if err := w.queue.Publish(w.ctx, w.exchange, w.queueName, data); err != nil {
 			w.logger.Error("Failed to retry job", "error", err, "job_id", job.ID)
 		}

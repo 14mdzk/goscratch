@@ -10,6 +10,7 @@ import (
 	"github.com/14mdzk/goscratch/pkg/apperr"
 	"github.com/14mdzk/goscratch/pkg/response"
 	"github.com/gofiber/fiber/v2"
+	"github.com/google/uuid"
 )
 
 // Handler handles SSE HTTP requests
@@ -47,8 +48,13 @@ func (h *Handler) Subscribe(c *fiber.Ctx) error {
 		}
 	}
 
+	// Generate per-connection UUID — keying by userID would let a second tab
+	// from the same user silently overwrite the first subscription, leaking the
+	// first stream's goroutine (block-ship #11/#12).
+	connID := uuid.NewString()
+
 	// Subscribe to broker
-	ch := h.broker.Subscribe(userID, topics...)
+	ch := h.broker.Subscribe(connID, topics...)
 
 	// Set SSE headers
 	c.Set("Content-Type", "text/event-stream")
@@ -80,7 +86,7 @@ func (h *Handler) Subscribe(c *fiber.Ctx) error {
 		}
 
 		// Unsubscribe when stream ends (client disconnected or channel closed)
-		h.broker.Unsubscribe(userID)
+		h.broker.Unsubscribe(connID)
 	})
 
 	return nil
