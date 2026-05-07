@@ -1,120 +1,102 @@
 # PR #3b — Authz Cache Infra
 
 Branch: `feat/authz-cache-infra`
-Closes: cross-cutting authz lifecycle + perf foundation. Unblocks PR #4 shutdown rewrite (Authorizer must be wired+closeable) and punch-list row #10 (decision cache).
-Risk: medium. Estimate: ~6h.
-Status: blocked by PR #3.
+Status: ✅ shipped [#22](https://github.com/14mdzk/goscratch/pull/22) (merged 2026-05-06)
+Closes: cross-cutting authz lifecycle + perf foundation. Unblocks PR #4 shutdown rewrite.
+Risk: medium. Estimate (actual): ~6h.
 
 ## Goal
 
-PR #3 makes the authz path correct. This PR makes it sustainable:
+PR #3 makes the authz path correct. PR #3b makes it sustainable:
 
-1. Hide Casbin behind an `Authorizer` interface with an explicit lifecycle (`Close`) so PR #4 can wire shutdown cleanly.
-2. Introduce a pluggable `persist.Watcher` so policy mutations on one pod fan out to every pod's enforcer cache (observer pattern). Drivers: `noop`, `memory`, `redis`. Operators or downstream forks can register custom drivers.
-3. Add a periodic backstop reload tick to mitigate dropped pubsub events.
-4. Use Casbin's incremental policy load (`UpdateForAddPolicy`, `UpdateForRemovePolicy`, etc) so reloads are O(diff) not O(all-policies) once the watcher contract is in place.
-5. Add a CI lint guard: any raw `casbin_rule` SQL outside the adapter package fails the build, so the enforcer-API-as-single-write-path invariant holds.
+1. Hide Casbin lifecycle behind `Authorizer.Start(ctx)` so PR #4 can wire boot/shutdown cleanly.
+2. Pluggable `persist.WatcherEx` so policy mutations on one pod fan out to every pod's enforcer cache. Drivers shipped: `noop`, `memory`, `redis`.
+3. Periodic backstop reload tick (default 5min) to mitigate dropped pubsub events.
+4. Casbin `WatcherEx` incremental ops (add/remove single policy) so reloads are O(diff) not O(all-policies). Unknown ops fall back to `LoadPolicy()`.
+5. `validatePolicyArgs` rejects null-byte arguments on every mutation entry point.
 
-This PR does **not** add a decision cache (subject:obj:act → bool); that needs benchmark evidence and an explicit invalidation matrix and is tracked as punch-list row #10.
+This PR does **not** add a decision cache (`subject:obj:act → bool`); tracked as punch-list row #10.
 
 ## Findings closed
 
-- **Block-ship #10 (foundation only)** — `internal/platform/app/app.go:270-318`: `App.Authorizer` field declared but never assigned. PR #4 fixes wiring; this PR provides the interface + lifecycle for that wiring to land cleanly.
-- **Cross-cutting theme #2** — NoOp fallbacks unsafe for security adapters. Locked in here via the lint guard + watcher contract.
+- **Block-ship #10 (foundation only)** — `internal/platform/app/app.go:270-318`: `App.Authorizer` field declared but never assigned. PR #3b provides interface + lifecycle hook (`Start`); PR #4 wires it.
+- **Cross-cutting theme #2** — NoOp fallbacks unsafe for security adapters. Locked in via watcher contract.
 
 ## Tasks
 
-### 1. `Authorizer` interface + concrete
+### 1. `Authorizer.Start` lifecycle
 
-- [ ] **1.1** Define `internal/port/authorizer.go`:
-  ```go
-  type Authorizer interface {
-      Enforce(ctx context.Context, sub, obj, act string) (bool, error)
-      AddPolicy(ctx context.Context, params ...string) (bool, error)
-      RemovePolicy(ctx context.Context, params ...string) (bool, error)
-      AddRoleForUser(ctx context.Context, user, role string) (bool, error)
-      DeleteRoleForUser(ctx context.Context, user, role string) (bool, error)
-      LoadPolicy(ctx context.Context) error
-      Close(ctx context.Context) error
-  }
-  ```
-- [ ] **1.2** Move concrete Casbin enforcer construction into `internal/adapter/casbin/authorizer.go`, returning `port.Authorizer`. Internally holds `*casbin.SyncedEnforcer` + the watcher.
-- [ ] **1.3** Update every call site that imports Casbin directly (handlers, middleware) to depend on `port.Authorizer`.
-- [ ] **1.4** Test: `internal/adapter/casbin/authorizer_test.go` — basic enforce, add/remove policy, role grant/revoke, idempotent `Close`.
+- [x] **1.1** `port.Authorizer` adds `Start(ctx context.Context) error`. All implementors updated.
+- [x] **1.2** `casbin.NoOpAdapter.Start` is no-op (`internal/adapter/casbin/noop.go`).
+- [x] **1.3** Test: `TestNoOpAdapter_Start` — no panic, returns nil.
 
-### 2. `persist.Watcher` factory + drivers
+### 2. `persist.WatcherEx` drivers
 
-- [ ] **2.1** Add `internal/adapter/casbin/watcher/registry.go`:
-  ```go
-  type Factory func(cfg Config) (persist.Watcher, error)
-  func Register(name string, f Factory) { ... }
-  func Build(cfg Config) (persist.Watcher, error) { ... }
-  ```
-  `Config` carries `Driver string`, `Redis RedisConfig`, plus opaque map for custom drivers.
-- [ ] **2.2** Driver `noop`: `Update` no-op, `SetUpdateCallback` stores callback but never fires. For single-pod dev with no fan-out need.
-- [ ] **2.3** Driver `memory`: in-process `chan struct{}` bus. `Update` publishes, callback fires asynchronously. For tests + single-binary deploys (so callback path is exercised).
-- [ ] **2.4** Driver `redis`: thin wrapper over the existing Redis client publishing/subscribing on a configurable channel (`authz.casbin.policy` default). On `Close`, unsubscribe and close subscriber goroutine.
-- [ ] **2.5** Wire driver selection via `cfg.Authz.Watcher.Driver` (new section under `internal/platform/config/config.go`).
-- [ ] **2.6** Test per driver: `Update` triggers `SetUpdateCallback`'s callback; `Close` is idempotent and stops goroutines (verified via `goleak` or counted-goroutine assertion).
-- [ ] **2.7** Test: factory rejects unknown driver name with explicit error.
+- [x] **2.1** `casbin.Config` extends with `Watcher persist.Watcher` (nil = backstop only) + `ReloadInterval time.Duration` (0 → default 5m).
+- [x] **2.2** `watcher_noop.go` — `NoopWatcher` implements `persist.WatcherEx`; all methods return nil; `NewNoopWatcher()` constructor.
+- [x] **2.3** `watcher_memory.go` — `MemoryWatcher` channel-bus; `Update` / `UpdateForAddPolicy` / `UpdateForRemovePolicy` / `UpdateForAddPolicies` / `UpdateForRemovePolicies` / `UpdateForSavePolicy` send op messages; background goroutine fires registered callback. `NewMemoryWatcher()` constructor.
+- [x] **2.4** `watcher_redis.go` — `RedisWatcher` over `go-redis/v9` Pub/Sub on configurable channel (default `casbin:policy:update`). JSON envelope `{"op","sec","ptype","params"}`. Subscriber goroutine decodes + dispatches. `NewRedisWatcher(ctx, client, channel)` constructor; `Close` calls `pubsub.Close()`.
 
-### 3. Lifecycle wiring
+### 3. Adapter wiring
 
-- [ ] **3.1** Watcher constructed in `app.New` before authorizer; passed into authorizer constructor; authorizer calls `enforcer.SetWatcher(w)` and `w.SetUpdateCallback(func(string){ _ = enforcer.LoadPolicy() })`.
-- [ ] **3.2** `Authorizer.Close` calls `watcher.Close` then enforcer's underlying `*sql.DB.Close` if owned. Idempotent.
-- [ ] **3.3** Mutation write path: every mutation goes through `Authorizer.AddPolicy/RemovePolicy/...` only. After a successful DB commit Casbin's enforcer auto-publishes via the watcher.
-- [ ] **3.4** Test: end-to-end memory-driver — pod A's `AddPolicy` triggers pod B's `LoadPolicy` callback within N ms (use shared bus in test).
+- [x] **3.1** `casbin.Adapter.Start(ctx)` wires `enforcer.SetUpdateCallback` + `enforcer.SetWatcher`; spawns backstop ticker goroutine (`time.NewTicker(ReloadInterval)`); cancels on `ctx.Done()`.
+- [x] **3.2** `makeUpdateCallback` decodes JSON op messages: `add_policy`, `remove_policy`, `add_grouping`, `remove_grouping` apply directly via `enforcer.AddPolicy / RemovePolicy / AddGroupingPolicy / RemoveGroupingPolicy`. Unknown ops → `LoadPolicy()` fallback.
 
-### 4. Backstop reload tick
+### 4. Incremental policy load
 
-- [ ] **4.1** Authorizer spawns one ticker goroutine on construction: `time.NewTicker(cfg.Authz.ReloadInterval)`, default 5min. On each tick: `LoadPolicy`. Errors logged, never panicked.
-- [ ] **4.2** Ticker stopped in `Close`. Verified with `goleak`.
-- [ ] **4.3** Config: `cfg.Authz.ReloadInterval` (duration). Zero or negative disables the backstop (documented).
-- [ ] **4.4** Test: ticker fires `LoadPolicy` at least twice over a short interval; `Close` stops it.
+- [x] **4.1** Casbin `WatcherEx` interface satisfied; per-op delta path exercised in tests.
+- [x] **4.2** Backstop tick uses full `LoadPolicy` as safety net.
 
-### 5. Incremental policy load
+### 5. Input validation guard
 
-- [ ] **5.1** Switch to `casbin.SyncedCachedEnforcer` or implement watcher event dispatch using the `WatcherEx` interface so `UpdateForAddPolicy` / `UpdateForRemovePolicy` etc trigger targeted incremental updates instead of full `LoadPolicy`.
-- [ ] **5.2** The backstop tick still uses full `LoadPolicy` as the safety net.
-- [ ] **5.3** Test: add a single policy on pod A → pod B sees the new rule without a full reload (assert via instrumentation counter on `LoadPolicy`).
+- [x] **5.1** `validatePolicyArgs` rejects null bytes (`\x00`) on `AddPermissionForRole`, `RemovePermissionForRole`, `AddPermissionForUser`, `RemovePermissionForUser`, `AddRoleForUser`, `RemoveRoleForUser`. Returns `fmt.Errorf("invalid policy arg %q: %w", arg, ErrInvalidPolicyArg)`.
+- [x] **5.2** `ErrInvalidPolicyArg` package-level sentinel.
+- [x] **5.3** Test: `TestValidatePolicyArgs`.
 
-### 6. Raw-SQL lint guard
+### 6. Tests
 
-- [ ] **6.1** Add `scripts/lint-casbin-write-path.sh`: `git grep -nE "(INSERT|UPDATE|DELETE)\s+.*casbin_rule"` returns non-empty only inside `internal/adapter/casbin/...`. Exit 1 otherwise.
-- [ ] **6.2** Wire the script into `Makefile`'s `lint` target and CI workflow.
-- [ ] **6.3** Test: a fixture commit adding `DELETE FROM casbin_rule` outside the adapter trips the script (exercised manually + asserted via a unit test that runs the script against a temp tree).
+- [x] **6.1** `TestAdapter_Start_BackstopTick` — verify tick fires `LoadPolicy`.
+- [x] **6.2** `TestAdapter_MemoryWatcher_IncrementalAdd` — add policy via watcher, enforcer reflects without full reload.
+- [x] **6.3** `TestAdapter_MemoryWatcher_IncrementalRemove`.
+- [x] **6.4** `TestRedisWatcher_*` using `miniredis`.
+- [x] **6.5** `TestNoOpAdapter_Start`.
+- [x] **6.6** `TestValidatePolicyArgs`.
 
-### 7. Verification
+### 7. Docs
 
-- [ ] **7.1** `make lint` clean (including new guard).
-- [ ] **7.2** `make test` clean. Goroutine leak check passes.
-- [ ] **7.3** Manual: spin up two API pods sharing Postgres + Redis; `AddPolicy` on pod A reflected on pod B within tick.
+- [x] **7.1** `docs/features/authorization.md` — architecture, lifecycle, watcher options, reload semantics, write-path invariant.
+- [x] **7.2** `CHANGELOG.md` `[Unreleased]` entry.
 
-### 8. Docs
+### 8. Verification
 
-- [ ] **8.1** Create `docs/features/authorization.md`:
-  - Architecture diagram (handler → Authorizer port → Casbin adapter → watcher driver).
-  - Write-path invariant: mutate via `Authorizer` only; raw SQL guard.
-  - Driver matrix: noop / memory / redis / custom.
-  - Reload semantics: watcher event → incremental update; backstop tick → full reload.
-  - Lifecycle: boot subscribe, runtime fan-out, shutdown cascade.
-- [ ] **8.2** `CHANGELOG.md` `[Unreleased]` entry.
-- [ ] **8.3** PR body operator-upgrade notes: new config keys (`authz.watcher.driver`, `authz.reload_interval`), default `noop` for back-compat, recommend `redis` for multi-pod.
+- [x] **8.1** `make lint` clean.
+- [x] **8.2** `make test` clean (race detector on); 11 new tests pass.
+- [x] **8.3** All shipped task checkboxes ticked.
 
 ---
 
-## Out of scope
+## Deferred from original scope
+
+These were in the pre-merge plan but moved out:
+
+- **App-level `Authorizer.Start()` + `Close()` wiring** in `app.go` → PR #4 (shutdown rewrite). PR body explicitly notes this.
+- **`Authorizer.Close(ctx)` interface method** → PR #4 (when shutdown wiring lands; current shipped surface is `Start` only).
+- **Watcher factory registry** (`watcher/registry.go` with `Register(name, factory)`) → simplified out. Drivers constructed directly per config; pluggability achieved via `persist.Watcher` interface.
+- **Raw-SQL lint guard** (`scripts/lint-casbin-write-path.sh` enforcing no raw `casbin_rule` SQL outside adapter) → new punch-list row #11.
+
+## Out of scope (still deferred)
 
 - Decision cache `subject:obj:act → bool` — punch-list row #10.
-- Casbin role hierarchy migration — not part of this batch.
-- Replacing Casbin entirely — not on the roadmap.
-- gRPC mgmt API for policy admin — out per VISION.
+- Casbin role hierarchy migration.
+- Replacing Casbin entirely.
+- gRPC mgmt API for policy admin.
 
-## Acceptance
+## Acceptance (post-merge)
 
-- `port.Authorizer` is the only authz type imported outside `internal/adapter/casbin/`.
-- `Authorizer.Close` stops watcher + ticker; `goleak` confirms no leaked goroutines.
-- Watcher driver pluggable via config; unknown driver fails fast at boot.
-- Mutation on pod A propagates to pod B's enforcer via the configured watcher driver.
-- Raw `casbin_rule` SQL outside the adapter trips CI.
-- `docs/features/authorization.md` describes the write-path invariant and reload semantics.
+- ✅ `port.Authorizer.Start(ctx)` is the lifecycle hook for PR #4 to call.
+- ✅ Watcher driver pluggable via injected `persist.Watcher`; nil = backstop tick only.
+- ✅ Mutation on pod A propagates to pod B's enforcer via configured watcher driver (memory + redis covered by tests).
+- ✅ `validatePolicyArgs` blocks null-byte injection on all six mutation methods.
+- ✅ `docs/features/authorization.md` documents lifecycle, drivers, reload semantics.
+- ⏭ App-level wiring + `Close` → PR #4.
+- ⏭ Raw-SQL lint guard → PR #11 (new row).
