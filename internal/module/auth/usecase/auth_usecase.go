@@ -11,22 +11,26 @@ import (
 
 	"github.com/14mdzk/goscratch/internal/module/auth/dto"
 	userdomain "github.com/14mdzk/goscratch/internal/module/user/domain"
-	userrepo "github.com/14mdzk/goscratch/internal/module/user/repository"
 	"github.com/14mdzk/goscratch/internal/platform/config"
-	"github.com/14mdzk/goscratch/internal/platform/http/middleware"
 	"github.com/14mdzk/goscratch/internal/port"
 	"github.com/14mdzk/goscratch/pkg/apperr"
 	"github.com/golang-jwt/jwt/v5"
 	"golang.org/x/crypto/bcrypt"
 )
 
-// userLookup is the narrow repository interface that the auth usecase depends
-// on. Using an interface makes the usecase independently testable without a
-// live database; the concrete *userrepo.Repository satisfies it.
-type userLookup interface {
+// UserRepo is the narrow repository interface that the auth usecase depends on.
+// Using an interface makes the usecase independently testable without a live
+// database; the concrete *userrepo.Repository satisfies it. Exported so the
+// auth.Module can accept any implementation (including the one created by the
+// user module) without importing the concrete type, avoiding a second DB pool
+// connection for the same pool (audit finding: auth/module.go:20).
+type UserRepo interface {
 	GetByEmail(ctx context.Context, email string) (*userdomain.User, error)
 	GetByID(ctx context.Context, id string) (*userdomain.User, error)
 }
+
+// userLookup is an internal alias kept for backward compat with the field type.
+type userLookup = UserRepo
 
 // authUseCase handles authentication business logic
 type authUseCase struct {
@@ -35,8 +39,12 @@ type authUseCase struct {
 	jwtCfg   config.JWTConfig
 }
 
-// NewUseCase creates a new auth use case
-func NewUseCase(userRepo *userrepo.Repository, cache port.Cache, jwtCfg config.JWTConfig) UseCase {
+// NewUseCase creates a new auth use case.
+// userRepo accepts any value satisfying userLookup (GetByEmail + GetByID),
+// which the concrete *userrepo.Repository satisfies. Accepting the interface
+// allows the caller (auth.Module) to inject the same repository instance
+// already created by the user module, avoiding a second pool connection.
+func NewUseCase(userRepo userLookup, cache port.Cache, jwtCfg config.JWTConfig) UseCase {
 	return &authUseCase{
 		userRepo: userRepo,
 		cache:    cache,
@@ -229,11 +237,22 @@ func (uc *authUseCase) RevokeAllForUser(ctx context.Context, userID string) erro
 	return uc.cache.DeleteByPrefix(ctx, prefix)
 }
 
+// jwtClaims is a local JWT-lib struct used only for signing access tokens.
+// It mirrors the shape that middleware.parseToken expects so both sides of
+// the JWT boundary stay in sync. The domain Claims type (authdomain.Claims)
+// is the public contract; this struct is an implementation detail.
+type jwtClaims struct {
+	jwt.RegisteredClaims
+	UserID string `json:"user_id"`
+	Email  string `json:"email"`
+	Name   string `json:"name"`
+}
+
 // generateAccessToken generates a JWT access token
 func (uc *authUseCase) generateAccessToken(userID, email, name string) (string, error) {
 	now := time.Now()
 
-	claims := middleware.Claims{
+	claims := jwtClaims{
 		RegisteredClaims: jwt.RegisteredClaims{
 			Subject:   userID,
 			Issuer:    uc.jwtCfg.Issuer,

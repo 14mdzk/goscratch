@@ -4,6 +4,7 @@ import (
 	"errors"
 	"strings"
 
+	authdomain "github.com/14mdzk/goscratch/internal/module/auth/domain"
 	"github.com/14mdzk/goscratch/pkg/apperr"
 	"github.com/14mdzk/goscratch/pkg/logger"
 	"github.com/14mdzk/goscratch/pkg/response"
@@ -32,12 +33,37 @@ func DefaultAuthConfig(jwtSecret string) AuthConfig {
 	}
 }
 
-// Claims represents JWT claims
+// Claims is the JWT-library bound claims struct used only inside this
+// package for token parsing and signing. All other code uses authdomain.Claims.
 type Claims struct {
 	jwt.RegisteredClaims
 	UserID string `json:"user_id"`
 	Email  string `json:"email"`
 	Name   string `json:"name"`
+}
+
+// toDomainClaims maps JWT library claims to the domain Claims type.
+func toDomainClaims(c *Claims) *authdomain.Claims {
+	dc := &authdomain.Claims{
+		Subject: c.Subject,
+		UserID:  c.UserID,
+		Email:   c.Email,
+		Name:    c.Name,
+		Issuer:  c.Issuer,
+	}
+	if c.Audience != nil {
+		dc.Audience = []string(c.Audience)
+	}
+	if c.ExpiresAt != nil {
+		dc.ExpiresAt = c.ExpiresAt.Time
+	}
+	if c.IssuedAt != nil {
+		dc.IssuedAt = c.IssuedAt.Time
+	}
+	if c.NotBefore != nil {
+		dc.NotBefore = c.NotBefore.Time
+	}
+	return dc
 }
 
 // Auth returns an authentication middleware
@@ -50,7 +76,7 @@ func Auth(cfg AuthConfig) fiber.Handler {
 		}
 
 		// Parse and validate token
-		claims, err := parseToken(token, cfg.JWTSecret, cfg.JWTIssuer, cfg.JWTAudience)
+		raw, err := parseToken(token, cfg.JWTSecret, cfg.JWTIssuer, cfg.JWTAudience)
 		if err != nil {
 			if errors.Is(err, jwt.ErrTokenExpired) {
 				return response.Unauthorized(c, "Token has expired")
@@ -58,7 +84,9 @@ func Auth(cfg AuthConfig) fiber.Handler {
 			return response.Unauthorized(c, "Invalid token")
 		}
 
-		// Store claims in context
+		claims := toDomainClaims(raw)
+
+		// Store domain claims in context
 		c.Locals(cfg.ContextKey, claims)
 		c.Locals("user_id", claims.UserID)
 
@@ -81,10 +109,12 @@ func OptionalAuth(cfg AuthConfig) fiber.Handler {
 			return c.Next()
 		}
 
-		claims, err := parseToken(token, cfg.JWTSecret, cfg.JWTIssuer, cfg.JWTAudience)
+		raw, err := parseToken(token, cfg.JWTSecret, cfg.JWTIssuer, cfg.JWTAudience)
 		if err != nil {
 			return c.Next() // Invalid token, continue without auth
 		}
+
+		claims := toDomainClaims(raw)
 
 		c.Locals(cfg.ContextKey, claims)
 		c.Locals("user_id", claims.UserID)
@@ -162,9 +192,9 @@ func parseToken(tokenString, secret, issuer, audience string) (*Claims, error) {
 	return claims, nil
 }
 
-// GetClaims retrieves the claims from context
-func GetClaims(c *fiber.Ctx) *Claims {
-	if claims, ok := c.Locals("user").(*Claims); ok {
+// GetClaims retrieves the domain claims from context
+func GetClaims(c *fiber.Ctx) *authdomain.Claims {
+	if claims, ok := c.Locals("user").(*authdomain.Claims); ok {
 		return claims
 	}
 	return nil

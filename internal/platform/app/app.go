@@ -22,6 +22,7 @@ import (
 	ssemodule "github.com/14mdzk/goscratch/internal/module/sse"
 	storagemodule "github.com/14mdzk/goscratch/internal/module/storage"
 	"github.com/14mdzk/goscratch/internal/module/user"
+	userrepo "github.com/14mdzk/goscratch/internal/module/user/repository"
 	"github.com/14mdzk/goscratch/internal/platform/config"
 	"github.com/14mdzk/goscratch/internal/platform/database"
 	"github.com/14mdzk/goscratch/internal/platform/http"
@@ -298,9 +299,16 @@ func New(ctx context.Context, cfg *config.Config) (*App, error) {
 	// Register modules
 	docsModule := docs.NewModule()
 	healthModule := health.NewModule()
+
+	// Single shared user-repo instance wired into both the user module and the
+	// auth module so both use the same *pgxpool.Pool connection rather than
+	// opening a second one (audit finding: auth/module.go:20 instantiated its
+	// own userrepo.Repository).
+	sharedUserRepo := userrepo.NewRepository(pool)
+
 	// Auth module is constructed first so its Revoker can be injected into the
 	// user module (ChangePassword must revoke auth sessions cross-module).
-	authModule := auth.NewModule(pool, cacheAdapter, auditor, cfg.JWT)
+	authModule := auth.NewModule(sharedUserRepo, cacheAdapter, auditor, cfg.JWT)
 	userModule := user.NewModule(pool, transactor, auditor, authorizer, cacheAdapter, cfg.JWT.Secret, authModule.Revoker())
 	roleModule := role.NewModule(authorizer, cfg.JWT.Secret)
 	storageModule := storagemodule.NewModule(storageAdapter, auditor, cfg.JWT.Secret)

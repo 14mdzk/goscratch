@@ -3,6 +3,7 @@ package cache
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
@@ -36,7 +37,7 @@ func NewRedisCache(addr, password string, db int) (*RedisCache, error) {
 
 func (c *RedisCache) Get(ctx context.Context, key string) ([]byte, error) {
 	val, err := c.client.Get(ctx, key).Bytes()
-	if err == redis.Nil {
+	if errors.Is(err, redis.Nil) {
 		return nil, port.ErrCacheMiss
 	}
 	if err != nil {

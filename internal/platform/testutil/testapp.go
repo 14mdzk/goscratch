@@ -15,6 +15,7 @@ import (
 	"github.com/14mdzk/goscratch/internal/adapter/storage"
 	"github.com/14mdzk/goscratch/internal/module/auth"
 	"github.com/14mdzk/goscratch/internal/module/health"
+	userrepo "github.com/14mdzk/goscratch/internal/module/user/repository"
 	"github.com/14mdzk/goscratch/internal/module/job"
 	"github.com/14mdzk/goscratch/internal/module/role"
 	ssemodule "github.com/14mdzk/goscratch/internal/module/sse"
@@ -23,7 +24,6 @@ import (
 	"github.com/14mdzk/goscratch/internal/platform/config"
 	"github.com/14mdzk/goscratch/internal/platform/database"
 	httpserver "github.com/14mdzk/goscratch/internal/platform/http"
-	"github.com/14mdzk/goscratch/internal/platform/http/middleware"
 	"github.com/14mdzk/goscratch/internal/port"
 	"github.com/14mdzk/goscratch/internal/worker"
 	"github.com/14mdzk/goscratch/pkg/logger"
@@ -107,7 +107,7 @@ func NewTestApp(ctx context.Context, pgConnStr, redisAddr string) (*fiber.App, f
 		WriteTimeout: 30,
 		IdleTimeout:  60,
 	}
-	server := httpserver.NewServer(serverCfg, log)
+	server := httpserver.NewServer(serverCfg, log, false)
 	app := server.App()
 
 	// Wire up modules exactly like app.go
@@ -116,8 +116,9 @@ func NewTestApp(ctx context.Context, pgConnStr, redisAddr string) (*fiber.App, f
 	transactor := database.NewTransactor(pool)
 
 	healthModule := health.NewModule()
-	userModule := user.NewModule(pool, transactor, auditor, authorizer, jwtCfg.Secret)
-	authModule := auth.NewModule(pool, cacheAdapter, auditor, jwtCfg)
+	sharedUserRepo := userrepo.NewRepository(pool)
+	authModule := auth.NewModule(sharedUserRepo, cacheAdapter, auditor, jwtCfg)
+	userModule := user.NewModule(pool, transactor, auditor, authorizer, cacheAdapter, jwtCfg.Secret, authModule.Revoker())
 	roleModule := role.NewModule(authorizer, jwtCfg.Secret)
 	storageModule := storagemodule.NewModule(storageAdapter, auditor, jwtCfg.Secret)
 	sseModule := ssemodule.NewModule(sseBroker, authorizer, jwtCfg.Secret)
@@ -139,10 +140,21 @@ func NewTestApp(ctx context.Context, pgConnStr, redisAddr string) (*fiber.App, f
 	return app, cleanup, nil
 }
 
+// testJWTClaims is a local claims struct for token generation in tests.
+// It must stay in sync with the jwtClaims shape in middleware/auth.go and
+// auth/usecase/auth_usecase.go.
+type testJWTClaims struct {
+	jwt.RegisteredClaims
+	UserID string `json:"user_id"`
+	Email  string `json:"email"`
+	Name   string `json:"name"`
+}
+
 // GenerateAccessToken generates a JWT access token for testing purposes.
+// The returned token will be parsed correctly by the Auth middleware.
 func GenerateAccessToken(userID, email, name string) (string, error) {
 	now := time.Now()
-	claims := middleware.Claims{
+	claims := testJWTClaims{
 		RegisteredClaims: jwt.RegisteredClaims{
 			Subject:   userID,
 			IssuedAt:  jwt.NewNumericDate(now),
@@ -157,3 +169,4 @@ func GenerateAccessToken(userID, email, name string) (string, error) {
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	return token.SignedString([]byte(testJWTSecret))
 }
+

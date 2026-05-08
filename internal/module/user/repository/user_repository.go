@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -52,7 +53,7 @@ func (r *Repository) GetByID(ctx context.Context, id string) (*domain.User, erro
 
 	pgUUID := pgutil.UUIDToPgtype(uid)
 	user, err := r.queries(ctx).GetUserByID(ctx, pgUUID)
-	if err == pgx.ErrNoRows {
+	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, apperr.NotFoundf("user %s not found", id)
 	}
 	if err != nil {
@@ -74,7 +75,7 @@ func (r *Repository) GetByEmail(ctx context.Context, email string) (*domain.User
 	defer span.End()
 
 	user, err := r.queries(ctx).GetUserByEmail(ctx, email)
-	if err == pgx.ErrNoRows {
+	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, apperr.NotFoundf("user with email %s not found", email)
 	}
 	if err != nil {
@@ -210,7 +211,7 @@ func (r *Repository) Update(ctx context.Context, id, name, email string) (*domai
 		Column2: name,
 		Column3: email,
 	})
-	if err == pgx.ErrNoRows {
+	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, apperr.NotFoundf("user %s not found", id)
 	}
 	if err != nil {
