@@ -8,6 +8,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- `App.Shutdown` is now phased with per-phase deadline budgets (40% HTTP server, 5% metrics, 5% SSE, 10% authorizer, 15% bulk adapters, 10% DB, 15% tracer). Each phase logs its received budget and observed duration. Tracer is the **last** phase so spans emitted by every prior phase still flush. Closes PR-04 task 3.
+- `App.Authorizer` field is now actually populated in `app.New` (previously declared but never assigned, leaking the Casbin `*sql.DB` per process restart) and `app.Authorizer.Start(ctx)` is invoked at boot. Closes block-ship #10.
 - `port.Authorizer` interface gains `Start(ctx context.Context) error` for lifecycle management. All implementors (`Adapter`, `NoOpAdapter`, and test mocks) updated. Closes PR-03b task 1.
 - `casbin.Config` extended with `ReloadInterval time.Duration` (0 → 5-minute default) and `Watcher persist.Watcher` (nil = backstop-tick only). Closes PR-03b task 3.
 - `casbin.Adapter.Start(ctx)` wires the watcher callback and launches the backstop-reload tick goroutine that calls `LoadPolicy()` every `ReloadInterval`, cancelling on `ctx.Done()`. Closes PR-03b task 4.
@@ -41,6 +43,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- SSE broker keyed subscriptions by `userID`; a second tab from the same user silently overwrote the first subscription, leaking the first stream's goroutine forever. The handler now generates a per-connection UUID; the broker keys by this UUID and defensively closes any prior channel on collision so the reader exits its `range` loop. Closes block-ship #11/#12.
+- `casbin.Adapter.Close` now stops the backstop reload ticker (via an internal cancel derived from the parent ctx in `Start`), closes the configured watcher, and closes the database handle — idempotent via `sync.Once`. Previously `Close` only closed the DB, leaking the ticker goroutine and watcher subscription. Closes block-ship #10 (lifecycle).
+- Worker `wg` now covers the consumer's active window (`consume` blocks on `w.ctx.Done()` after registering with the queue) and the retry goroutine (`wg.Add(1)` before spawn). Retry replaces `time.Sleep` with `time.NewTimer` + `select { <-timer.C / <-w.ctx.Done() }` and re-checks `w.ctx.Err()` before publishing — Shutdown no longer waits for the full backoff and the retry never publishes after `w.cancel()`. Closes block-ship #14.
 - Audit log writing empty `user_id` / `ip_address` / `user_agent` for every row. Reader (`port.ExtractAuditContext`) used bare string keys while writers used typed `logger.ContextKey`, so reads never matched writes. A negative regression test in `internal/port/auditor_test.go` locks the bug from coming back.
 - File downloads served via `GET /api/files/download/*` were returning empty or truncated bodies because the handler closed the underlying `io.ReadCloser` before fasthttp's `BodyStreamWriter` finished streaming it. The handler now lets the stream writer own the close, matching fasthttp's contract. Regression-locked by `TestDownloadHandler_StreamingLifetime`.
 - SMTP `Send` now honours the caller's `ctx` deadline. Previously `internal/adapter/email/smtp.go` called `net/smtp.SendMail`, which has no timeout — a blackhole SMTP server (TCP accepts, never replies) would wedge the worker for the OS TCP timeout (often >2 minutes). The adapter now dials with `net.Dialer.DialContext`, applies the ctx deadline to the conn, and walks the SMTP exchange manually with a cancel-watcher goroutine. A 30s default deadline is applied when the caller did not set one.

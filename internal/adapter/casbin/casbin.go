@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"sync"
 	"time"
 
 	sqladapter "github.com/Blank-Xu/sql-adapter"
@@ -25,6 +26,9 @@ type Adapter struct {
 	db             *sql.DB
 	reloadInterval time.Duration
 	watcher        persist.Watcher
+	cancel         context.CancelFunc
+	closeOnce      sync.Once
+	closeErr       error
 }
 
 // Config holds configuration for the Casbin adapter
@@ -145,7 +149,8 @@ func NewAdapter(cfg Config) (*Adapter, error) {
 
 // Start wires the watcher (if configured) and launches the backstop reload tick.
 // It must be called after NewAdapter and before the adapter is used in production.
-// The goroutine exits when ctx is cancelled.
+// The backstop goroutine exits when the parent ctx is cancelled OR when Close is
+// called (Close cancels an internal context derived from the parent).
 func (a *Adapter) Start(ctx context.Context) error {
 	if a.watcher != nil {
 		if err := a.watcher.SetUpdateCallback(a.makeUpdateCallback()); err != nil {
@@ -161,12 +166,15 @@ func (a *Adapter) Start(ctx context.Context) error {
 		interval = 5 * time.Minute
 	}
 
+	derived, cancel := context.WithCancel(ctx)
+	a.cancel = cancel
+
 	go func() {
 		t := time.NewTicker(interval)
 		defer t.Stop()
 		for {
 			select {
-			case <-ctx.Done():
+			case <-derived.Done():
 				return
 			case <-t.C:
 				if err := a.enforcer.LoadPolicy(); err != nil {
@@ -326,9 +334,21 @@ func (a *Adapter) SavePolicy() error {
 	return a.enforcer.SavePolicy()
 }
 
-// Close closes the database connection
+// Close stops the backstop ticker, closes the watcher (if any), and closes the
+// database connection. Idempotent: subsequent calls return the first close error.
 func (a *Adapter) Close() error {
-	return a.db.Close()
+	a.closeOnce.Do(func() {
+		if a.cancel != nil {
+			a.cancel()
+		}
+		if a.watcher != nil {
+			a.watcher.Close()
+		}
+		if a.db != nil {
+			a.closeErr = a.db.Close()
+		}
+	})
+	return a.closeErr
 }
 
 // BuildDatabaseURL constructs a PostgreSQL connection string. sslMode is

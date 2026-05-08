@@ -254,3 +254,63 @@ func TestShutdown_WithTimeout(t *testing.T) {
 	// Clean up: let the goroutine finish
 	wgDone.Wait()
 }
+
+// TestRetry_CancelsOnShutdown verifies that a pending retry goroutine exits
+// promptly when ctx is cancelled instead of sleeping through the full backoff
+// delay (block-ship #14: prior code used time.Sleep without ctx awareness).
+func TestRetry_CancelsOnShutdown(t *testing.T) {
+	q := &mockQueue{}
+	log := newTestLogger()
+	w := New(q, log, Config{QueueName: "t", Concurrency: 1})
+
+	// Schedule a retry with a long delay (Attempts=3 -> 9s).
+	job, _ := NewJob("retry.test", "data")
+	job.Attempts = 3
+	w.retryJob(job)
+
+	// Immediately shutdown. Total Shutdown duration must be much shorter than
+	// the 9s scheduled delay because the retry goroutine selects on ctx.Done.
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	start := time.Now()
+	err := w.Shutdown(ctx)
+	elapsed := time.Since(start)
+
+	require.NoError(t, err, "Shutdown should not time out — retry goroutine must exit on ctx.Done")
+	assert.Less(t, elapsed, 500*time.Millisecond, "Shutdown must not wait for full retry backoff")
+
+	q.mu.Lock()
+	callCount := len(q.publishCalls)
+	q.mu.Unlock()
+	assert.Equal(t, 0, callCount, "no publish must happen after Shutdown — ctx-cancel guard must skip Publish")
+}
+
+// TestRetry_TrackedByWaitGroup verifies that the retry goroutine is registered
+// on w.wg so Shutdown's wg.Wait actually waits for it. We use a 0-attempt job
+// (delay=0) so the retry fires immediately, then assert publish completed
+// before Shutdown returned.
+func TestRetry_TrackedByWaitGroup(t *testing.T) {
+	q := &mockQueue{}
+	log := newTestLogger()
+	w := New(q, log, Config{QueueName: "t", Concurrency: 1})
+
+	// Attempts=1 -> 1*1*time.Second = 1s delay. Wait for it via Shutdown.
+	job, _ := NewJob("retry.test", "data")
+	job.Attempts = 1
+	w.retryJob(job)
+
+	// Give the timer time to fire. Shutdown waits for wg.
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	// Sleep just past the retry timer so Publish has fired before we cancel.
+	time.Sleep(1100 * time.Millisecond)
+
+	require.NoError(t, w.Shutdown(ctx))
+
+	q.mu.Lock()
+	callCount := len(q.publishCalls)
+	q.mu.Unlock()
+	assert.Equal(t, 1, callCount, "retry must have published once before Shutdown returned")
+}

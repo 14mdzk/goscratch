@@ -416,3 +416,79 @@ func TestBroker_ConcurrentBroadcastAndSubscribe(t *testing.T) {
 	wg.Wait()
 	// Should not panic - just verifying safety
 }
+
+// =============================================================================
+// Per-connection ID isolation tests (PR-04, block-ship #11/#12)
+// =============================================================================
+
+// TestBroker_Subscribe_TwoConnsSameUser_BothChannelsOpen verifies that two
+// independent connections (e.g. a user with two browser tabs) each get their
+// own channel and both receive broadcasts. Pre-fix: keying by userID caused the
+// second Subscribe to silently overwrite the first.
+func TestBroker_Subscribe_TwoConnsSameUser_BothChannelsOpen(t *testing.T) {
+	b := NewBroker(8)
+	t.Cleanup(func() { _ = b.Close() })
+
+	ch1 := b.Subscribe("conn-uuid-A")
+	ch2 := b.Subscribe("conn-uuid-B")
+
+	require.Equal(t, 2, b.ClientCount(), "both connections should be registered")
+
+	b.Broadcast(port.Event{Data: []byte("hello")})
+
+	select {
+	case ev := <-ch1:
+		assert.Equal(t, []byte("hello"), ev.Data)
+	case <-time.After(100 * time.Millisecond):
+		t.Fatal("conn A did not receive broadcast")
+	}
+	select {
+	case ev := <-ch2:
+		assert.Equal(t, []byte("hello"), ev.Data)
+	case <-time.After(100 * time.Millisecond):
+		t.Fatal("conn B did not receive broadcast")
+	}
+
+	// Unsubscribing conn A must leave conn B intact.
+	b.Unsubscribe("conn-uuid-A")
+	assert.Equal(t, 1, b.ClientCount())
+
+	b.Broadcast(port.Event{Data: []byte("after-unsub")})
+	select {
+	case ev := <-ch2:
+		assert.Equal(t, []byte("after-unsub"), ev.Data)
+	case <-time.After(100 * time.Millisecond):
+		t.Fatal("conn B should still receive broadcasts after conn A unsubscribed")
+	}
+}
+
+// TestBroker_Subscribe_DuplicateConnID_ClosesPrior is the defensive path: with
+// UUIDv4 collisions are statistically impossible, but if a caller passes a
+// duplicate clientID the prior channel must be closed so its reader exits the
+// `for event := range ch` loop instead of leaking forever.
+func TestBroker_Subscribe_DuplicateConnID_ClosesPrior(t *testing.T) {
+	b := NewBroker(4)
+	t.Cleanup(func() { _ = b.Close() })
+
+	first := b.Subscribe("dup-id")
+	second := b.Subscribe("dup-id")
+
+	// First channel must now be closed.
+	select {
+	case _, ok := <-first:
+		assert.False(t, ok, "prior channel must be closed on collision")
+	case <-time.After(100 * time.Millisecond):
+		t.Fatal("prior channel was not closed after duplicate Subscribe")
+	}
+
+	// Second channel must still be live.
+	b.Broadcast(port.Event{Data: []byte("on-second")})
+	select {
+	case ev := <-second:
+		assert.Equal(t, []byte("on-second"), ev.Data)
+	case <-time.After(100 * time.Millisecond):
+		t.Fatal("second channel did not receive broadcast")
+	}
+
+	assert.Equal(t, 1, b.ClientCount(), "duplicate id must not double-count")
+}
