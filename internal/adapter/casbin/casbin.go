@@ -29,14 +29,16 @@ type Adapter struct {
 	cancel         context.CancelFunc
 	closeOnce      sync.Once
 	closeErr       error
+	cache          *decisionCache
 }
 
 // Config holds configuration for the Casbin adapter
 type Config struct {
-	DatabaseURL    string
-	ModelText      string          // Optional: inline model text (if not using file)
-	ReloadInterval time.Duration   // 0 = default 5 minutes
-	Watcher        persist.Watcher // nil = backstop tick only
+	DatabaseURL       string
+	ModelText         string          // Optional: inline model text (if not using file)
+	ReloadInterval    time.Duration   // 0 = default 5 minutes
+	Watcher           persist.Watcher // nil = backstop tick only
+	DecisionCacheSize int             // LRU decision-cache capacity; 0 = default (10 000); negative = disabled
 }
 
 // ErrInvalidPolicyArg is returned when a policy argument contains disallowed bytes.
@@ -139,11 +141,21 @@ func NewAdapter(cfg Config) (*Adapter, error) {
 		slog.Debug("Role assignment", "rule", g)
 	}
 
+	// DecisionCacheSize: 0 (zero value) means "use the default of 10 000 entries".
+	// Set to a negative value (e.g. -1) to disable the cache entirely.
+	cacheSize := cfg.DecisionCacheSize
+	if cacheSize == 0 {
+		cacheSize = 10000
+	} else if cacheSize < 0 {
+		cacheSize = 0 // disabled
+	}
+
 	return &Adapter{
 		enforcer:       enforcer,
 		db:             db,
 		reloadInterval: cfg.ReloadInterval,
 		watcher:        cfg.Watcher,
+		cache:          newDecisionCache(cacheSize),
 	}, nil
 }
 
@@ -177,7 +189,7 @@ func (a *Adapter) Start(ctx context.Context) error {
 			case <-derived.Done():
 				return
 			case <-t.C:
-				if err := a.enforcer.LoadPolicy(); err != nil {
+				if err := a.LoadPolicy(); err != nil {
 					slog.Error("casbin backstop reload failed", "error", err)
 				}
 			}
@@ -189,26 +201,31 @@ func (a *Adapter) Start(ctx context.Context) error {
 
 // makeUpdateCallback returns a callback that applies incremental policy updates
 // received from the watcher. Unknown ops fall back to a full LoadPolicy.
+// Any operation that mutates policy also flushes the decision cache.
 func (a *Adapter) makeUpdateCallback() func(string) {
 	return func(msg string) {
 		var op watcherOp
 		if err := json.Unmarshal([]byte(msg), &op); err != nil {
 			// Unknown format — full reload as fallback.
-			_ = a.enforcer.LoadPolicy()
+			_ = a.LoadPolicy()
 			return
 		}
 		ifaces := stringsToIfaces(op.Params)
 		switch op.Op {
 		case "add_policy":
 			_, _ = a.enforcer.AddPolicy(ifaces...)
+			a.cache.flush()
 		case "remove_policy":
 			_, _ = a.enforcer.RemovePolicy(ifaces...)
+			a.cache.flush()
 		case "add_grouping":
 			_, _ = a.enforcer.AddGroupingPolicy(ifaces...)
+			a.cache.flush()
 		case "remove_grouping":
 			_, _ = a.enforcer.RemoveGroupingPolicy(ifaces...)
+			a.cache.flush()
 		default:
-			_ = a.enforcer.LoadPolicy()
+			_ = a.LoadPolicy()
 		}
 	}
 }
@@ -222,39 +239,63 @@ func stringsToIfaces(ss []string) []any {
 	return out
 }
 
-// Enforce checks if subject has permission to perform action on object
+// Enforce checks if subject has permission to perform action on object.
+// Results are memoised in the decision cache. Errors are never cached.
 func (a *Adapter) Enforce(sub, obj, act string) (bool, error) {
+	if hit, ok := a.cache.get(sub, obj, act); ok {
+		return hit, nil
+	}
 	allowed, err := a.enforcer.Enforce(sub, obj, act)
 	slog.Debug("Casbin enforce", "sub", sub, "obj", obj, "act", act, "allowed", allowed, "error", err)
+	if err == nil {
+		a.cache.put(sub, obj, act, allowed)
+	}
 	return allowed, err
 }
 
-// EnforceWithContext checks permission with context
+// EnforceWithContext checks permission with context for cancellation.
+// Results are memoised in the decision cache. Errors are never cached.
 func (a *Adapter) EnforceWithContext(ctx context.Context, sub, obj, act string) (bool, error) {
-	// Check context cancellation
+	// Check context cancellation before touching the cache.
 	select {
 	case <-ctx.Done():
 		return false, ctx.Err()
 	default:
-		return a.enforcer.Enforce(sub, obj, act)
 	}
+	if hit, ok := a.cache.get(sub, obj, act); ok {
+		return hit, nil
+	}
+	allowed, err := a.enforcer.Enforce(sub, obj, act)
+	if err == nil {
+		a.cache.put(sub, obj, act, allowed)
+	}
+	return allowed, err
 }
 
-// AddRoleForUser assigns a role to a user
+// AddRoleForUser assigns a role to a user.
+// Invalidates all cache entries where sub == userID because the user's
+// effective permission set has changed.
 func (a *Adapter) AddRoleForUser(userID, role string) error {
 	if err := validatePolicyArgs(userID, role); err != nil {
 		return err
 	}
 	_, err := a.enforcer.AddGroupingPolicy(userID, role)
+	if err == nil {
+		a.cache.invalidateSub(userID)
+	}
 	return err
 }
 
-// RemoveRoleForUser removes a role from a user
+// RemoveRoleForUser removes a role from a user.
+// Invalidates all cache entries where sub == userID.
 func (a *Adapter) RemoveRoleForUser(userID, role string) error {
 	if err := validatePolicyArgs(userID, role); err != nil {
 		return err
 	}
 	_, err := a.enforcer.RemoveGroupingPolicy(userID, role)
+	if err == nil {
+		a.cache.invalidateSub(userID)
+	}
 	return err
 }
 
@@ -273,21 +314,34 @@ func (a *Adapter) HasRoleForUser(userID, role string) (bool, error) {
 	return a.enforcer.HasRoleForUser(userID, role)
 }
 
-// AddPermissionForRole adds a permission to a role
+// AddPermissionForRole adds a permission to a role.
+// Flushes the entire cache because the role's effective permission set has
+// changed, and any user who inherits this role transitively is also affected.
+// Precise per-user invalidation would require traversing the full role
+// hierarchy (GetImplicitUsersForRole); a full flush is chosen as the
+// conservative correct alternative.
 func (a *Adapter) AddPermissionForRole(role, obj, act string) error {
 	if err := validatePolicyArgs(role, obj, act); err != nil {
 		return err
 	}
 	_, err := a.enforcer.AddPolicy(role, obj, act)
+	if err == nil {
+		a.cache.flush()
+	}
 	return err
 }
 
-// RemovePermissionForRole removes a permission from a role
+// RemovePermissionForRole removes a permission from a role.
+// Flushes the entire cache for the same transitive-inheritance reason as
+// AddPermissionForRole.
 func (a *Adapter) RemovePermissionForRole(role, obj, act string) error {
 	if err := validatePolicyArgs(role, obj, act); err != nil {
 		return err
 	}
 	_, err := a.enforcer.RemovePolicy(role, obj, act)
+	if err == nil {
+		a.cache.flush()
+	}
 	return err
 }
 
@@ -296,21 +350,29 @@ func (a *Adapter) GetPermissionsForRole(role string) ([][]string, error) {
 	return a.enforcer.GetPermissionsForUser(role)
 }
 
-// AddPermissionForUser adds a direct permission to a user
+// AddPermissionForUser adds a direct permission to a user.
+// Invalidates all cache entries where sub == userID.
 func (a *Adapter) AddPermissionForUser(userID, obj, act string) error {
 	if err := validatePolicyArgs(userID, obj, act); err != nil {
 		return err
 	}
 	_, err := a.enforcer.AddPolicy(userID, obj, act)
+	if err == nil {
+		a.cache.invalidateSub(userID)
+	}
 	return err
 }
 
-// RemovePermissionForUser removes a direct permission from a user
+// RemovePermissionForUser removes a direct permission from a user.
+// Invalidates all cache entries where sub == userID.
 func (a *Adapter) RemovePermissionForUser(userID, obj, act string) error {
 	if err := validatePolicyArgs(userID, obj, act); err != nil {
 		return err
 	}
 	_, err := a.enforcer.RemovePolicy(userID, obj, act)
+	if err == nil {
+		a.cache.invalidateSub(userID)
+	}
 	return err
 }
 
@@ -324,9 +386,14 @@ func (a *Adapter) GetImplicitPermissionsForUser(userID string) ([][]string, erro
 	return a.enforcer.GetImplicitPermissionsForUser(userID)
 }
 
-// LoadPolicy reloads policies from database
+// LoadPolicy reloads policies from database and flushes the decision cache.
+// Called by the backstop ticker and by the watcher callback on full-reload ops.
 func (a *Adapter) LoadPolicy() error {
-	return a.enforcer.LoadPolicy()
+	err := a.enforcer.LoadPolicy()
+	if err == nil {
+		a.cache.flush()
+	}
+	return err
 }
 
 // SavePolicy saves policies to database
