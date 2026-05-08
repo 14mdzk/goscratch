@@ -8,7 +8,9 @@
     "port": 8080,
     "read_timeout": 10,
     "write_timeout": 10,
-    "idle_timeout": 120
+    "idle_timeout": 120,
+    "trusted_proxies": [],
+    "proxy_header": ""
   },
   "database": {
     "host": "localhost",

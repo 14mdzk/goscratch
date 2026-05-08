@@ -57,7 +57,10 @@ func (m *Module) RegisterRoutes(router fiber.Router) {
 	// Tight rate limit applied only to the login and refresh endpoints.
 	// FailClosed: if the cache backend is unavailable the request is rejected
 	// rather than allowed through unchecked (block-ship #4 should-fix).
-	authRateLimit := middleware.RateLimit(middleware.RateLimitConfig{
+	// The closer is intentionally discarded: m.cache is never nil here so
+	// redisBackend is selected, and redisBackend.Close is a no-op (the cache
+	// connection is owned and closed by App.Shutdown).
+	authRateLimit, _ := middleware.RateLimit(middleware.RateLimitConfig{
 		Max:        20,
 		Window:     5 * time.Minute,
 		UseRedis:   true,

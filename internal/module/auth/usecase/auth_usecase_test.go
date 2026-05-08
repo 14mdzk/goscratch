@@ -102,7 +102,10 @@ func (c *mapCache) GetJSON(_ context.Context, _ string, _ any) error            
 func (c *mapCache) Increment(_ context.Context, _ string) (int64, error)              { return 0, nil }
 func (c *mapCache) Decrement(_ context.Context, _ string) (int64, error)              { return 0, nil }
 func (c *mapCache) Expire(_ context.Context, _ string, _ time.Duration) error         { return nil }
-func (c *mapCache) Close() error                                                      { return nil }
+func (c *mapCache) SlidingWindowAllow(_ context.Context, _ string, max int, _ time.Duration) (bool, int, int, error) {
+	return true, max, 0, nil
+}
+func (c *mapCache) Close() error { return nil }
 
 // MockAuditor mocks the auditor interface with call tracking
 type MockAuditor struct {

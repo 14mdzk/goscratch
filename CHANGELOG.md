@@ -12,12 +12,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Auth module's `NewModule` accepts `usecase.UserRepo` (interface) instead of `*pgxpool.Pool`; `app.go` injects the shared `*userrepo.Repository` created for the user module, eliminating the duplicate repo.
 - JWT `Claims` mapped to a domain type (`internal/module/auth/domain/claims.go`); middleware stores `*authdomain.Claims` in context; handlers and usecases no longer depend on `jwt.RegisteredClaims`.
 - Sentinel error comparisons (`err == pgx.ErrNoRows`, `err == redis.Nil`) replaced with `errors.Is`; role-usecase internal errors use `apperr.ErrInternal.WithError(err)` to preserve `errors.Is/As` chains.
+- Redis rate limiter now uses a **sliding window** algorithm (atomic Lua script: `ZREMRANGEBYSCORE` + `ZCARD` + `ZADD` in one round trip) instead of the previous fixed-window counter. This eliminates the 2× burst that was possible at window boundaries. Existing fixed-window counter keys in Redis are orphaned and will TTL out naturally; rate-limit decisions during the rollout window may differ slightly near window boundaries. Closes punch-list #9 (audit: `rate_limit.go:164`).
+- `RateLimit(cfg, cache)` now returns `(fiber.Handler, io.Closer)` instead of `fiber.Handler`. The closer is wired into `app.Shutdown`.
 
 ### Added
 
 - `App.Shutdown` is now phased with per-phase deadline budgets (40% HTTP server, 5% metrics, 5% SSE, 10% authorizer, 15% bulk adapters, 10% DB, 15% tracer). Each phase logs its received budget and observed duration. Tracer is the **last** phase so spans emitted by every prior phase still flush. Closes PR-04 task 3.
 - `App.Authorizer` field is now actually populated in `app.New` (previously declared but never assigned, leaking the Casbin `*sql.DB` per process restart) and `app.Authorizer.Start(ctx)` is invoked at boot. Closes block-ship #10.
 - CI lint that rejects raw-SQL writes to `casbin_rule(s)` outside the casbin adapter (`internal/adapter/casbin/`). Guard is wired into `make lint` and the GitHub Actions lint job. Closes punch-list row #11.
+- `server.trusted_proxies` config (`SERVER_TRUSTED_PROXIES`, CSV of CIDR strings) and `server.proxy_header` config (`SERVER_PROXY_HEADER`, default `X-Forwarded-For` when trusted proxies are set). Fiber's `EnableTrustedProxyCheck` is now wired from config so `c.IP()` only reads the proxy header from trusted upstream addresses. Closes punch-list #9 (audit: `rate_limit.go:73`).
+- `port.Cache.SlidingWindowAllow` method. `RedisCache` implements it via Lua; `NoOpCache` always allows (in-memory backend is used for single-instance deployments without Redis).
+- `memoryBackend.Close()` — stops the janitor goroutine via a stop channel. Idempotent (`sync.Once`). `app.Shutdown` now calls it. Closes punch-list #9 (audit: `rate_limit.go:93`).
 - `port.Authorizer` interface gains `Start(ctx context.Context) error` for lifecycle management. All implementors (`Adapter`, `NoOpAdapter`, and test mocks) updated. Closes PR-03b task 1.
 - `casbin.Config` extended with `ReloadInterval time.Duration` (0 → 5-minute default) and `Watcher persist.Watcher` (nil = backstop-tick only). Closes PR-03b task 3.
 - `casbin.Adapter.Start(ctx)` wires the watcher callback and launches the backstop-reload tick goroutine that calls `LoadPolicy()` every `ReloadInterval`, cancelling on `ctx.Done()`. Closes PR-03b task 4.
@@ -59,6 +64,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - SMTP `Send` now honours the caller's `ctx` deadline. Previously `internal/adapter/email/smtp.go` called `net/smtp.SendMail`, which has no timeout — a blackhole SMTP server (TCP accepts, never replies) would wedge the worker for the OS TCP timeout (often >2 minutes). The adapter now dials with `net.Dialer.DialContext`, applies the ctx deadline to the conn, and walks the SMTP exchange manually with a cancel-watcher goroutine. A 30s default deadline is applied when the caller did not set one.
 - Postgres `Transactor.WithTx` now rolls back with a fresh `context.Background()`-derived ctx (5s timeout) instead of the outer ctx. On shutdown the outer ctx is cancelled, so the previous code returned `context.Canceled` from `tx.Rollback` and the rollback never reached the server, leaving transactions `idle in transaction` until the server-side timeout fired.
 - RabbitMQ adapter (`internal/adapter/queue/rabbitmq.go`) shared a single `*amqp.Channel` for publish + consume + retries. AMQP channels are not goroutine-safe and the adapter is now restructured: a cached publisher channel guarded by a mutex, and a dedicated channel per `Consume` call. `channel.Qos(prefetch, 0, false)` is now invoked before `Consume`. A `NotifyClose` reconnect loop with exponential backoff (capped at 30s, 5 attempts) re-establishes the consumer channel on broker drop and exits cleanly on parent context cancellation.
+- Leaked janitor goroutine on application shutdown: the in-memory rate-limit store's cleanup goroutine had no exit signal, causing a goroutine leak whenever the application shut down. Closes punch-list #9 (audit: `rate_limit.go:93`).
 
 ### Security
 

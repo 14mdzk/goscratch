@@ -361,3 +361,95 @@ func TestRedisCache_SetJSON_GetJSON_ComplexStruct(t *testing.T) {
 	actualJSON, _ := json.Marshal(output)
 	assert.JSONEq(t, string(expectedJSON), string(actualJSON))
 }
+
+// =============================================================================
+// SlidingWindowAllow Tests
+// =============================================================================
+
+func TestRedisSlidingWindow_AllowsUnderLimit(t *testing.T) {
+	rc, _ := newTestRedisCache(t)
+	ctx := context.Background()
+
+	const max = 5
+	window := 10 * time.Second
+	key := "ratelimit:test:under"
+
+	// N-1 requests — all must be allowed.
+	// The Lua script computes remaining = max - count_before_add - 1.
+	// Before request 1: count=0 → remaining = max-1.
+	// Before request 2: count=1 → remaining = max-2. etc.
+	for i := 0; i < max-1; i++ {
+		allowed, remaining, retryAfter, err := rc.SlidingWindowAllow(ctx, key, max, window)
+		require.NoError(t, err)
+		assert.True(t, allowed, "request %d should be allowed", i+1)
+		assert.Equal(t, 0, retryAfter)
+		assert.Equal(t, max-i-1, remaining, "remaining after request %d", i+1)
+	}
+}
+
+func TestRedisSlidingWindow_DeniesAtLimit(t *testing.T) {
+	rc, mr := newTestRedisCache(t)
+	ctx := context.Background()
+
+	const max = 3
+	window := 10 * time.Second
+	key := "ratelimit:test:deny"
+
+	// Exhaust the limit
+	for i := 0; i < max; i++ {
+		allowed, _, _, err := rc.SlidingWindowAllow(ctx, key, max, window)
+		require.NoError(t, err)
+		assert.True(t, allowed, "request %d should be allowed before limit", i+1)
+	}
+
+	// Next request must be denied
+	allowed, remaining, retryAfter, err := rc.SlidingWindowAllow(ctx, key, max, window)
+	require.NoError(t, err)
+	assert.False(t, allowed, "request at limit should be denied")
+	assert.Equal(t, 0, remaining)
+	assert.GreaterOrEqual(t, retryAfter, 1, "retry-after must be >= 1s")
+
+	// miniredis is used just to ensure the key exists; no fast-forward needed here.
+	_ = mr
+}
+
+func TestRedisSlidingWindow_RecoversAfterWindowSlides(t *testing.T) {
+	rc, mr := newTestRedisCache(t)
+	ctx := context.Background()
+
+	const max = 2
+	window := 5 * time.Second
+	key := "ratelimit:test:recover"
+
+	// Exhaust the limit
+	for i := 0; i < max; i++ {
+		allowed, _, _, err := rc.SlidingWindowAllow(ctx, key, max, window)
+		require.NoError(t, err)
+		assert.True(t, allowed)
+	}
+
+	// Denied at limit
+	allowed, _, _, err := rc.SlidingWindowAllow(ctx, key, max, window)
+	require.NoError(t, err)
+	assert.False(t, allowed)
+
+	// Fast-forward past the window so all old entries fall out
+	mr.FastForward(window + time.Second)
+
+	// Should be allowed again
+	allowed, remaining, _, err := rc.SlidingWindowAllow(ctx, key, max, window)
+	require.NoError(t, err)
+	assert.True(t, allowed, "request after window slide should be allowed")
+	assert.Equal(t, max-1, remaining)
+}
+
+func TestNoOpCache_SlidingWindowAllow_AlwaysAllows(t *testing.T) {
+	c := NewNoOpCache()
+	ctx := context.Background()
+
+	allowed, remaining, retryAfter, err := c.SlidingWindowAllow(ctx, "any-key", 10, time.Minute)
+	assert.NoError(t, err)
+	assert.True(t, allowed)
+	assert.Equal(t, 10, remaining)
+	assert.Equal(t, 0, retryAfter)
+}

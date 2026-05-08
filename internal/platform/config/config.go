@@ -37,11 +37,13 @@ type AppConfig struct {
 }
 
 type ServerConfig struct {
-	Host         string `json:"host" env:"SERVER_HOST"`
-	Port         int    `json:"port" env:"SERVER_PORT"`
-	ReadTimeout  int    `json:"read_timeout" env:"SERVER_READ_TIMEOUT"`
-	WriteTimeout int    `json:"write_timeout" env:"SERVER_WRITE_TIMEOUT"`
-	IdleTimeout  int    `json:"idle_timeout" env:"SERVER_IDLE_TIMEOUT"`
+	Host           string   `json:"host" env:"SERVER_HOST"`
+	Port           int      `json:"port" env:"SERVER_PORT"`
+	ReadTimeout    int      `json:"read_timeout" env:"SERVER_READ_TIMEOUT"`
+	WriteTimeout   int      `json:"write_timeout" env:"SERVER_WRITE_TIMEOUT"`
+	IdleTimeout    int      `json:"idle_timeout" env:"SERVER_IDLE_TIMEOUT"`
+	TrustedProxies []string `json:"trusted_proxies" env:"SERVER_TRUSTED_PROXIES"`
+	ProxyHeader    string   `json:"proxy_header" env:"SERVER_PROXY_HEADER"`
 }
 
 type DatabaseConfig struct {
@@ -241,6 +243,17 @@ func applyEnvOverrides(cfg interface{}) {
 			}
 		case reflect.Bool:
 			field.SetBool(strings.ToLower(envValue) == "true" || envValue == "1")
+		case reflect.Slice:
+			if field.Type().Elem().Kind() == reflect.String {
+				parts := strings.Split(envValue, ",")
+				result := make([]string, 0, len(parts))
+				for _, p := range parts {
+					if v := strings.TrimSpace(p); v != "" {
+						result = append(result, v)
+					}
+				}
+				field.Set(reflect.ValueOf(result))
+			}
 		}
 	}
 }

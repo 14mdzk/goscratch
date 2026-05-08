@@ -23,8 +23,15 @@ type Server struct {
 // generic middleware variant so 5xx responses do not echo the original
 // error.Error() to the client; production also disables stack traces from
 // the recover middleware.
+//
+// Trusted-proxy handling:
+//   - If cfg.TrustedProxies is non-empty, Fiber's EnableTrustedProxyCheck is
+//     enabled: c.IP() returns the value of cfg.ProxyHeader only for requests
+//     whose remote address is in the trusted CIDR list.
+//   - If cfg.ProxyHeader is set but cfg.TrustedProxies is empty, a warning is
+//     logged and trusted-proxy checking is left disabled (socket addr is used).
 func NewServer(cfg config.ServerConfig, log *logger.Logger, isProduction bool) *Server {
-	app := fiber.New(fiber.Config{
+	fiberCfg := fiber.Config{
 		ReadTimeout:  time.Duration(cfg.ReadTimeout) * time.Second,
 		WriteTimeout: time.Duration(cfg.WriteTimeout) * time.Second,
 		IdleTimeout:  time.Duration(cfg.IdleTimeout) * time.Second,
@@ -33,7 +40,21 @@ func NewServer(cfg config.ServerConfig, log *logger.Logger, isProduction bool) *
 		ErrorHandler: middleware.ErrorHandler(log),
 		// Disable startup message
 		DisableStartupMessage: true,
-	})
+	}
+
+	if len(cfg.TrustedProxies) > 0 {
+		fiberCfg.EnableTrustedProxyCheck = true
+		fiberCfg.TrustedProxies = cfg.TrustedProxies
+		proxyHeader := cfg.ProxyHeader
+		if proxyHeader == "" {
+			proxyHeader = "X-Forwarded-For"
+		}
+		fiberCfg.ProxyHeader = proxyHeader
+	} else if cfg.ProxyHeader != "" {
+		log.Warn("server.proxy_header is set but server.trusted_proxies is empty — X-Forwarded-For spoofing is possible; set SERVER_TRUSTED_PROXIES to the upstream proxy CIDRs")
+	}
+
+	app := fiber.New(fiberCfg)
 
 	// Add recovery middleware. Stack traces are gated on non-production to
 	// avoid leaking the Go stack to clients via the panic body.

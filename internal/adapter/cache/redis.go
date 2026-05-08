@@ -133,6 +133,69 @@ func (c *RedisCache) Expire(ctx context.Context, key string, ttl time.Duration) 
 	return nil
 }
 
+// slidingWindowScript is a Lua script that implements an atomic sliding-window
+// rate limiter using a Redis sorted set.
+//
+// KEYS[1]  — the rate-limit key (e.g. "ratelimit:ip:1.2.3.4")
+// ARGV[1]  — current time as Unix nanoseconds (string)
+// ARGV[2]  — window size in nanoseconds (string)
+// ARGV[3]  — max allowed requests in the window
+//
+// Returns an array: {allowed (0|1), remaining, retry_after_seconds}
+var slidingWindowScript = redis.NewScript(`
+local key      = KEYS[1]
+local now      = tonumber(ARGV[1])
+local window   = tonumber(ARGV[2])
+local max      = tonumber(ARGV[3])
+local cutoff   = now - window
+
+redis.call('ZREMRANGEBYSCORE', key, '-inf', cutoff)
+local count = redis.call('ZCARD', key)
+
+if count >= max then
+  -- Oldest entry tells us when a slot frees up.
+  local oldest = redis.call('ZRANGE', key, 0, 0, 'WITHSCORES')
+  local retry_ns = 0
+  if oldest and #oldest >= 2 then
+    retry_ns = tonumber(oldest[2]) + window - now
+  end
+  local retry_sec = math.ceil(retry_ns / 1e9)
+  if retry_sec < 1 then retry_sec = 1 end
+  return {0, 0, retry_sec}
+end
+
+redis.call('ZADD', key, now, now)
+redis.call('PEXPIRE', key, math.ceil(window / 1e6))
+local remaining = max - count - 1
+return {1, remaining, 0}
+`)
+
+// SlidingWindowAllow implements port.Cache.SlidingWindowAllow using a Lua
+// script so the ZREMRANGEBYSCORE → ZCARD → ZADD sequence is atomic.
+func (c *RedisCache) SlidingWindowAllow(ctx context.Context, key string, maxReqs int, window time.Duration) (allowed bool, remaining, retryAfter int, err error) {
+	nowNs := time.Now().UnixNano()
+	windowNs := window.Nanoseconds()
+
+	var res []int64
+	res, err = slidingWindowScript.Run(ctx, c.client,
+		[]string{key},
+		nowNs, windowNs, maxReqs,
+	).Int64Slice()
+	if err != nil {
+		err = fmt.Errorf("redis sliding window error: %w", err)
+		return
+	}
+	if len(res) < 3 {
+		err = fmt.Errorf("redis sliding window: unexpected result length %d", len(res))
+		return
+	}
+
+	allowed = res[0] == 1
+	remaining = int(res[1])
+	retryAfter = int(res[2])
+	return
+}
+
 func (c *RedisCache) Close() error {
 	return c.client.Close()
 }
