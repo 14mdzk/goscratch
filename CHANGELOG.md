@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- Role module now exposes a `UseCase` interface (`internal/module/role/usecase/port.go`); handler depends on the interface, not the concrete struct.
+- Auth module's `NewModule` accepts `usecase.UserRepo` (interface) instead of `*pgxpool.Pool`; `app.go` injects the shared `*userrepo.Repository` created for the user module, eliminating the duplicate repo.
+- JWT `Claims` mapped to a domain type (`internal/module/auth/domain/claims.go`); middleware stores `*authdomain.Claims` in context; handlers and usecases no longer depend on `jwt.RegisteredClaims`.
+- Sentinel error comparisons (`err == pgx.ErrNoRows`, `err == redis.Nil`) replaced with `errors.Is`; role-usecase internal errors use `apperr.ErrInternal.WithError(err)` to preserve `errors.Is/As` chains.
+
 ### Added
 
 - `port.Authorizer` interface gains `Start(ctx context.Context) error` for lifecycle management. All implementors (`Adapter`, `NoOpAdapter`, and test mocks) updated. Closes PR-03b task 1.

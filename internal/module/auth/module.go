@@ -5,12 +5,10 @@ import (
 
 	"github.com/14mdzk/goscratch/internal/module/auth/handler"
 	"github.com/14mdzk/goscratch/internal/module/auth/usecase"
-	userrepo "github.com/14mdzk/goscratch/internal/module/user/repository"
 	"github.com/14mdzk/goscratch/internal/platform/config"
 	"github.com/14mdzk/goscratch/internal/platform/http/middleware"
 	"github.com/14mdzk/goscratch/internal/port"
 	"github.com/gofiber/fiber/v2"
-	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 // Module represents the auth module
@@ -21,9 +19,12 @@ type Module struct {
 	revoker   usecase.Revoker
 }
 
-// NewModule creates a new auth module
-func NewModule(pool *pgxpool.Pool, cache port.Cache, auditor port.Auditor, jwtCfg config.JWTConfig) *Module {
-	userRepo := userrepo.NewRepository(pool)
+// NewModule creates a new auth module.
+// userRepo is the narrow user-lookup interface satisfied by *userrepo.Repository.
+// Accepting the interface lets the caller (app.go) share the repo instance
+// already created for the user module rather than opening a second connection
+// to the same pool (audit finding: auth/module.go instantiates its own repo).
+func NewModule(userRepo usecase.UserRepo, cache port.Cache, auditor port.Auditor, jwtCfg config.JWTConfig) *Module {
 	uc := usecase.NewUseCase(userRepo, cache, jwtCfg)
 	audited := usecase.NewAuditedUseCase(uc, auditor)
 	h := handler.NewHandler(audited)

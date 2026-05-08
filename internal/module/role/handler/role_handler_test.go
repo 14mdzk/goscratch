@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	roledto "github.com/14mdzk/goscratch/internal/module/role/dto"
 	"github.com/14mdzk/goscratch/internal/module/role/usecase"
 	"github.com/14mdzk/goscratch/internal/port"
 	"github.com/gofiber/fiber/v2"
@@ -535,4 +536,59 @@ func TestCheckUserPermission_MissingParams(t *testing.T) {
 	resp, err := app.Test(req)
 	assert.NoError(t, err)
 	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
+}
+
+// TestRoleHandler_UsesPort verifies that Handler depends on the usecase.UseCase
+// interface, not the concrete *roleUseCase. A hand-rolled fake satisfying the
+// interface is wired directly — no NewUseCase constructor involved.
+func TestRoleHandler_UsesPort(t *testing.T) {
+	fake := &stubRoleUseCase{}
+	h := NewHandler(fake)
+	app := fiber.New()
+	app.Get("/roles", h.ListRoles)
+
+	req := httptest.NewRequest(http.MethodGet, "/roles", nil)
+	resp, err := app.Test(req)
+	assert.NoError(t, err)
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	assert.True(t, fake.listRolesCalled, "handler must delegate to the UseCase interface")
+}
+
+// stubRoleUseCase is a minimal hand-rolled implementation of usecase.UseCase
+// used to verify the handler accepts the interface, not the concrete type.
+type stubRoleUseCase struct {
+	listRolesCalled bool
+}
+
+var _ usecase.UseCase = (*stubRoleUseCase)(nil)
+
+func (s *stubRoleUseCase) ListRoles(_ context.Context) []roledto.RoleResponse {
+	s.listRolesCalled = true
+	return []roledto.RoleResponse{}
+}
+func (s *stubRoleUseCase) AssignRole(_ context.Context, _, _ string) error { return nil }
+func (s *stubRoleUseCase) RemoveRole(_ context.Context, _, _ string) error { return nil }
+func (s *stubRoleUseCase) GetRoleUsers(_ context.Context, _ string) (*roledto.RoleUsersResponse, error) {
+	return nil, nil
+}
+func (s *stubRoleUseCase) GetRolePermissions(_ context.Context, _ string) ([]roledto.PermissionResponse, error) {
+	return nil, nil
+}
+func (s *stubRoleUseCase) AddPermissionToRole(_ context.Context, _, _, _ string) error { return nil }
+func (s *stubRoleUseCase) RemovePermissionFromRole(_ context.Context, _, _, _ string) error {
+	return nil
+}
+func (s *stubRoleUseCase) GetUserRoles(_ context.Context, _ string) (*roledto.UserRolesResponse, error) {
+	return nil, nil
+}
+func (s *stubRoleUseCase) GetUserPermissions(_ context.Context, _ string) (*roledto.UserPermissionsResponse, error) {
+	return nil, nil
+}
+func (s *stubRoleUseCase) ListAllPermissions(_ context.Context) (*roledto.AllPermissionsResponse, error) {
+	return nil, nil
+}
+func (s *stubRoleUseCase) AddUserPermission(_ context.Context, _, _, _ string) error    { return nil }
+func (s *stubRoleUseCase) RemoveUserPermission(_ context.Context, _, _, _ string) error { return nil }
+func (s *stubRoleUseCase) CheckPermission(_ context.Context, _, _, _ string) (bool, error) {
+	return false, nil
 }

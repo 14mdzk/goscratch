@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	authdomain "github.com/14mdzk/goscratch/internal/module/auth/domain"
 	"github.com/14mdzk/goscratch/pkg/logger"
 	"github.com/gofiber/fiber/v2"
 	"github.com/golang-jwt/jwt/v5"
@@ -44,7 +45,7 @@ func TestAuth_ValidJWTInHeader(t *testing.T) {
 	cfg := DefaultAuthConfig(testJWTSecret)
 
 	var capturedUserID string
-	var capturedClaims *Claims
+	var capturedClaims *authdomain.Claims
 	var capturedCtx context.Context
 
 	app.Use(Auth(cfg))
@@ -195,7 +196,7 @@ func TestOptionalAuth_ValidJWT(t *testing.T) {
 	app := fiber.New()
 	cfg := DefaultAuthConfig(testJWTSecret)
 
-	var capturedClaims *Claims
+	var capturedClaims *authdomain.Claims
 
 	app.Use(OptionalAuth(cfg))
 	app.Get("/test", func(c *fiber.Ctx) error {
@@ -218,7 +219,7 @@ func TestOptionalAuth_MissingToken(t *testing.T) {
 	app := fiber.New()
 	cfg := DefaultAuthConfig(testJWTSecret)
 
-	var capturedClaims *Claims
+	var capturedClaims *authdomain.Claims
 	handlerCalled := false
 
 	app.Use(OptionalAuth(cfg))
@@ -240,7 +241,7 @@ func TestOptionalAuth_InvalidToken(t *testing.T) {
 	app := fiber.New()
 	cfg := DefaultAuthConfig(testJWTSecret)
 
-	var capturedClaims *Claims
+	var capturedClaims *authdomain.Claims
 	handlerCalled := false
 
 	app.Use(OptionalAuth(cfg))
@@ -264,7 +265,7 @@ func TestOptionalAuth_InvalidToken(t *testing.T) {
 func TestGetClaims_NoClaims(t *testing.T) {
 	app := fiber.New()
 
-	var result *Claims
+	var result *authdomain.Claims
 
 	app.Get("/test", func(c *fiber.Ctx) error {
 		result = GetClaims(c)
@@ -318,6 +319,23 @@ func TestParseToken_StrictIssAud(t *testing.T) {
 		assert.NoError(t, err)
 		assert.Equal(t, "user-123", claims.UserID)
 	})
+}
+
+// TestToDomainClaims_RoundTrip verifies that a JWT Claims struct is correctly
+// mapped to the domain authdomain.Claims type. This is the "Claims → domain"
+// boundary test: JWT layer parses → toDomainClaims → handlers see domain type.
+func TestToDomainClaims_RoundTrip(t *testing.T) {
+	raw := validClaims()
+	rawPtr := &raw
+	domain := toDomainClaims(rawPtr)
+
+	assert.Equal(t, raw.UserID, domain.UserID)
+	assert.Equal(t, raw.Email, domain.Email)
+	assert.Equal(t, raw.Name, domain.Name)
+	assert.Equal(t, raw.Issuer, domain.Issuer)
+	assert.Equal(t, []string(raw.Audience), domain.Audience)
+	assert.Equal(t, raw.ExpiresAt.Time, domain.ExpiresAt)
+	assert.Equal(t, raw.IssuedAt.Time, domain.IssuedAt)
 }
 
 // TestAuth_RejectsWhenIssuerOrAudienceEmpty verifies the Auth middleware itself
