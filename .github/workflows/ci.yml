@@ -26,6 +26,9 @@ jobs:
       - name: Run golangci-lint
         run: golangci-lint run ./...
 
+      - name: Run casbin SQL lint guard
+        run: bash scripts/lint-casbin-sql.sh
+
   test:
     name: Test
     runs-on: ubuntu-latest

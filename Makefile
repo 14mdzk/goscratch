@@ -1,4 +1,4 @@
-.PHONY: help dev dev-worker dev-no-air build test test-ci test-integration lint clean migrate-up migrate-down migrate-create sqlc docker-up docker-down worker-build
+.PHONY: help dev dev-worker dev-no-air build test test-ci test-integration lint lint-casbin-sql clean migrate-up migrate-down migrate-create sqlc docker-up docker-down worker-build
 
 # Default target
 help:
@@ -81,9 +81,12 @@ test-coverage:
 	@echo "Coverage report: coverage.html"
 
 # Lint
-lint:
+lint: lint-casbin-sql
 	@echo "Running linter..."
 	@golangci-lint run ./...
+
+lint-casbin-sql:
+	@bash scripts/lint-casbin-sql.sh
 
 # Clean
 clean:

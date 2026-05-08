@@ -17,6 +17,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - `App.Shutdown` is now phased with per-phase deadline budgets (40% HTTP server, 5% metrics, 5% SSE, 10% authorizer, 15% bulk adapters, 10% DB, 15% tracer). Each phase logs its received budget and observed duration. Tracer is the **last** phase so spans emitted by every prior phase still flush. Closes PR-04 task 3.
 - `App.Authorizer` field is now actually populated in `app.New` (previously declared but never assigned, leaking the Casbin `*sql.DB` per process restart) and `app.Authorizer.Start(ctx)` is invoked at boot. Closes block-ship #10.
+- CI lint that rejects raw-SQL writes to `casbin_rule(s)` outside the casbin adapter (`internal/adapter/casbin/`). Guard is wired into `make lint` and the GitHub Actions lint job. Closes punch-list row #11.
 - `port.Authorizer` interface gains `Start(ctx context.Context) error` for lifecycle management. All implementors (`Adapter`, `NoOpAdapter`, and test mocks) updated. Closes PR-03b task 1.
 - `casbin.Config` extended with `ReloadInterval time.Duration` (0 → 5-minute default) and `Watcher persist.Watcher` (nil = backstop-tick only). Closes PR-03b task 3.
 - `casbin.Adapter.Start(ctx)` wires the watcher callback and launches the backstop-reload tick goroutine that calls `LoadPolicy()` every `ReloadInterval`, cancelling on `ctx.Done()`. Closes PR-03b task 4.
