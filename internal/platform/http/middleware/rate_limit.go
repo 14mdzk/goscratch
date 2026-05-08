@@ -2,7 +2,7 @@ package middleware
 
 import (
 	"context"
-	"fmt"
+	"io"
 	"log/slog"
 	"strconv"
 	"sync"
@@ -27,10 +27,13 @@ type RateLimitConfig struct {
 type rateLimitBackend interface {
 	// Allow checks if a request is allowed and returns the current count
 	Allow(ctx context.Context, key string, max int, window time.Duration) (allowed bool, remaining int, resetAt time.Time, err error)
+	// Close releases any resources held by the backend (e.g. stops the janitor goroutine).
+	Close() error
 }
 
-// RateLimit returns a rate limiting middleware
-func RateLimit(cfg RateLimitConfig, cache port.Cache) fiber.Handler {
+// RateLimit returns a rate limiting middleware and a Closer that must be called
+// on application shutdown to release backend resources (stop janitor goroutines).
+func RateLimit(cfg RateLimitConfig, cache port.Cache) (fiber.Handler, io.Closer) {
 	// Apply defaults
 	if cfg.Max <= 0 {
 		cfg.Max = 100
@@ -49,7 +52,7 @@ func RateLimit(cfg RateLimitConfig, cache port.Cache) fiber.Handler {
 		backend = newMemoryBackend()
 	}
 
-	return func(c *fiber.Ctx) error {
+	handler := func(c *fiber.Ctx) error {
 		key := cfg.KeyFunc(c)
 
 		allowed, remaining, resetAt, err := backend.Allow(c.UserContext(), key, cfg.Max, cfg.Window)
@@ -74,6 +77,8 @@ func RateLimit(cfg RateLimitConfig, cache port.Cache) fiber.Handler {
 
 		return c.Next()
 	}
+
+	return handler, backend
 }
 
 // defaultKeyFunc extracts the client IP as the rate limit key
@@ -88,8 +93,10 @@ func defaultKeyFunc(c *fiber.Ctx) string {
 // --- In-memory backend ---
 
 type memoryBackend struct {
-	mu      sync.Mutex
-	windows map[string]*slidingWindow
+	mu        sync.Mutex
+	windows   map[string]*slidingWindow
+	stop      chan struct{}
+	closeOnce sync.Once
 }
 
 type slidingWindow struct {
@@ -100,6 +107,7 @@ type slidingWindow struct {
 func newMemoryBackend() *memoryBackend {
 	mb := &memoryBackend{
 		windows: make(map[string]*slidingWindow),
+		stop:    make(chan struct{}),
 	}
 	// Start periodic cleanup
 	go mb.cleanup()
@@ -146,16 +154,29 @@ func (mb *memoryBackend) cleanup() {
 	ticker := time.NewTicker(1 * time.Minute)
 	defer ticker.Stop()
 
-	for range ticker.C {
-		mb.mu.Lock()
-		now := time.Now()
-		for key, sw := range mb.windows {
-			if now.After(sw.expiresAt) {
-				delete(mb.windows, key)
+	for {
+		select {
+		case <-ticker.C:
+			mb.mu.Lock()
+			now := time.Now()
+			for key, sw := range mb.windows {
+				if now.After(sw.expiresAt) {
+					delete(mb.windows, key)
+				}
 			}
+			mb.mu.Unlock()
+		case <-mb.stop:
+			return
 		}
-		mb.mu.Unlock()
 	}
+}
+
+// Close stops the janitor goroutine. It is safe to call multiple times.
+func (mb *memoryBackend) Close() error {
+	mb.closeOnce.Do(func() {
+		close(mb.stop)
+	})
+	return nil
 }
 
 // --- Redis backend ---
@@ -170,25 +191,19 @@ func newRedisBackend(cache port.Cache) *redisBackend {
 
 func (rb *redisBackend) Allow(ctx context.Context, key string, maxReqs int, window time.Duration) (allowed bool, remaining int, resetAt time.Time, err error) {
 	now := time.Now()
-	windowSec := int(window.Seconds())
-	windowKey := fmt.Sprintf("ratelimit:%s:%d", key, now.Unix()/int64(windowSec))
-	resetAt = time.Unix(((now.Unix()/int64(windowSec))+1)*int64(windowSec), 0)
 
-	// Increment counter
-	count, err := rb.cache.Increment(ctx, windowKey)
-	if err != nil {
-		return true, maxReqs, resetAt, err
+	ok, rem, _, redisErr := rb.cache.SlidingWindowAllow(ctx, key, maxReqs, window)
+	if redisErr != nil {
+		return true, maxReqs, now.Add(window), redisErr
 	}
 
-	// Set expiry on first request
-	if count == 1 {
-		_ = rb.cache.Expire(ctx, windowKey, window)
-	}
+	// resetAt approximation: now + window (exact oldest-entry expiry is inside Redis)
+	resetAt = now.Add(window)
+	return ok, rem, resetAt, nil
+}
 
-	if int(count) > maxReqs {
-		return false, 0, resetAt, nil
-	}
-
-	remaining = maxReqs - int(count)
-	return true, remaining, resetAt, nil
+// Close is a no-op for the Redis backend; the cache connection is owned and
+// closed by the App.
+func (rb *redisBackend) Close() error {
+	return nil
 }

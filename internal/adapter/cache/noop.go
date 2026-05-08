@@ -62,6 +62,13 @@ func (c *NoOpCache) Expire(ctx context.Context, key string, ttl time.Duration) e
 	return nil
 }
 
+// SlidingWindowAllow always allows on the NoOp backend.  When Redis is
+// unavailable the in-memory backend is used instead, so this path is only
+// hit if someone deliberately passes a NoOpCache to the rate-limit middleware.
+func (c *NoOpCache) SlidingWindowAllow(_ context.Context, _ string, maxReqs int, _ time.Duration) (allowed bool, remaining, retryAfter int, err error) {
+	return true, maxReqs, 0, nil
+}
+
 func (c *NoOpCache) Close() error {
 	return nil
 }

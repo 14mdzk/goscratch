@@ -38,6 +38,13 @@ type Cache interface {
 	// Expire sets a TTL on an existing key
 	Expire(ctx context.Context, key string, ttl time.Duration) error
 
+	// SlidingWindowAllow checks a sliding-window rate limit using a sorted-set
+	// of timestamps.  The operation is atomic (single Lua script on Redis).
+	// Returns (allowed, remaining, retryAfterSeconds, error).
+	// NoOpCache always returns (true, maxReqs, 0, nil) — use the in-memory backend
+	// for single-instance rate limiting without Redis.
+	SlidingWindowAllow(ctx context.Context, key string, maxReqs int, window time.Duration) (bool, int, int, error)
+
 	// Close closes the cache connection
 	Close() error
 }

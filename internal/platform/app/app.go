@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	nethttp "net/http"
 	"time"
 
@@ -37,19 +38,20 @@ import (
 
 // App holds all application dependencies
 type App struct {
-	Config         *config.Config
-	Logger         *logger.Logger
-	DB             *pgxpool.Pool
-	Server         *http.Server
-	Cache          port.Cache
-	Queue          port.Queue
-	Storage        port.Storage
-	SSE            port.SSEBroker
-	Auditor        port.Auditor
-	Authorizer     port.Authorizer
-	Email          port.EmailSender
-	metricsServer  *nethttp.Server
-	tracerShutdown func(context.Context) error
+	Config          *config.Config
+	Logger          *logger.Logger
+	DB              *pgxpool.Pool
+	Server          *http.Server
+	Cache           port.Cache
+	Queue           port.Queue
+	Storage         port.Storage
+	SSE             port.SSEBroker
+	Auditor         port.Auditor
+	Authorizer      port.Authorizer
+	Email           port.EmailSender
+	metricsServer   *nethttp.Server
+	tracerShutdown  func(context.Context) error
+	rateLimitCloser io.Closer
 }
 
 // New creates a new App instance with all dependencies
@@ -273,6 +275,7 @@ func New(ctx context.Context, cfg *config.Config) (*App, error) {
 	app.Use(middleware.Logger(log))
 
 	// Add rate limiting middleware if enabled
+	var rateLimitCloser io.Closer
 	if cfg.RateLimit.Enabled {
 		rlWindow := time.Duration(cfg.RateLimit.WindowSec) * time.Second
 		if rlWindow <= 0 {
@@ -282,11 +285,13 @@ func New(ctx context.Context, cfg *config.Config) (*App, error) {
 		if rlMax <= 0 {
 			rlMax = 100
 		}
-		app.Use(middleware.RateLimit(middleware.RateLimitConfig{
+		rlHandler, rlCloser := middleware.RateLimit(middleware.RateLimitConfig{
 			Max:      rlMax,
 			Window:   rlWindow,
 			UseRedis: cfg.Redis.Enabled,
-		}, cacheAdapter))
+		}, cacheAdapter)
+		rateLimitCloser = rlCloser
+		app.Use(rlHandler)
 		log.Info("Rate limiting enabled", "max", rlMax, "window_sec", cfg.RateLimit.WindowSec)
 	}
 
@@ -325,19 +330,20 @@ func New(ctx context.Context, cfg *config.Config) (*App, error) {
 	}
 
 	return &App{
-		Config:         cfg,
-		Logger:         log,
-		DB:             pool,
-		Server:         server,
-		Cache:          cacheAdapter,
-		Queue:          queueAdapter,
-		Storage:        storageAdapter,
-		SSE:            sseBroker,
-		Auditor:        auditor,
-		Authorizer:     authorizer,
-		Email:          emailSender,
-		metricsServer:  metricsServer,
-		tracerShutdown: tracerShutdown,
+		Config:          cfg,
+		Logger:          log,
+		DB:              pool,
+		Server:          server,
+		Cache:           cacheAdapter,
+		Queue:           queueAdapter,
+		Storage:         storageAdapter,
+		SSE:             sseBroker,
+		Auditor:         auditor,
+		Authorizer:      authorizer,
+		Email:           emailSender,
+		metricsServer:   metricsServer,
+		tracerShutdown:  tracerShutdown,
+		rateLimitCloser: rateLimitCloser,
 	}, nil
 }
 
@@ -425,6 +431,11 @@ func (a *App) Shutdown(ctx context.Context) error {
 	// 5. Bulk adapters. None of these accept a ctx; we run them under the
 	//    phase budget so a hung Close cannot stall the rest.
 	runPhase("adapters", 0.15, func(_ context.Context) error {
+		if a.rateLimitCloser != nil {
+			if err := a.rateLimitCloser.Close(); err != nil {
+				a.Logger.Error("rate limit backend close", "error", err)
+			}
+		}
 		if a.Cache != nil {
 			_ = a.Cache.Close()
 		}

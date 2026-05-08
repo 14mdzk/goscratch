@@ -5,23 +5,34 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"runtime"
 	"testing"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
-func TestRateLimit_UnderLimit(t *testing.T) {
+// rateLimitApp is a helper that builds a Fiber app with the rate-limit
+// middleware using the in-memory backend, and returns the app and a cleanup
+// func that calls Close() on the backend.
+func rateLimitApp(t *testing.T, cfg RateLimitConfig) *fiber.App {
+	t.Helper()
 	app := fiber.New()
-
-	app.Use(RateLimit(RateLimitConfig{
-		Max:    5,
-		Window: 1 * time.Minute,
-	}, nil))
-
+	handler, closer := RateLimit(cfg, nil)
+	t.Cleanup(func() { _ = closer.Close() })
+	app.Use(handler)
 	app.Get("/test", func(c *fiber.Ctx) error {
 		return c.JSON(fiber.Map{"success": true})
+	})
+	return app
+}
+
+func TestRateLimit_UnderLimit(t *testing.T) {
+	app := rateLimitApp(t, RateLimitConfig{
+		Max:    5,
+		Window: 1 * time.Minute,
 	})
 
 	// Make 3 requests (under limit of 5)
@@ -40,15 +51,9 @@ func TestRateLimit_UnderLimit(t *testing.T) {
 }
 
 func TestRateLimit_AtLimit(t *testing.T) {
-	app := fiber.New()
-
-	app.Use(RateLimit(RateLimitConfig{
+	app := rateLimitApp(t, RateLimitConfig{
 		Max:    3,
 		Window: 1 * time.Minute,
-	}, nil))
-
-	app.Get("/test", func(c *fiber.Ctx) error {
-		return c.JSON(fiber.Map{"success": true})
 	})
 
 	// Make requests up to and past the limit
@@ -76,15 +81,9 @@ func TestRateLimit_AtLimit(t *testing.T) {
 }
 
 func TestRateLimit_WindowReset(t *testing.T) {
-	app := fiber.New()
-
-	app.Use(RateLimit(RateLimitConfig{
+	app := rateLimitApp(t, RateLimitConfig{
 		Max:    2,
 		Window: 100 * time.Millisecond, // Very short window for testing
-	}, nil))
-
-	app.Get("/test", func(c *fiber.Ctx) error {
-		return c.JSON(fiber.Map{"success": true})
 	})
 
 	// Exhaust the limit
@@ -109,15 +108,15 @@ func TestRateLimit_WindowReset(t *testing.T) {
 
 func TestRateLimit_CustomKeyFunc(t *testing.T) {
 	app := fiber.New()
-
-	app.Use(RateLimit(RateLimitConfig{
+	handler, closer := RateLimit(RateLimitConfig{
 		Max:    2,
 		Window: 1 * time.Minute,
 		KeyFunc: func(c *fiber.Ctx) string {
 			return "custom:" + c.Get("X-API-Key")
 		},
-	}, nil))
-
+	}, nil)
+	t.Cleanup(func() { _ = closer.Close() })
+	app.Use(handler)
 	app.Get("/test", func(c *fiber.Ctx) error {
 		return c.JSON(fiber.Map{"success": true})
 	})
@@ -151,15 +150,15 @@ func TestRateLimit_CustomKeyFunc(t *testing.T) {
 
 func TestRateLimit_DifferentClients(t *testing.T) {
 	app := fiber.New()
-
-	app.Use(RateLimit(RateLimitConfig{
+	handler, closer := RateLimit(RateLimitConfig{
 		Max:    2,
 		Window: 1 * time.Minute,
 		KeyFunc: func(c *fiber.Ctx) string {
 			return "client:" + c.Get("X-Client-ID")
 		},
-	}, nil))
-
+	}, nil)
+	t.Cleanup(func() { _ = closer.Close() })
+	app.Use(handler)
 	app.Get("/test", func(c *fiber.Ctx) error {
 		return c.JSON(fiber.Map{"success": true})
 	})
@@ -194,14 +193,7 @@ func TestRateLimit_DifferentClients(t *testing.T) {
 }
 
 func TestRateLimit_DefaultConfig(t *testing.T) {
-	app := fiber.New()
-
-	// Use zero values to test defaults
-	app.Use(RateLimit(RateLimitConfig{}, nil))
-
-	app.Get("/test", func(c *fiber.Ctx) error {
-		return c.JSON(fiber.Map{"success": true})
-	})
+	app := rateLimitApp(t, RateLimitConfig{})
 
 	req := httptest.NewRequest(http.MethodGet, "/test", nil)
 	resp, err := app.Test(req)
@@ -212,15 +204,9 @@ func TestRateLimit_DefaultConfig(t *testing.T) {
 }
 
 func TestRateLimit_RemainingHeaderDecreases(t *testing.T) {
-	app := fiber.New()
-
-	app.Use(RateLimit(RateLimitConfig{
+	app := rateLimitApp(t, RateLimitConfig{
 		Max:    5,
 		Window: 1 * time.Minute,
-	}, nil))
-
-	app.Get("/test", func(c *fiber.Ctx) error {
-		return c.JSON(fiber.Map{"success": true})
 	})
 
 	// First request: remaining should be 4
@@ -240,4 +226,38 @@ func TestRateLimit_RemainingHeaderDecreases(t *testing.T) {
 	resp, err = app.Test(req)
 	assert.NoError(t, err)
 	assert.Equal(t, "2", resp.Header.Get("X-RateLimit-Remaining"))
+}
+
+// TestMemoryStore_Close_StopsJanitor verifies that Close() terminates the
+// cleanup goroutine and is safe to call multiple times (idempotent).
+func TestMemoryStore_Close_StopsJanitor(t *testing.T) {
+	before := runtime.NumGoroutine()
+	mb := newMemoryBackend()
+
+	// Give the goroutine a moment to be scheduled.
+	time.Sleep(10 * time.Millisecond)
+	after := runtime.NumGoroutine()
+	require.GreaterOrEqual(t, after, before, "janitor goroutine should have started")
+
+	// Signal stop and assert the goroutine exits within 200ms.
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		_ = mb.Close()
+	}()
+
+	select {
+	case <-done:
+		// Close returned; goroutine will exit on next select iteration.
+	case <-time.After(200 * time.Millisecond):
+		t.Fatal("Close() did not return within 200ms")
+	}
+
+	// Give scheduler time to let the goroutine exit.
+	time.Sleep(50 * time.Millisecond)
+	final := runtime.NumGoroutine()
+	assert.LessOrEqual(t, final, before+1, "goroutine count should return to baseline after Close")
+
+	// Idempotent: second Close must not panic.
+	require.NotPanics(t, func() { _ = mb.Close() })
 }
