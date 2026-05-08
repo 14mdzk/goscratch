@@ -10,14 +10,14 @@ Each PR closes a coherent set of findings. Order chosen so each PR is independen
 | 2 | [Secure defaults](./pr-02-secure-defaults.md) — JWT secret guard, `sslmode=require`, prod stack-trace gate, generic error handler, `/metrics` lockdown | Block-ship #2, #6, #7, #8, #9 + `/metrics` should-fix | low | 2h | ✅ shipped [#15](https://github.com/14mdzk/goscratch/pull/15) |
 | 3 | [Auth hardening](./pr-03-auth-hardening.md) — logout authn, Casbin fail-fast, refresh-on-NoOp gate, rate-limit fail-closed, iss/aud strict, dual-key revoke | Block-ship #3, #4, #5 + 4 should-fix | medium | 4h | ✅ shipped [#19](https://github.com/14mdzk/goscratch/pull/19) |
 | 3b | [Authz cache infra](./pr-03b-authz-cache-infra.md) — `Authorizer.Start` lifecycle, pluggable `persist.WatcherEx` (noop/memory/redis), backstop reload tick, incremental policy load, `validatePolicyArgs` guard | Cross-cutting (auth lifecycle + perf) | medium | 6h | ✅ shipped [#22](https://github.com/14mdzk/goscratch/pull/22) |
-| 4 | [Shutdown rewrite](./pr-04-shutdown-rewrite.md) — `Authorizer` wired + closed, sub-budgets, tracer last, SSE per-conn UUID, worker `wg` covers real work, retry select on ctx | Block-ship #10, #11, #12, #14 + lifecycle should-fix | medium-high | 1d | in review |
+| 4 | [Shutdown rewrite](./pr-04-shutdown-rewrite.md) — `Authorizer` wired + closed, sub-budgets, tracer last, SSE per-conn UUID, worker `wg` covers real work, retry select on ctx | Block-ship #10, #11, #12, #14 + lifecycle should-fix | medium-high | 1d | ✅ shipped [#24](https://github.com/14mdzk/goscratch/pull/24) |
 | 5 | [Storage download streaming + path-prefix guard + content-type sniff](./pr-05-storage-download-streaming.md) | Block-ship #13 + 2 should-fix | low | 3h | ✅ shipped [#16](https://github.com/14mdzk/goscratch/pull/16) |
 | 6 | [Pattern alignment](./pr-06-pattern-alignment.md) — UseCase interfaces for role/storage/job, auth user-repo reuse, Claims to domain, `errors.Is` | Idiom should-fix batch | low | 3h | in review |
 | 7 | [RabbitMQ correctness](./pr-07-rabbitmq-correctness.md) — per-goroutine channels, `Qos`, NotifyClose reconnect | Concurrency should-fix | medium | 4h | ✅ shipped [#17](https://github.com/14mdzk/goscratch/pull/17) |
 | 8 | [SMTP + Postgres rollback context discipline](./pr-08-smtp-and-tx-context.md) | 2 should-fix | low | 1h | ✅ shipped [#18](https://github.com/14mdzk/goscratch/pull/18) |
 | 9 | Rate-limit hardening — sliding window Redis, ProxyHeader, memory cleanup stop chan | 3 should-fix | low | 3h | blocked by #3 |
 | 10 | Authz decision cache — `subject:obj:act → bool` cache with explicit invalidation matrix + bench evidence | Perf follow-up | medium | 4h | unblocked (post-#22) |
-| 11 | Raw-SQL lint guard — CI script rejects `(INSERT\|UPDATE\|DELETE).*casbin_rule` outside `internal/adapter/casbin/...`; wire into `make lint` + CI | Defense-in-depth (split out of #3b) | low | 1h | pending |
+| 11 | [Raw-SQL lint guard](./pr-11-casbin-sql-lint.md) — CI script rejects `(INSERT\|UPDATE\|DELETE).*casbin_rule` outside `internal/adapter/casbin/...`; wire into `make lint` + CI | Defense-in-depth (split out of #3b) | low | 1h | in review |
 
 ---
 
