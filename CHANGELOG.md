@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### CI / Tooling
+
+- Added `make vuln` target: installs `govulncheck@v1.3.0` (pinned) and runs `govulncheck ./...` against the module graph. Exits non-zero on any finding.
+- Added `vuln` job to `.github/workflows/ci.yml` running in parallel with `lint`, `test`, and `build`. Uses `actions/setup-go@v5` with `go-version-file: go.mod`. Pins `govulncheck@v1.3.0`. Closes v1.2 punch-list row #15.
+
+### Security
+
+- Bumped Go toolchain directive `go 1.25.1` → `go 1.25.10`. Clears 27 stdlib CVEs reachable from application call paths including two `html/template` XSS bypasses (GO-2026-4982, GO-2026-4980), a TLS 1.3 KeyUpdate DoS (GO-2026-4870), and incorrect TLS encryption-level handling (GO-2026-4340). See https://go.dev/doc/devel/release for full release notes.
+- Bumped `golang.org/x/net` `v0.50.0` → `v0.53.0`. Fixes HTTP/2 server panic on crafted frames (GO-2026-4559, fixed in v0.51.0) and infinite loop on bad SETTINGS_MAX_FRAME_SIZE (GO-2026-4918, fixed in v0.53.0).
+- Bumped `github.com/gofiber/fiber/v2` `v2.52.10` → `v2.52.12`. Patches route-parameter overflow leading to DoS (GO-2026-4543). See https://github.com/gofiber/fiber/releases for release notes. No API or middleware behaviour changes observed.
+
 ## [1.1.0] - 2026-05-09 — Hardening
 
 Pre-ship hardening release. Closes the 2026-05-02 audit punch-list (`docs/audit/punch-list.md`): 14 block-ship findings + ~30 should-fix findings shipped across 11 PRs (#13, #15, #16, #17, #18, #19, #22, #24, #25, #26, #27, #28). Several entries below are **breaking** — operators upgrading from v1.0 must read the [Secure-defaults checklist](docs/QUICKSTART.md#secure-defaults-checklist) before booting.
