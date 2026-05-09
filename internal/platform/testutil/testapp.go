@@ -115,7 +115,12 @@ func NewTestApp(ctx context.Context, pgConnStr, redisAddr string) (*fiber.App, f
 
 	transactor := database.NewTransactor(pool)
 
-	healthModule := health.NewModule()
+	healthModule := health.NewModule(2*time.Second,
+		health.NewPostgresChecker(pool),
+		health.NewCacheChecker(cacheAdapter),
+		health.NewQueueChecker(queueAdapter),
+		health.NewAuthzChecker(authorizer),
+	)
 	sharedUserRepo := userrepo.NewRepository(pool)
 	authModule := auth.NewModule(sharedUserRepo, cacheAdapter, auditor, jwtCfg)
 	userModule := user.NewModule(pool, transactor, auditor, authorizer, cacheAdapter, jwtCfg.Secret, authModule.Revoker())

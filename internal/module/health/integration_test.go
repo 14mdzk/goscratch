@@ -28,7 +28,7 @@ func TestHealthEndpoint(t *testing.T) {
 	require.NoError(t, err)
 	defer appCleanup()
 
-	t.Run("GET /health returns 200", func(t *testing.T) {
+	t.Run("GET /health returns 200 (liveness alias)", func(t *testing.T) {
 		req, _ := http.NewRequest(http.MethodGet, "/health", nil)
 		resp, err := app.Test(req, -1)
 		require.NoError(t, err)
@@ -38,25 +38,33 @@ func TestHealthEndpoint(t *testing.T) {
 
 		body, err := io.ReadAll(resp.Body)
 		require.NoError(t, err)
-		assert.Contains(t, string(body), `"success":true`)
-		assert.Contains(t, string(body), `"status":"ok"`)
+		assert.Contains(t, string(body), `"status":"alive"`)
 	})
 
-	t.Run("GET /health/ready returns 200", func(t *testing.T) {
-		req, _ := http.NewRequest(http.MethodGet, "/health/ready", nil)
+	t.Run("GET /healthz/live returns 200", func(t *testing.T) {
+		req, _ := http.NewRequest(http.MethodGet, "/healthz/live", nil)
 		resp, err := app.Test(req, -1)
 		require.NoError(t, err)
 		defer resp.Body.Close()
 
 		assert.Equal(t, http.StatusOK, resp.StatusCode)
+
+		body, err := io.ReadAll(resp.Body)
+		require.NoError(t, err)
+		assert.Contains(t, string(body), `"status":"alive"`)
 	})
 
-	t.Run("GET /health/live returns 200", func(t *testing.T) {
-		req, _ := http.NewRequest(http.MethodGet, "/health/live", nil)
+	t.Run("GET /healthz/ready returns 200 on healthy stack", func(t *testing.T) {
+		req, _ := http.NewRequest(http.MethodGet, "/healthz/ready", nil)
 		resp, err := app.Test(req, -1)
 		require.NoError(t, err)
 		defer resp.Body.Close()
 
 		assert.Equal(t, http.StatusOK, resp.StatusCode)
+
+		body, err := io.ReadAll(resp.Body)
+		require.NoError(t, err)
+		assert.Contains(t, string(body), `"status":"ready"`)
+		assert.Contains(t, string(body), `"database":"ok"`)
 	})
 }

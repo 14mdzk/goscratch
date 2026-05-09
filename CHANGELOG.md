@@ -29,6 +29,38 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Bumped `golang.org/x/net` `v0.50.0` → `v0.53.0`. Fixes HTTP/2 server panic on crafted frames (GO-2026-4559, fixed in v0.51.0) and infinite loop on bad SETTINGS_MAX_FRAME_SIZE (GO-2026-4918, fixed in v0.53.0).
 - Bumped `github.com/gofiber/fiber/v2` `v2.52.10` → `v2.52.12`. Patches route-parameter overflow leading to DoS (GO-2026-4543). See https://github.com/gofiber/fiber/releases for release notes. No API or middleware behaviour changes observed.
 
+### Added
+
+- `GET /healthz/live` — liveness probe; always returns 200 without probing any
+  dependency. Suitable for Kubernetes `livenessProbe`.
+- `GET /healthz/ready` — readiness probe; runs Postgres, Redis, RabbitMQ, and
+  Casbin sub-checks in parallel under a configurable deadline (default 2 s via
+  `HEALTH_READINESS_TIMEOUT_SEC`). Returns 200 when all checks pass, 503 when
+  any fail. Response body lists each check name with "ok" or a short sanitised
+  reason. NoOp adapters (disabled dependencies) report `<name>(noop)` and
+  always pass. Closes v1.2 punch-list row #13.
+- `health.HealthChecker` interface (`Name() string`, `Check(ctx) error`) in
+  `internal/module/health/checker.go` with four built-in adapters: Postgres
+  (`pool.Ping`), Redis cache (`Exists` probe, skip if NoOp), RabbitMQ
+  (`DeclareQueue` idempotent probe, skip if NoOp), Casbin authorizer
+  (`EnforceWithContext` probe, skip if NoOp).
+- `config.HealthConfig.ReadinessTimeout()` — new config knob; set via
+  `HEALTH_READINESS_TIMEOUT_SEC` (integer seconds; zero defaults to 2 s).
+
+### Changed
+
+- `GET /health` is now a **deprecated alias** for `/healthz/live` (returns the
+  liveness payload). Migrate Kubernetes probes to `/healthz/live` and
+  `/healthz/ready`. The alias will be removed in a future major version.
+- `health.NewModule()` now accepts `(readinessTimeout time.Duration, checkers
+  ...HealthChecker)` instead of no arguments. Callers in `app.go` and
+  `testutil/testapp.go` updated to pass live adapters.
+
+### Removed
+
+- `GET /health/ready` and `GET /health/live` — these old paths are no longer
+  registered. Callers must migrate to `/healthz/ready` and `/healthz/live`.
+
 ## [1.1.0] - 2026-05-09 — Hardening
 
 Pre-ship hardening release. Closes the 2026-05-02 audit punch-list (`docs/audit/punch-list.md`): 14 block-ship findings + ~30 should-fix findings shipped across 11 PRs (#13, #15, #16, #17, #18, #19, #22, #24, #25, #26, #27, #28). Several entries below are **breaking** — operators upgrading from v1.0 must read the [Secure-defaults checklist](docs/QUICKSTART.md#secure-defaults-checklist) before booting.
