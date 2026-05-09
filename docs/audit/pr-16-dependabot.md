@@ -3,7 +3,7 @@
 | Field | Value |
 |-------|-------|
 | Branch | `ci/dependabot` |
-| Status | planned |
+| Status | in review |
 | Audit source | No `.github/dependabot.yml` exists; go.mod, GitHub Actions, and Docker base images are never auto-bumped |
 | Closes | v1.2 punch-list row #16 |
 
@@ -13,18 +13,18 @@ Enable weekly automated dependency-update PRs across the three ecosystems used b
 
 ## Tasks
 
-- [ ] Investigate `go.mod`, `.github/workflows/*.yml`, and all `Dockerfile`/`Dockerfile.*` paths in the repo to enumerate the ecosystems and Dockerfile directories Dependabot must monitor.
-- [ ] Create `.github/dependabot.yml`:
+- [x] Investigate `go.mod`, `.github/workflows/*.yml`, and all `Dockerfile`/`Dockerfile.*` paths in the repo to enumerate the ecosystems and Dockerfile directories Dependabot must monitor.
+- [x] Create `.github/dependabot.yml`:
   - `version: 2`
   - `updates:` block with three ecosystems:
     - `package-ecosystem: gomod`, `directory: "/"`, `schedule.interval: weekly`, `groups: minor-and-patch: { update-types: [minor, patch] }`, label `dependencies`, `open-pull-requests-limit: 5`.
     - `package-ecosystem: github-actions`, `directory: "/"`, weekly, grouped same way, label `ci`.
     - `package-ecosystem: docker` for each Dockerfile directory found (likely `/` or `/deploy/docker/api`, `/deploy/docker/worker` — confirm during investigation), weekly, label `docker`.
   - Major updates remain ungrouped (Dependabot default).
-- [ ] If a `dependabot.yml` already exists with partial config, extend it; do not overwrite without confirming with lead.
-- [ ] Verify YAML lint via `yamllint` if installed, otherwise via the GitHub Dependabot config validator (`.github/dependabot.yml` is parsed by GitHub on push).
-- [ ] `CHANGELOG.md` `[Unreleased]` entry under "CI / Tooling".
-- [ ] Update `docs/audit/v1.2-punch-list.md` row #16 status → `in review`.
+- [x] If a `dependabot.yml` already exists with partial config, extend it; do not overwrite without confirming with lead.
+- [x] Verify YAML lint via `yamllint` if installed, otherwise via the GitHub Dependabot config validator (`.github/dependabot.yml` is parsed by GitHub on push).
+- [x] `CHANGELOG.md` `[Unreleased]` entry under "CI / Tooling".
+- [x] Update `docs/audit/v1.2-punch-list.md` row #16 status → `in review`.
 
 ## Acceptance Criteria
 

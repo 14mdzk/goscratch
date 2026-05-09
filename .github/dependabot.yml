@@ -1,0 +1,37 @@
+version: 2
+
+updates:
+  - package-ecosystem: gomod
+    directory: "/"
+    schedule:
+      interval: weekly
+    groups:
+      minor-and-patch:
+        update-types:
+          - minor
+          - patch
+    labels:
+      - dependencies
+    open-pull-requests-limit: 5
+
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+    groups:
+      minor-and-patch:
+        update-types:
+          - minor
+          - patch
+    labels:
+      - ci
+    open-pull-requests-limit: 5
+
+  # Monitors Dockerfile at /. Docker Compose image pins are not auto-updated; see docs/audit/v1.2-punch-list.md
+  - package-ecosystem: docker
+    directory: "/"
+    schedule:
+      interval: weekly
+    labels:
+      - docker
+    open-pull-requests-limit: 5
