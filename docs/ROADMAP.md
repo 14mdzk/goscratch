@@ -245,3 +245,40 @@ PR slicing plan + status ledger: see `docs/audit/punch-list.md`. Per-PR scope fi
 - fasthttp Stream Body Lifetime
 - RabbitMQ Channel Goroutine Safety
 - Sliding vs Fixed Window Rate Limit
+
+---
+
+## v1.2 - Production-Readiness Follow-ups (PLANNED)
+
+Plan source: [`docs/audit/v1.2-plan.md`](./audit/v1.2-plan.md). Slicing ledger: [`docs/audit/v1.2-punch-list.md`](./audit/v1.2-punch-list.md).
+
+v1.1 closed correctness and security defects in the code. v1.2 closes the gaps surrounding the code: operator runbooks, supply-chain CVE scanning, dependency-drift control, and integration-test coverage left after the v1.1 hardening rush. Three tiers, ~5 working days total.
+
+### Tier A — Security / CI Hardening
+
+| PR | Title | Status |
+|----|-------|--------|
+| 13 | Health readiness probe wired (`/healthz/live`, `/healthz/ready`, `/health` alias) | Planned |
+| 14 | OpenAPI drift sync — `/auth/logout` bearer, upload 415, rate-limited 429 + `RateLimit-*` headers | Planned |
+| 15 | `govulncheck` CI job + `make vuln` target | Planned |
+| 16 | Dependabot config — gomod + actions + docker, weekly | Planned |
+
+### Tier B — Operator Surface
+
+| PR | Title | Status |
+|----|-------|--------|
+| 17 | `docs/RUNBOOK.md` — incident playbooks for v1.1 security ops | Planned |
+| 18 | Audit-log retention scheduler — external cron pattern + sample container | Planned |
+| 19 | Casbin watcher channel versioning — `casbin:policy:update:v1` | Planned |
+
+### Tier C — Test Coverage
+
+| PR | Title | Status |
+|----|-------|--------|
+| 20 | Auth dual-key revoke integration test (Postgres + Redis testcontainer) | Planned |
+| 21 | Casbin watcher e2e test (memory + redis, two enforcers) | Planned |
+| 22 | Worker shutdown wg race test (slow-handler + mid-backoff retry) | Planned |
+
+### Out of scope for v1.2
+
+Inherits v1.1 out-of-scope (circuit breakers, event bus, plugin adapters, gRPC, multi-tenancy) and adds: distributed tracing across services, OAuth provider integration, webhook delivery system. Same overengineer guard from the 2026-05-02 audit.
