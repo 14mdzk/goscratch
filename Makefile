@@ -1,4 +1,4 @@
-.PHONY: help dev dev-worker dev-no-air build test test-ci test-integration lint lint-casbin-sql clean migrate-up migrate-down migrate-create sqlc docker-up docker-down worker-build
+.PHONY: help dev dev-worker dev-no-air build test test-ci test-integration lint lint-casbin-sql vuln clean migrate-up migrate-down migrate-create sqlc docker-up docker-down worker-build
 
 # Default target
 help:
@@ -11,6 +11,7 @@ help:
 	@echo "  make test             - Run tests"
 	@echo "  make test-integration - Run integration tests (requires Docker)"
 	@echo "  make lint             - Run linter"
+	@echo "  make vuln             - Run govulncheck vulnerability scanner"
 	@echo "  make clean            - Clean build artifacts"
 	@echo "  make migrate-up       - Run database migrations up"
 	@echo "  make migrate-down     - Rollback last migration"
@@ -79,6 +80,13 @@ test-coverage:
 	@go test -v -race -coverprofile=coverage.out ./...
 	@go tool cover -html=coverage.out -o coverage.html
 	@echo "Coverage report: coverage.html"
+
+# Vulnerability scanning
+vuln:
+	@echo "Installing govulncheck@v1.3.0..."
+	@go install golang.org/x/vuln/cmd/govulncheck@v1.3.0
+	@echo "Running govulncheck..."
+	@govulncheck ./...
 
 # Lint
 lint: lint-casbin-sql

@@ -3,7 +3,7 @@
 | Field | Value |
 |-------|-------|
 | Branch | `ci/govulncheck` |
-| Status | planned |
+| Status | in review |
 | Audit source | `.github/workflows/ci.yml` does not run `govulncheck`; supply-chain CVE drift is invisible until release time |
 | Closes | v1.2 punch-list row #15 |
 
@@ -13,18 +13,13 @@ Add CI-time vulnerability scanning of the Go module graph using Go's official `g
 
 ## Tasks
 
-- [ ] Investigate `.github/workflows/ci.yml`, `Makefile`, and existing lint pipeline so the new step matches conventions (Go install path, caching).
-- [ ] Add `make vuln` target to `Makefile`: installs `govulncheck@latest` (or pinned version, see Acceptance), runs `govulncheck ./...` from repo root, exits non-zero on findings.
-- [ ] Add a CI job step in `.github/workflows/ci.yml`. Two viable shapes:
-  - **A** — new dedicated `vuln` job parallel to `lint`/`test` (cleaner reporting, separate coloured check).
-  - **B** — added step inside the existing `lint` job (one fewer runner).
-  - **Default lean: A** (separate job lets the operator see vuln status independently of lint flap).
-  - Use `actions/setup-go@v5` with `go-version-file: go.mod` for parity with existing jobs.
-  - `go install golang.org/x/vuln/cmd/govulncheck@latest` then `govulncheck ./...`.
-- [ ] Pin `govulncheck` version explicitly (e.g., `@v1.1.3`) so a CVE DB rev does not silently flap CI; document the upgrade path in the PR body.
-- [ ] If the current tree has any pre-existing `govulncheck` finding, fix or document via a `// govulncheck:ignore` annotation with rationale, NOT by lowering the gate. Findings must be addressed in this PR or a follow-up row added before merge.
-- [ ] `CHANGELOG.md` `[Unreleased]` entry under "CI / Tooling".
-- [ ] Update `docs/audit/v1.2-punch-list.md` row #15 status → `in review`.
+- [x] Investigate `.github/workflows/ci.yml`, `Makefile`, and existing lint pipeline so the new step matches conventions (Go install path, caching).
+- [x] Add `make vuln` target to `Makefile`: installs `govulncheck@v1.3.0` (pinned), runs `govulncheck ./...` from repo root, exits non-zero on findings.
+- [x] Add a CI job step in `.github/workflows/ci.yml`. Shape A chosen: new dedicated `vuln` job parallel to `lint`/`test`/`build`. Uses `actions/setup-go@v5` with `go-version-file: go.mod`. Pins `govulncheck@v1.3.0`.
+- [x] Pin `govulncheck` version explicitly (`@v1.3.0` — current stable as of 2026-05-09).
+- [x] Pre-existing govulncheck findings resolved via lead-authorized dep bumps: `go 1.25.1` → `go 1.25.10`, `golang.org/x/net v0.50.0` → `v0.53.0`, `gofiber/fiber/v2 v2.52.10` → `v2.52.12`. `make vuln` now exits 0 with zero findings. `make lint test` remain green.
+- [x] `CHANGELOG.md` `[Unreleased]` entry under "CI / Tooling" and "Security".
+- [x] Update `docs/audit/v1.2-punch-list.md` row #15 status → `in review`.
 
 ## Acceptance Criteria
 
