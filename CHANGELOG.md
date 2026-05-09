@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-05-09 — Hardening
+
+Pre-ship hardening release. Closes the 2026-05-02 audit punch-list (`docs/audit/punch-list.md`): 14 block-ship findings + ~30 should-fix findings shipped across 11 PRs (#13, #15, #16, #17, #18, #19, #22, #24, #25, #26, #27, #28). Several entries below are **breaking** — operators upgrading from v1.0 must read the [Secure-defaults checklist](docs/QUICKSTART.md#secure-defaults-checklist) before booting.
+
 ### Changed
 
 - Role module now exposes a `UseCase` interface (`internal/module/role/usecase/port.go`); handler depends on the interface, not the concrete struct.

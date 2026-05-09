@@ -205,23 +205,27 @@ Improve the daily development workflow.
 
 ---
 
-## v1.1 - Pre-Ship Hardening (PLANNED)
+## v1.1 - Pre-Ship Hardening (DONE)
 
-Triggered by the 2026-05-02 pre-ship audit (see `docs/audit/2026-05-02-preship-audit.md`). 14 block-ship + ~30 should-fix findings; v1.0 is **not** ship-ready as-is despite the v1.0 checklist being complete.
+Triggered by the 2026-05-02 pre-ship audit (see `docs/audit/2026-05-02-preship-audit.md`). 14 block-ship + ~30 should-fix findings closed across 11 hardening PRs plus one release-cut PR. Tagged `v1.1.0` on 2026-05-09.
 
-PR slicing plan: see `docs/audit/punch-list.md`.
+PR slicing plan + status ledger: see `docs/audit/punch-list.md`. Per-PR scope files: `docs/audit/pr-NN-*.md`.
 
 | PR | Title | Status |
 |----|-------|--------|
-| 1 | Audit fix — context keys + decorators on storage/job + failed-login | Planned |
-| 2 | Secure defaults — JWT secret guard, `sslmode=require`, prod stack-trace gate, generic error handler, `/metrics` lockdown | Planned |
-| 3 | Auth hardening — logout authn, Casbin fail-fast, refresh-on-NoOp gate, rate-limit fail-closed, iss/aud strict | Planned |
-| 4 | Shutdown rewrite — `Authorizer` wired + closed, sub-budgets, tracer last, SSE per-conn UUID, worker `wg` covers real work, retry select on ctx | Planned |
-| 5 | Storage download streaming + path-prefix guard + content-type sniff | Planned |
-| 6 | Pattern alignment — UseCase interfaces for role/storage/job, auth user-repo reuse, Claims to domain, `errors.Is` | Planned |
-| 7 | RabbitMQ correctness — per-goroutine channels, `Qos`, NotifyClose reconnect | Planned |
-| 8 | SMTP + Postgres rollback context discipline | Planned |
-| 9 | Rate-limit hardening — sliding window Redis, ProxyHeader, memory cleanup stop chan | Planned |
+| 1 | Audit fix — context keys + decorators on storage/job + failed-login | Shipped [#13](https://github.com/14mdzk/goscratch/pull/13) |
+| 2 | Secure defaults — JWT secret guard, `sslmode=require`, prod stack-trace gate, generic error handler, `/metrics` lockdown | Shipped [#15](https://github.com/14mdzk/goscratch/pull/15) |
+| 3 | Auth hardening — logout authn, Casbin fail-fast, refresh-on-NoOp gate, rate-limit fail-closed, iss/aud strict, dual-key revoke | Shipped [#19](https://github.com/14mdzk/goscratch/pull/19) |
+| 3b | Authz cache infra — `Authorizer.Start` lifecycle, pluggable watchers (noop/memory/redis), backstop reload tick, incremental load, policy-arg validation | Shipped [#22](https://github.com/14mdzk/goscratch/pull/22) |
+| 4 | Shutdown rewrite — `Authorizer` wired + closed, sub-budgets, tracer last, SSE per-conn UUID, worker `wg` covers real work, retry select on ctx | Shipped [#24](https://github.com/14mdzk/goscratch/pull/24) |
+| 5 | Storage download streaming + path-prefix guard + content-type sniff | Shipped [#16](https://github.com/14mdzk/goscratch/pull/16) |
+| 6 | Pattern alignment — UseCase interfaces for role/storage/job, auth user-repo reuse, Claims to domain, `errors.Is` | Shipped [#27](https://github.com/14mdzk/goscratch/pull/27) |
+| 7 | RabbitMQ correctness — per-goroutine channels, `Qos`, NotifyClose reconnect | Shipped [#17](https://github.com/14mdzk/goscratch/pull/17) |
+| 8 | SMTP + Postgres rollback context discipline | Shipped [#18](https://github.com/14mdzk/goscratch/pull/18) |
+| 9 | Rate-limit hardening — sliding window Redis, trusted-proxy header, memory cleanup stop chan | Shipped [#26](https://github.com/14mdzk/goscratch/pull/26) |
+| 10 | Authz decision cache — `subject:obj:act → bool` LRU with explicit invalidation matrix + bench evidence | Shipped [#28](https://github.com/14mdzk/goscratch/pull/28) |
+| 11 | Raw-SQL casbin lint guard — CI script rejects writes to `casbin_rule(s)` outside the adapter | Shipped [#25](https://github.com/14mdzk/goscratch/pull/25) |
+| 12 | Release cut — v1.1.0 CHANGELOG slice, README/QUICKSTART/ROADMAP doc sync | This PR |
 
 ### Cross-cutting themes the audit surfaced
 
