@@ -192,11 +192,14 @@ Production configs in `deploy/`:
 
 - `docs/VISION.md` -- Project vision and design principles
 - `docs/ROADMAP.md` -- Version history and feature tracking
-- `docs/features/` -- Feature specifications (10 specs)
+- `docs/QUICKSTART.md` -- Five-minute setup + secure-defaults checklist for upgrading operators
+- `docs/features/` -- Feature specifications (12 specs)
 - `docs/adr/` -- Architecture decision records (7 ADRs)
+- `docs/audit/` -- Pre-ship audit findings, per-PR scope files, and the punch-list ledger
+- `CHANGELOG.md` -- Release history (current: v1.1.0 — Hardening)
 - `/docs` -- Interactive API explorer (Scalar, runtime)
 - `/health` -- Health check endpoint
-- `/metrics` -- Prometheus metrics
+- `/metrics` -- Prometheus metrics (bound to `127.0.0.1` since v1.1.0)
 
 ## Tech Stack
 

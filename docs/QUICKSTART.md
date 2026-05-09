@@ -126,6 +126,37 @@ make dev-worker
 
 Requires RabbitMQ to be enabled and running.
 
+## Secure-defaults checklist
+
+Required for any non-local environment (staging, production) and for anyone upgrading from v1.0 → v1.1. The application **fails to boot** if items 1–4 are not satisfied. The remaining items prevent silent security regressions.
+
+| # | Setting | Required value | Why |
+|---|---------|---------------|-----|
+| 1 | `JWT_SECRET` | Non-empty, **not** equal to the placeholder `your-super-secret-key-change-in-production`, and **≥ 32 bytes**. Generate with `openssl rand -base64 48`. | `app.New` hard-fails at startup otherwise. The committed placeholder is detected by exact match. |
+| 2 | `JWT_ISSUER` and `JWT_AUDIENCE` | Both non-empty. The defaults in `config/config.default.json` are non-empty; do not override them with empty strings. | `Config.Validate` rejects empty values. Tokens are unconditionally validated against `iss` and `aud`. |
+| 3 | `DB_SSL_MODE` | `require` (default) for production. Local dev with the bundled compose stack: set `DB_SSL_MODE=disable` explicitly. | Default flipped from `disable` → `require` in v1.1. |
+| 4 | `REDIS_ENABLED` | `true` for any environment that issues real refresh tokens. | Auth (`/auth/login`, `/auth/refresh`) is **fail-closed** on the cache: with Redis disabled or unreachable, login returns 500. A `SECURITY WARNING` is logged at boot when Redis is disabled. |
+| 5 | `SERVER_TRUSTED_PROXIES` | CSV of CIDRs for any reverse proxy in front of the API (Nginx, ALB, Cloudflare). Leave empty if the API is exposed directly. | Without this set, Fiber will not honour `X-Forwarded-For`, so per-IP rate limits and audit IPs reflect the proxy address, not the real client. With this set incorrectly, a hostile client can spoof their IP via the header. |
+| 6 | `SERVER_PROXY_HEADER` | `X-Forwarded-For` (default when `SERVER_TRUSTED_PROXIES` is set). Override only if the proxy uses a different header. | Header is only honoured when the connecting peer is a trusted proxy. |
+| 7 | `OBSERVABILITY_METRICS_PORT` | Any free port. The `/metrics` endpoint binds to `127.0.0.1:<port>` on a separate listener — **not** the public Fiber listener. | Operators must scrape from inside the host (Prometheus on the same machine, sidecar, or SSH tunnel). Exposing `/metrics` publicly is a known reconnaissance vector. |
+| 8 | Refresh tokens | Existing v1.0 refresh tokens are invalidated by the v1.1 dual-key design. All users must re-login after the upgrade. | Communicate this to clients before deploying. |
+
+After applying changes, restart the API and confirm:
+
+```bash
+curl -s http://localhost:3000/health
+# {"status":"ok"}
+```
+
+Then verify Prometheus is reachable on the **internal** port only:
+
+```bash
+curl -s http://127.0.0.1:9090/metrics | head -1
+# Should succeed locally; should fail from outside the host.
+```
+
+Full release notes for v1.1.0 are in [`CHANGELOG.md`](../CHANGELOG.md). Audit trail: [`docs/audit/`](audit/).
+
 ## Next steps
 
 - Read the feature specs in `docs/features/`
