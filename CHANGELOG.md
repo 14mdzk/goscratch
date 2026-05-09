@@ -12,6 +12,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Added `vuln` job to `.github/workflows/ci.yml` running in parallel with `lint`, `test`, and `build`. Uses `actions/setup-go@v5` with `go-version-file: go.mod`. Pins `govulncheck@v1.3.0`. Closes v1.2 punch-list row #15.
 - Added `.github/dependabot.yml` with weekly automated dependency-update PRs for three ecosystems: Go modules (label `dependencies`), GitHub Actions (label `ci`), and Docker base images (label `docker`). Minor and patch updates are grouped into a single PR per ecosystem; major updates open individually. Each ecosystem is capped at 5 open PRs. Closes v1.2 punch-list row #16.
 
+### Documentation
+
+- OpenAPI spec synced to v1.1 runtime contract (PR-14 drift sync):
+  - `/auth/logout`: added `security: [{ bearerAuth: [] }]`; endpoint has required JWT since v1.1 PR-03.
+  - `POST /files/upload`: added `415 Unsupported Media Type` response; runtime rejects non-allowlisted content types detected via byte sniffing since v1.1 PR-05.
+  - `POST /auth/login` and `POST /auth/refresh`: added `429 Too Many Requests` response and `503 Service Unavailable` (fail-closed cache-backend error, `rate_limit.go:63`); `X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimit-Reset` headers documented on both 200 and 429 responses (middleware emits on every response, `rate_limit.go:70-72`); both endpoints are protected by a per-IP rate limit (20 req / 5 min, fail-closed) since v1.1 PR-09.
+  - `POST /auth/refresh` request body description: clarified that `user_id` is not accepted; the server resolves the user ID from the lookup key.
+  - Added reusable `components.responses.TooManyRequests` (with `X-RateLimit-*` headers), `components.responses.UnsupportedMediaType`, `components.responses.ServiceUnavailable`, and `components.headers` entries for `X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimit-Reset`.
+  - Added `LogoutRequest` schema with explicit note that caller ID comes from the JWT, not the request body.
+  - Added `RATE_LIMIT_EXCEEDED`, `RATE_LIMIT_ERROR`, and `UNSUPPORTED_MEDIA_TYPE` to the `ErrorResponse.code` enum.
+
 ### Security
 
 - Bumped Go toolchain directive `go 1.25.1` → `go 1.25.10`. Clears 27 stdlib CVEs reachable from application call paths including two `html/template` XSS bypasses (GO-2026-4982, GO-2026-4980), a TLS 1.3 KeyUpdate DoS (GO-2026-4870), and incorrect TLS encryption-level handling (GO-2026-4340). See https://go.dev/doc/devel/release for full release notes.

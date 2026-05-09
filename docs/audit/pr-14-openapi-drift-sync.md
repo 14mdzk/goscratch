@@ -3,7 +3,7 @@
 | Field | Value |
 |-------|-------|
 | Branch | `docs/openapi-v1.1-drift-sync` |
-| Status | planned |
+| Status | in review |
 | Audit source | v1.1 ship cut left `docs/openapi.yaml` behind several behaviour changes (auth hardening, upload validation, rate limiting) |
 | Closes | v1.2 punch-list row #14 |
 
@@ -13,17 +13,17 @@
 
 ## Tasks
 
-- [ ] Investigate `docs/openapi.yaml` against runtime behaviour established by PR-03 (auth hardening), PR-05 (upload streaming + content-type sniff), PR-09 (rate-limit hardening). Cross-reference against the actual handler code paths in `internal/module/auth/handler.go`, `internal/module/storage/handler.go`, `internal/middleware/ratelimit/`.
-- [ ] `/auth/logout`: add `security: [{ bearerAuth: [] }]`; runtime requires `Authorization: Bearer <access_token>` since PR-03.
-- [ ] `POST /api/files/upload`: add `415 Unsupported Media Type` response referencing `apperr.UnsupportedMediaType` schema; runtime rejects when `http.DetectContentType` mismatches the upload allowlist.
-- [ ] `POST /auth/login` and `POST /auth/refresh`: add `429 TooManyRequests` response + `RateLimit-Limit`, `RateLimit-Remaining`, `RateLimit-Reset` response headers. Define a reusable `responses.TooManyRequests` component and a reusable `RateLimit-*` header set; reference from both endpoints. Apply the same `429` to other globally-rate-limited routes if the global limiter wraps them at the router level (verify against `internal/platform/server/server.go` middleware order before annotating).
-- [ ] `POST /auth/refresh` request body description: state explicitly that `user_id` is **not** accepted; the server resolves the userID from the lookup key. Extra fields are ignored, not validated. Update the schema example accordingly.
-- [ ] `/metrics`: confirm absent from the spec (correct — bound to `127.0.0.1` since v1.1; not a public surface).
-- [ ] Coordinate with PR-13: if PR-13 lands first and adds `/healthz/live` + `/healthz/ready`, this PR reconciles those paths into the spec. If this PR lands first, leave them out.
+- [x] Investigate `docs/openapi.yaml` against runtime behaviour established by PR-03 (auth hardening), PR-05 (upload streaming + content-type sniff), PR-09 (rate-limit hardening). Cross-reference against the actual handler code paths in `internal/module/auth/handler.go`, `internal/module/storage/handler.go`, `internal/middleware/ratelimit/`.
+- [x] `/auth/logout`: add `security: [{ bearerAuth: [] }]`; runtime requires `Authorization: Bearer <access_token>` since PR-03.
+- [x] `POST /api/files/upload`: add `415 Unsupported Media Type` response referencing `apperr.UnsupportedMediaType` schema; runtime rejects when `http.DetectContentType` mismatches the upload allowlist.
+- [x] `POST /auth/login` and `POST /auth/refresh`: add `429 TooManyRequests` response + `X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimit-Reset` response headers (runtime evidence: `internal/platform/http/middleware/rate_limit.go:70-72`). Also add `503 ServiceUnavailable` for fail-closed cache-backend error (`rate_limit.go:63`). Define reusable `responses.TooManyRequests` + `responses.ServiceUnavailable` components and `components.headers` entries for `X-RateLimit-*`; reference from both endpoints. Apply the same `429`/`503` to other globally-rate-limited routes if the global limiter wraps them at the router level (verify against middleware order before annotating).
+- [x] `POST /auth/refresh` request body description: state explicitly that `user_id` is **not** accepted; the server resolves the userID from the lookup key. Extra fields are ignored, not validated. Update the schema example accordingly.
+- [x] `/metrics`: confirm absent from the spec (correct — bound to `127.0.0.1` since v1.1; not a public surface).
+- [x] Coordinate with PR-13: if PR-13 lands first and adds `/healthz/live` + `/healthz/ready`, this PR reconciles those paths into the spec. If this PR lands first, leave them out. (PR-13 not yet merged; health paths left untouched.)
 - [ ] Regenerate Scalar `/docs` rendering and verify in-browser that all four changes render correctly (no schema lint errors, no broken `$ref`).
 - [ ] Run any spec linter the repo has (`spectral` or `redocly` if wired); otherwise eyeball-validate via Scalar's built-in lint.
-- [ ] `CHANGELOG.md` `[Unreleased]` entry under "Documentation".
-- [ ] Update `docs/audit/v1.2-punch-list.md` row #14 status → `in review`.
+- [x] `CHANGELOG.md` `[Unreleased]` entry under "Documentation".
+- [x] Update `docs/audit/v1.2-punch-list.md` row #14 status → `in review`.
 
 ## Acceptance Criteria
 
@@ -31,7 +31,7 @@
 - Scalar `/docs` renders without schema errors.
 - `/auth/logout`, `/auth/login`, `/auth/refresh`, `POST /api/files/upload` reflect the v1.1 runtime contract exactly.
 - No runtime code changed in this PR (docs-only).
-- Reusable `responses.TooManyRequests` component + `RateLimit-*` headers defined once and `$ref`-d, not duplicated per endpoint.
+- Reusable `responses.TooManyRequests` + `responses.ServiceUnavailable` components and `components.headers` `X-RateLimit-*` entries defined once and `$ref`-d, not duplicated per endpoint.
 
 ## Out of Scope
 
