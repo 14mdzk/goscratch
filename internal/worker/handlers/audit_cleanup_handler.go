@@ -55,16 +55,42 @@ func (h *AuditCleanupHandler) Handle(ctx context.Context, job *worker.Job) error
 	// Calculate cutoff date
 	cutoff := time.Now().AddDate(0, 0, -retentionDays)
 
-	// Delete old audit logs
-	result, err := h.db.Exec(ctx,
-		"DELETE FROM audit_logs WHERE created_at < $1",
-		cutoff,
-	)
-	if err != nil {
-		return fmt.Errorf("failed to delete old audit logs: %w", err)
+	// Delete old audit logs in batches to prevent memory issues
+	batchSize := 1000
+	totalDeleted := int64(0)
+
+	for {
+		result, err := h.db.Exec(ctx,
+			`DELETE FROM audit_logs 
+			WHERE id IN (
+				SELECT id 
+				FROM audit_logs 
+				WHERE created_at < $1 
+				LIMIT $2
+			)`,
+			cutoff,
+			batchSize,
+		)
+		if err != nil {
+			return fmt.Errorf("failed to delete old audit logs: %w", err)
+		}
+
+		deletedInBatch := result.RowsAffected()
+		totalDeleted += deletedInBatch
+
+		if deletedInBatch == 0 {
+			break // No more rows to delete
+		}
+
+		h.logger.Info("Deleted batch of audit logs",
+			"deleted_in_batch", deletedInBatch,
+			"total_deleted", totalDeleted,
+			"cutoff_date", cutoff.Format(time.RFC3339),
+			"job_id", job.ID,
+		)
 	}
 
-	rowsDeleted := result.RowsAffected()
+	rowsDeleted := totalDeleted
 
 	h.logger.Info("Audit log cleanup completed",
 		"rows_deleted", rowsDeleted,
