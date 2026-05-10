@@ -10,6 +10,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - Added `make vuln` target: installs `govulncheck@v1.3.0` (pinned) and runs `govulncheck ./...` against the module graph. Exits non-zero on any finding.
 - Added `vuln` job to `.github/workflows/ci.yml` running in parallel with `lint`, `test`, and `build`. Uses `actions/setup-go@v5` with `go-version-file: go.mod`. Pins `govulncheck@v1.3.0`. Closes v1.2 punch-list row #15.
+- Added `.github/dependabot.yml` with weekly automated dependency-update PRs for three ecosystems: Go modules (label `dependencies`), GitHub Actions (label `ci`), and Docker base images (label `docker`). Minor and patch updates are grouped into a single PR per ecosystem; major updates open individually. Each ecosystem is capped at 5 open PRs. Closes v1.2 punch-list row #16.
 
 ### Security
 
