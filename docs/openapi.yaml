@@ -104,6 +104,13 @@ paths:
       responses:
         "200":
           description: Login successful
+          headers:
+            X-RateLimit-Limit:
+              $ref: "#/components/headers/X-RateLimit-Limit"
+            X-RateLimit-Remaining:
+              $ref: "#/components/headers/X-RateLimit-Remaining"
+            X-RateLimit-Reset:
+              $ref: "#/components/headers/X-RateLimit-Reset"
           content:
             application/json:
               schema:
@@ -117,6 +124,10 @@ paths:
           $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
         "500":
           $ref: "#/components/responses/InternalError"
 
@@ -125,7 +136,11 @@ paths:
       operationId: refreshToken
       tags: [Auth]
       summary: Refresh access token
-      description: Exchanges a valid refresh token for a new pair of access and refresh tokens.
+      description: |
+        Exchanges a valid refresh token for a new pair of access and refresh tokens.
+        The request body accepts only `refresh_token`; `user_id` is **not** accepted.
+        The server resolves the user ID internally from the refresh-token lookup key.
+        Extra fields in the body are silently ignored.
       requestBody:
         required: true
         content:
@@ -135,6 +150,13 @@ paths:
       responses:
         "200":
           description: Token refreshed
+          headers:
+            X-RateLimit-Limit:
+              $ref: "#/components/headers/X-RateLimit-Limit"
+            X-RateLimit-Remaining:
+              $ref: "#/components/headers/X-RateLimit-Remaining"
+            X-RateLimit-Reset:
+              $ref: "#/components/headers/X-RateLimit-Reset"
           content:
             application/json:
               schema:
@@ -148,6 +170,10 @@ paths:
           $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
         "500":
           $ref: "#/components/responses/InternalError"
 
@@ -156,13 +182,15 @@ paths:
       operationId: logout
       tags: [Auth]
       summary: Logout
-      description: Invalidates the given refresh token.
+      description: Invalidates the given refresh token. Requires a valid JWT access token.
+      security:
+        - bearerAuth: []
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/RefreshRequest"
+              $ref: "#/components/schemas/LogoutRequest"
       responses:
         "200":
           description: Logged out successfully
@@ -172,6 +200,8 @@ paths:
                 $ref: "#/components/schemas/MessageResponse"
         "400":
           $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
         "500":
           $ref: "#/components/responses/InternalError"
 
@@ -918,6 +948,8 @@ paths:
           $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
         "500":
           $ref: "#/components/responses/InternalError"
 
@@ -1187,6 +1219,23 @@ components:
       bearerFormat: JWT
       description: JWT access token obtained from the login endpoint
 
+  headers:
+    X-RateLimit-Limit:
+      description: Maximum number of requests allowed in the current window.
+      schema:
+        type: integer
+        example: 20
+    X-RateLimit-Remaining:
+      description: Number of requests remaining in the current window.
+      schema:
+        type: integer
+        example: 17
+    X-RateLimit-Reset:
+      description: Unix timestamp (seconds) at which the current window resets.
+      schema:
+        type: integer
+        example: 1714917600
+
   parameters:
     UserID:
       name: id
@@ -1279,7 +1328,14 @@ components:
               code: CONFLICT
               message: Email already exists
     TooManyRequests:
-      description: Rate limit exceeded
+      description: Rate limit exceeded. The response always includes `X-RateLimit-Limit`, `X-RateLimit-Remaining`, and `X-RateLimit-Reset` headers.
+      headers:
+        X-RateLimit-Limit:
+          $ref: "#/components/headers/X-RateLimit-Limit"
+        X-RateLimit-Remaining:
+          $ref: "#/components/headers/X-RateLimit-Remaining"
+        X-RateLimit-Reset:
+          $ref: "#/components/headers/X-RateLimit-Reset"
       content:
         application/json:
           schema:
@@ -1287,8 +1343,19 @@ components:
           example:
             success: false
             error:
-              code: BAD_REQUEST
-              message: Rate limit exceeded
+              code: RATE_LIMIT_EXCEEDED
+              message: Too many requests, please try again later
+    UnsupportedMediaType:
+      description: Uploaded file content type is not in the server allowlist (detected via byte sniffing, not the client-supplied header).
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          example:
+            success: false
+            error:
+              code: UNSUPPORTED_MEDIA_TYPE
+              message: content type "application/zip" is not allowed
     InternalError:
       description: Internal server error
       content:
@@ -1300,6 +1367,21 @@ components:
             error:
               code: INTERNAL_ERROR
               message: An unexpected error occurred
+    ServiceUnavailable:
+      description: |
+        Rate-limit backend error (fail-closed). Returned with HTTP 503 when
+        `FailClosed=true` and the cache backend (Redis) is unavailable.
+        Applies to `/auth/login` and `/auth/refresh` which use a fail-closed
+        rate limiter (`internal/platform/http/middleware/rate_limit.go:63`).
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          example:
+            success: false
+            error:
+              code: RATE_LIMIT_ERROR
+              message: Service temporarily unavailable, please try again later
 
   schemas:
     # ── Base response wrappers ────────────────────────────────────────────
@@ -1348,6 +1430,9 @@ components:
                 - INTERNAL_ERROR
                 - SERVICE_UNAVAILABLE
                 - VALIDATION_ERROR
+                - RATE_LIMIT_EXCEEDED
+                - RATE_LIMIT_ERROR
+                - UNSUPPORTED_MEDIA_TYPE
             message:
               type: string
               description: Human-readable error message
@@ -1434,11 +1519,29 @@ components:
 
     RefreshRequest:
       type: object
+      description: |
+        Token refresh request. Only `refresh_token` is required.
+        `user_id` is **not** accepted; the server resolves the user ID internally
+        from the refresh-token lookup key. Extra fields are silently ignored.
       required:
         - refresh_token
       properties:
         refresh_token:
           type: string
+          example: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+
+    LogoutRequest:
+      type: object
+      description: |
+        Logout request. Requires a valid JWT in the `Authorization: Bearer` header.
+        The caller ID is extracted from the JWT claims by the server; it is not
+        accepted in the request body.
+      required:
+        - refresh_token
+      properties:
+        refresh_token:
+          type: string
+          example: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
 
     RefreshResponse:
       type: object
