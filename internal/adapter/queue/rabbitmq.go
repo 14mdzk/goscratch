@@ -361,7 +361,10 @@ func nextBackoff(current, ceiling time.Duration) time.Duration {
 	return next
 }
 
-func (q *RabbitMQ) DeclareQueue(_ context.Context, name string, durable bool) error {
+func (q *RabbitMQ) DeclareQueue(ctx context.Context, name string, durable bool) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	return q.withPubChannel(func(ch amqpChannel) error {
 		_, err := ch.QueueDeclare(name, durable, false, false, false, nil)
 		if err != nil {

@@ -303,7 +303,18 @@ func New(ctx context.Context, cfg *config.Config) (*App, error) {
 
 	// Register modules
 	docsModule := docs.NewModule()
-	healthModule := health.NewModule()
+
+	// Wire health checkers. Postgres is always checked. Cache and queue checkers
+	// are included unconditionally — their implementations self-skip (return nil)
+	// when the underlying adapter is a NoOp. Casbin is included when authorization
+	// is enabled (real adapter); the NoOp adapter is self-skipping too.
+	healthCheckers := []health.HealthChecker{
+		health.NewPostgresChecker(pool),
+		health.NewCacheChecker(cacheAdapter),
+		health.NewQueueChecker(queueAdapter),
+		health.NewAuthzChecker(authorizer),
+	}
+	healthModule := health.NewModule(cfg.Health.ReadinessTimeout(), healthCheckers...)
 
 	// Single shared user-repo instance wired into both the user module and the
 	// auth module so both use the same *pgxpool.Pool connection rather than

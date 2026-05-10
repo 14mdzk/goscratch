@@ -29,6 +29,7 @@ type Config struct {
 	Observability ObservabilityConfig `json:"observability"`
 	Email         EmailConfig         `json:"email"`
 	RateLimit     RateLimitConfig     `json:"rate_limit"`
+	Health        HealthConfig        `json:"health"`
 }
 
 type AppConfig struct {
@@ -175,6 +176,20 @@ type RateLimitConfig struct {
 	Enabled   bool `json:"enabled" env:"RATE_LIMIT_ENABLED"`
 	Max       int  `json:"max" env:"RATE_LIMIT_MAX"`
 	WindowSec int  `json:"window_sec" env:"RATE_LIMIT_WINDOW_SEC"`
+}
+
+type HealthConfig struct {
+	// ReadinessTimeout is the total budget for all parallel readiness sub-checks.
+	// Zero value defaults to 2s. Set via HEALTH_READINESS_TIMEOUT_SEC (integer seconds).
+	ReadinessTimeoutSec int `json:"readiness_timeout_sec" env:"HEALTH_READINESS_TIMEOUT_SEC"`
+}
+
+// ReadinessTimeout returns the configured timeout as a duration, defaulting to 2s.
+func (c HealthConfig) ReadinessTimeout() time.Duration {
+	if c.ReadinessTimeoutSec <= 0 {
+		return 2 * time.Second
+	}
+	return time.Duration(c.ReadinessTimeoutSec) * time.Second
 }
 
 // Load reads configuration from JSON file and applies environment variable overrides

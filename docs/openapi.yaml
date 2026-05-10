@@ -31,62 +31,65 @@ tags:
 
 paths:
   # ── Health ──────────────────────────────────────────────────────────────
-  /health:
-    get:
-      operationId: healthCheck
-      tags: [Health]
-      summary: Basic health check
-      description: Returns the overall health status of the service.
-      responses:
-        "200":
-          description: Service is healthy
-          content:
-            application/json:
-              schema:
-                allOf:
-                  - $ref: "#/components/schemas/SuccessResponse"
-                  - type: object
-                    properties:
-                      data:
-                        $ref: "#/components/schemas/HealthCheckResponse"
-
-  /health/ready:
-    get:
-      operationId: readinessCheck
-      tags: [Health]
-      summary: Readiness check
-      description: Checks if the application is ready to serve traffic (database, cache, etc.).
-      responses:
-        "200":
-          description: Service is ready
-          content:
-            application/json:
-              schema:
-                allOf:
-                  - $ref: "#/components/schemas/SuccessResponse"
-                  - type: object
-                    properties:
-                      data:
-                        $ref: "#/components/schemas/HealthCheckResponse"
-
-  /health/live:
+  /healthz/live:
     get:
       operationId: livenessCheck
       tags: [Health]
       summary: Liveness check
-      description: Checks if the application process is alive.
+      description: |
+        Checks if the application process is alive. Always returns 200 — it does
+        not probe any dependency. Use this as a Kubernetes liveness probe target.
       responses:
         "200":
-          description: Service is alive
+          description: Process is alive
           content:
             application/json:
               schema:
-                allOf:
-                  - $ref: "#/components/schemas/SuccessResponse"
-                  - type: object
-                    properties:
-                      data:
-                        $ref: "#/components/schemas/HealthCheckResponse"
+                $ref: "#/components/schemas/LivenessResponse"
+
+  /healthz/ready:
+    get:
+      operationId: readinessCheck
+      tags: [Health]
+      summary: Readiness check
+      description: |
+        Runs all dependency sub-checks (Postgres, Redis, RabbitMQ, Casbin) in
+        parallel under a 2-second deadline (configurable via
+        `HEALTH_READINESS_TIMEOUT_SEC`). Returns 200 when every check passes,
+        503 when any check fails. The response body lists each check name with
+        "ok" or a short sanitised reason. NoOp adapters (disabled dependencies)
+        report `<name>(noop)` and always pass so they do not cause spurious 503s.
+        Use this as a Kubernetes readiness probe target.
+      responses:
+        "200":
+          description: All dependency checks passed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReadinessResponse"
+        "503":
+          description: One or more dependency checks failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReadinessResponse"
+
+  /health:
+    get:
+      operationId: healthCheck
+      tags: [Health]
+      summary: Liveness check (deprecated alias)
+      description: |
+        Deprecated back-compat alias for `/healthz/live`. Returns the liveness
+        payload. Will be removed in a future major version — migrate probes to
+        `/healthz/live`.
+      responses:
+        "200":
+          description: Process is alive
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LivenessResponse"
 
   # ── Auth ────────────────────────────────────────────────────────────────
   /auth/login:
@@ -1470,17 +1473,53 @@ components:
           description: Total count of items (included when available)
 
     # ── Health ────────────────────────────────────────────────────────────
-    HealthCheckResponse:
+    LivenessResponse:
+      type: object
+      required: [status, timestamp]
+      properties:
+        status:
+          type: string
+          enum: [alive]
+          example: alive
+        timestamp:
+          type: string
+          format: date-time
+
+    ReadinessResponse:
       type: object
       properties:
         status:
           type: string
-          enum: [ok, ready, alive]
+          enum: [ready, degraded]
+          description: "'ready' when all checks pass; 'degraded' when any check fails"
+          example: ready
         timestamp:
           type: string
           format: date-time
-        version:
+        checks:
+          type: object
+          additionalProperties:
+            type: string
+          description: |
+            Per-check result map. Value is "ok" when the check passed, or a
+            short sanitised reason when it failed. NoOp-disabled adapters
+            appear as "<name>(noop)" with value "ok".
+          example:
+            database: ok
+            cache(noop): ok
+            queue(noop): ok
+            authz(noop): ok
+
+    HealthCheckResponse:
+      description: "Deprecated: use LivenessResponse or ReadinessResponse."
+      type: object
+      properties:
+        status:
           type: string
+          enum: [ok, ready, alive, degraded]
+        timestamp:
+          type: string
+          format: date-time
         checks:
           type: object
           additionalProperties:
