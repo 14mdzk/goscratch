@@ -193,6 +193,7 @@ Production configs in `deploy/`:
 - `docs/VISION.md` -- Project vision and design principles
 - `docs/ROADMAP.md` -- Version history and feature tracking
 - `docs/QUICKSTART.md` -- Five-minute setup + secure-defaults checklist for upgrading operators
+- `docs/RUNBOOK.md` -- Incident-response playbooks (rotate JWT secret, mass refresh-token revoke, audit-log retention re-run, cache flush, reading audit logs and metrics)
 - `docs/features/` -- Feature specifications (12 specs)
 - `docs/adr/` -- Architecture decision records (7 ADRs)
 - `docs/audit/` -- Pre-ship audit findings, per-PR scope files, and the punch-list ledger
