@@ -96,8 +96,10 @@ process.
 ### `RedisWatcher`
 
 Distributes policy-change signals across multiple instances via Redis Pub/Sub on the
-`casbin:policy:update` channel (configurable).  Every instance that shares the same
-channel will have its callback invoked when any instance mutates the policy.
+`casbin:policy:update:v1` channel (configurable). The `:v1` suffix isolates subscribers
+by message-envelope version so a future protocol bump (`:v2`) prevents old/new instances
+from misparsing each other's payloads during a rolling deploy. Every instance that shares
+the same channel will have its callback invoked when any instance mutates the policy.
 
 ```go
 w, err := casbin.NewRedisWatcher(ctx, redisClient, "") // "" = default channel

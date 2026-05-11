@@ -9,7 +9,13 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
-const defaultRedisChannel = "casbin:policy:update"
+// defaultRedisChannel carries an explicit `:v1` suffix so that any future
+// change to the pub/sub message envelope can be shipped behind a `:v2` bump.
+// Old and new instances on a shared Redis then subscribe to disjoint channels
+// during a rolling deploy and cannot misparse each other's payloads. The
+// back-stop full reload tick still converges all instances to the database
+// state regardless of channel skew.
+const defaultRedisChannel = "casbin:policy:update:v1"
 
 // RedisWatcher is a Casbin WatcherEx that distributes policy-change signals
 // across multiple instances via Redis Pub/Sub.  All instances that share the
@@ -24,7 +30,7 @@ type RedisWatcher struct {
 }
 
 // NewRedisWatcher creates a RedisWatcher and starts the subscriber goroutine.
-// channel defaults to "casbin:policy:update" when empty.
+// channel defaults to "casbin:policy:update:v1" when empty.
 func NewRedisWatcher(ctx context.Context, client *redis.Client, channel string) (*RedisWatcher, error) {
 	if channel == "" {
 		channel = defaultRedisChannel
