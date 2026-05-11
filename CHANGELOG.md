@@ -69,6 +69,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   ...HealthChecker)` instead of no arguments. Callers in `app.go` and
   `testutil/testapp.go` updated to pass live adapters.
 
+### Testing
+
+- Added `internal/module/auth/usecase/dual_key_revoke_integration_test.go` (`//go:build integration`): end-to-end Postgres+Redis testcontainer test covering the dual-key revoke path from PR-03. Scenario: login → assert both `refresh:tok:<sha256>` and `refresh:user:<userID>:<sha256>` keys exist with matching TTLs → `POST /users/me/password` (ChangePassword) → assert both keys deleted → old refresh token returns 401. Closes v1.2 punch-list row #20.
+
 ### Removed
 
 - `GET /health/ready` and `GET /health/live` — these old paths are no longer
