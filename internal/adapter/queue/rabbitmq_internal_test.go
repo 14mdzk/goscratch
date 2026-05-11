@@ -17,12 +17,13 @@ import (
 // =============================================================================
 
 type fakeConn struct {
-	mu        sync.Mutex
-	channels  []*fakeChannel
-	closed    bool
-	notifyCh  chan *amqp.Error
-	failOpen  bool
-	openCount int32
+	mu                    sync.Mutex
+	channels              []*fakeChannel
+	closed                bool
+	notifyCh              chan *amqp.Error
+	failOpen              bool
+	openCount             int32
+	nextPassiveDeclareErr error
 }
 
 func newFakeConn() *fakeConn {
@@ -37,6 +38,10 @@ func (c *fakeConn) Channel() (amqpChannel, error) {
 	}
 	atomic.AddInt32(&c.openCount, 1)
 	ch := newFakeChannel()
+	if c.nextPassiveDeclareErr != nil {
+		ch.passiveDeclareErr = c.nextPassiveDeclareErr
+		c.nextPassiveDeclareErr = nil
+	}
 	c.channels = append(c.channels, ch)
 	return ch, nil
 }
@@ -66,15 +71,17 @@ func (c *fakeConn) ChannelCount() int {
 }
 
 type fakeChannel struct {
-	mu               sync.Mutex
-	deliveries       chan amqp.Delivery
-	closeNotify      chan *amqp.Error
-	qosPrefetch      int
-	qosCalled        bool
-	consumeCalled    bool
-	qosBeforeConsume bool
-	closed           bool
-	publishCount     int
+	mu                  sync.Mutex
+	deliveries          chan amqp.Delivery
+	closeNotify         chan *amqp.Error
+	qosPrefetch         int
+	qosCalled           bool
+	consumeCalled       bool
+	qosBeforeConsume    bool
+	closed              bool
+	publishCount        int
+	passiveDeclareCount int
+	passiveDeclareErr   error
 }
 
 func newFakeChannel() *fakeChannel {
@@ -101,6 +108,16 @@ func (c *fakeChannel) Consume(_, _ string, _, _, _, _ bool, _ amqp.Table) (<-cha
 }
 
 func (c *fakeChannel) QueueDeclare(_ string, _, _, _, _ bool, _ amqp.Table) (amqp.Queue, error) {
+	return amqp.Queue{}, nil
+}
+
+func (c *fakeChannel) QueueDeclarePassive(_ string, _, _, _, _ bool, _ amqp.Table) (amqp.Queue, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.passiveDeclareCount++
+	if c.passiveDeclareErr != nil {
+		return amqp.Queue{}, c.passiveDeclareErr
+	}
 	return amqp.Queue{}, nil
 }
 
@@ -221,6 +238,76 @@ func TestRabbitMQ_PrefetchDefault(t *testing.T) {
 	consumerCh.mu.Lock()
 	defer consumerCh.mu.Unlock()
 	assert.Equal(t, defaultPrefetchCount, consumerCh.qosPrefetch)
+}
+
+func TestRabbitMQ_Ping_OpensTransientChannelAndDeclaresPassive(t *testing.T) {
+	conn := newFakeConn()
+	dial := func(url string) (amqpConnection, error) { return conn, nil }
+
+	q, err := newRabbitMQ("amqp://test", Options{}, dial)
+	require.NoError(t, err)
+	defer q.Close()
+
+	// Constructor opens publisher channel.
+	require.Equal(t, 1, conn.ChannelCount())
+
+	require.NoError(t, q.Ping(context.Background()))
+
+	// Ping must open its own throwaway channel, not reuse the cached publisher.
+	require.Equal(t, 2, conn.ChannelCount(), "Ping should open a transient channel")
+	pingCh := conn.channels[1]
+	pingCh.mu.Lock()
+	defer pingCh.mu.Unlock()
+	assert.Equal(t, 1, pingCh.passiveDeclareCount, "Ping must call QueueDeclarePassive exactly once")
+	assert.True(t, pingCh.closed, "Ping must close the transient channel before returning")
+
+	pubCh := conn.channels[0]
+	pubCh.mu.Lock()
+	defer pubCh.mu.Unlock()
+	assert.Equal(t, 0, pubCh.passiveDeclareCount, "publisher channel must not be used by Ping")
+	assert.False(t, pubCh.closed, "publisher channel must survive Ping")
+}
+
+func TestRabbitMQ_Ping_TreatsNotFoundAsHealthy(t *testing.T) {
+	conn := newFakeConn()
+	dial := func(url string) (amqpConnection, error) { return conn, nil }
+
+	q, err := newRabbitMQ("amqp://test", Options{}, dial)
+	require.NoError(t, err)
+	defer q.Close()
+
+	// Force the next channel created by Ping to report a 404 from passive declare.
+	conn.nextPassiveDeclareErr = &amqp.Error{Code: amqp.NotFound, Reason: "no such queue"}
+
+	require.NoError(t, q.Ping(context.Background()), "404 NOT_FOUND should be treated as broker-reachable")
+}
+
+func TestRabbitMQ_Ping_PropagatesNonNotFoundErrors(t *testing.T) {
+	conn := newFakeConn()
+	dial := func(url string) (amqpConnection, error) { return conn, nil }
+
+	q, err := newRabbitMQ("amqp://test", Options{}, dial)
+	require.NoError(t, err)
+	defer q.Close()
+
+	conn.nextPassiveDeclareErr = &amqp.Error{Code: amqp.AccessRefused, Reason: "denied"}
+
+	err = q.Ping(context.Background())
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "queue ping")
+}
+
+func TestRabbitMQ_Ping_ReturnsErrorWhenConnectionClosed(t *testing.T) {
+	conn := newFakeConn()
+	dial := func(url string) (amqpConnection, error) { return conn, nil }
+
+	q, err := newRabbitMQ("amqp://test", Options{}, dial)
+	require.NoError(t, err)
+
+	require.NoError(t, conn.Close())
+
+	err = q.Ping(context.Background())
+	require.Error(t, err)
 }
 
 func TestRabbitMQ_NotifyClose_TriggersReconnect(t *testing.T) {

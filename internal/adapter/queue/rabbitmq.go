@@ -46,6 +46,7 @@ type amqpChannel interface {
 	PublishWithContext(ctx context.Context, exchange, key string, mandatory, immediate bool, msg amqp.Publishing) error
 	Consume(queue, consumer string, autoAck, exclusive, noLocal, noWait bool, args amqp.Table) (<-chan amqp.Delivery, error)
 	QueueDeclare(name string, durable, autoDelete, exclusive, noWait bool, args amqp.Table) (amqp.Queue, error)
+	QueueDeclarePassive(name string, durable, autoDelete, exclusive, noWait bool, args amqp.Table) (amqp.Queue, error)
 	ExchangeDeclare(name, kind string, durable, autoDelete, internal, noWait bool, args amqp.Table) error
 	QueueBind(name, key, exchange string, noWait bool, args amqp.Table) error
 	Qos(prefetchCount, prefetchSize int, global bool) error
@@ -359,6 +360,51 @@ func nextBackoff(current, ceiling time.Duration) time.Duration {
 		return ceiling
 	}
 	return next
+}
+
+// healthzProbeQueue is the conventional queue name passed to
+// QueueDeclarePassive during a Ping. It is never created on the broker —
+// passive declare returns NOT_FOUND when the queue is absent, which Ping
+// treats as broker-reachable success.
+const healthzProbeQueue = "healthz.probe"
+
+// Ping verifies the broker is reachable without mutating broker state.
+// Opens a transient channel (NOT the cached publisher channel) so that a
+// missing-queue NOT_FOUND, which closes the channel, cannot poison hot-path
+// publishes. Calls QueueDeclarePassive on a reserved name; treats NOT_FOUND
+// (404) as healthy because the round-trip succeeded.
+func (q *RabbitMQ) Ping(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	q.pubMu.Lock()
+	conn := q.conn
+	closed := q.closed
+	q.pubMu.Unlock()
+	if closed {
+		return errors.New("queue: closed")
+	}
+	if conn == nil {
+		return errors.New("queue: not connected")
+	}
+	if conn.IsClosed() {
+		return errors.New("queue: connection closed")
+	}
+
+	ch, err := conn.Channel()
+	if err != nil {
+		return fmt.Errorf("queue ping: open channel: %w", err)
+	}
+	defer func() { _ = ch.Close() }()
+
+	if _, err := ch.QueueDeclarePassive(healthzProbeQueue, true, false, false, false, nil); err != nil {
+		var amqpErr *amqp.Error
+		if errors.As(err, &amqpErr) && amqpErr.Code == amqp.NotFound {
+			return nil
+		}
+		return fmt.Errorf("queue ping: %w", err)
+	}
+	return nil
 }
 
 func (q *RabbitMQ) DeclareQueue(ctx context.Context, name string, durable bool) error {

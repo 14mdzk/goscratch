@@ -38,6 +38,7 @@ func (m *mockQueue) PublishJSON(_ context.Context, _, _ string, _ any) error { r
 func (m *mockQueue) Consume(_ context.Context, _ string, _ func(body []byte) error) error {
 	return nil
 }
+func (m *mockQueue) Ping(_ context.Context) error                                 { return nil }
 func (m *mockQueue) DeclareQueue(_ context.Context, _ string, _ bool) error       { return nil }
 func (m *mockQueue) DeclareExchange(_ context.Context, _, _ string, _ bool) error { return nil }
 func (m *mockQueue) BindQueue(_ context.Context, _, _, _ string) error            { return nil }

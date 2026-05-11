@@ -31,6 +31,11 @@ func (m *MockQueue) Consume(ctx context.Context, queue string, handler func(body
 	return args.Error(0)
 }
 
+func (m *MockQueue) Ping(ctx context.Context) error {
+	args := m.Called(ctx)
+	return args.Error(0)
+}
+
 func (m *MockQueue) DeclareQueue(ctx context.Context, name string, durable bool) error {
 	args := m.Called(ctx, name, durable)
 	return args.Error(0)

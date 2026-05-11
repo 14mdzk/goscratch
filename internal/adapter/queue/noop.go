@@ -25,6 +25,10 @@ func (q *NoOpQueue) Consume(ctx context.Context, queue string, handler func(body
 	return ctx.Err()
 }
 
+func (q *NoOpQueue) Ping(ctx context.Context) error {
+	return nil
+}
+
 func (q *NoOpQueue) DeclareQueue(ctx context.Context, name string, durable bool) error {
 	return nil
 }

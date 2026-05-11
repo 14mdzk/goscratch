@@ -15,6 +15,14 @@ type Queue interface {
 	// Return nil to acknowledge, error to reject/requeue
 	Consume(ctx context.Context, queue string, handler func(body []byte) error) error
 
+	// Ping verifies the broker connection without mutating broker state.
+	// Implementations must NOT create queues, exchanges, bindings, or any other
+	// server-side resource. Implementations should perform a single cheap
+	// round-trip (e.g., AMQP passive declare or a transient channel open) and
+	// return nil on success or an error describing the unreachable broker.
+	// Health probes should call Ping rather than DeclareQueue.
+	Ping(ctx context.Context) error
+
 	// DeclareQueue ensures a queue exists
 	DeclareQueue(ctx context.Context, name string, durable bool) error
 
