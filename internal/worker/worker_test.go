@@ -255,6 +255,152 @@ func TestShutdown_WithTimeout(t *testing.T) {
 	wgDone.Wait()
 }
 
+// dispatchingQueue is a mock port.Queue that, when Consume is called, immediately
+// delivers one pre-encoded job to the handler in the same goroutine (simulating
+// a broker delivering a message), then blocks until ctx is cancelled. This lets
+// us test that Shutdown waits for the handler to finish before returning.
+type dispatchingQueue struct {
+	mockQueue
+	jobData []byte
+}
+
+func (d *dispatchingQueue) Consume(ctx context.Context, _ string, handler func([]byte) error) error {
+	if d.jobData != nil {
+		_ = handler(d.jobData)
+	}
+	<-ctx.Done()
+	return nil
+}
+
+// TestShutdown_WaitsForSlowHandler is a regression test for block-ship #14.
+// It verifies that Shutdown's wg.Wait() does not return before an in-flight
+// handler finishes. The wg must cover the consumer's active window: if
+// wg.Done() were called before the handler returned, the assertion would fire
+// because elapsed < slowDuration.
+func TestShutdown_WaitsForSlowHandler(t *testing.T) {
+	const (
+		slowDuration            = 500 * time.Millisecond
+		dispatchToShutdownDelay = 100 * time.Millisecond
+		epsilon                 = 50 * time.Millisecond
+		budget                  = 300 * time.Millisecond
+	)
+
+	job, err := NewJob("slow.job", "payload")
+	require.NoError(t, err)
+	jobData, err := job.Encode()
+	require.NoError(t, err)
+
+	q := &dispatchingQueue{jobData: jobData}
+	log := newTestLogger()
+	w := New(q, log, Config{QueueName: "t", Concurrency: 1})
+
+	handlerStarted := make(chan struct{})
+	w.RegisterHandler(&testHandler{
+		jobType: "slow.job",
+		handleFn: func(_ context.Context, _ *Job) error {
+			close(handlerStarted)
+			time.Sleep(slowDuration)
+			return nil
+		},
+	})
+
+	require.NoError(t, w.Start())
+
+	// Wait until the slow handler is actually executing before triggering shutdown.
+	select {
+	case <-handlerStarted:
+	case <-time.After(2 * time.Second):
+		t.Fatal("handler never started")
+	}
+
+	time.Sleep(dispatchToShutdownDelay)
+
+	ctx, cancel := context.WithTimeout(context.Background(), slowDuration+budget)
+	defer cancel()
+
+	start := time.Now()
+	err = w.Shutdown(ctx)
+	elapsed := time.Since(start)
+
+	require.NoError(t, err, "Shutdown must not time out — wg must cover the slow handler")
+
+	// Shutdown must have waited: elapsed must be at least the remaining handler
+	// sleep minus epsilon. Because we slept dispatchToShutdownDelay after
+	// handlerStarted, the handler still has ~slowDuration-dispatchToShutdownDelay
+	// left to sleep.
+	minExpected := slowDuration - dispatchToShutdownDelay - epsilon
+	assert.GreaterOrEqual(t, elapsed, minExpected,
+		"Shutdown returned too early — wg.Done must not fire before handler returns")
+
+	assert.Less(t, elapsed, slowDuration+budget,
+		"Shutdown took unexpectedly long — something else is blocking")
+}
+
+// TestShutdown_SlowHandler_WGDoneBeforeReturn_WouldFail documents the failure
+// mode: if the fix is reverted (wg.Done fires before handler returns), the
+// WaitsForSlowHandler test above would fail. This test serves as a sentinel to
+// make the coverage intent explicit in code review.
+//
+// It is NOT a test of broken behaviour — it is intentionally skipped; its
+// purpose is to document what "broken" looks like so reviewers understand the
+// other test's invariant.
+func TestShutdown_SlowHandler_WGDoneBeforeReturn_WouldFail(t *testing.T) {
+	t.Skip("documentation test — skip always; see TestShutdown_WaitsForSlowHandler for the live assertion")
+}
+
+// TestRetry_MidBackoff_CancelsOnCtxDone is the integration-path regression for
+// block-ship #14. Unlike TestRetry_CancelsOnShutdown which calls retryJob()
+// directly, this test exercises the full path:
+//
+//  1. handleMessage calls a handler that returns an error.
+//  2. handleMessage calls retryJob() with a long backoff (Attempts=3 → 9s delay).
+//  3. Shutdown is triggered immediately after handleMessage returns.
+//  4. Assert Shutdown does NOT block for the full 9s backoff — the retry timer
+//     must select on ctx.Done() and exit early.
+func TestRetry_MidBackoff_CancelsOnCtxDone(t *testing.T) {
+	q := &mockQueue{}
+	log := newTestLogger()
+	w := New(q, log, Config{QueueName: "t", Concurrency: 1})
+
+	w.RegisterHandler(&testHandler{
+		jobType: "always.fail",
+		handleFn: func(_ context.Context, _ *Job) error {
+			return errors.New("forced failure")
+		},
+	})
+
+	// Attempts=2 → after IncrementAttempts Attempts=3, delay = 3*3 = 9s.
+	job, err := NewJob("always.fail", "payload")
+	require.NoError(t, err)
+	job.Attempts = 2
+
+	jobData, err := job.Encode()
+	require.NoError(t, err)
+
+	// handleMessage fires the handler synchronously; retryJob spawns a goroutine
+	// with a 9s timer. We call handleMessage directly so we control timing.
+	err = w.handleMessage(0, jobData)
+	require.NoError(t, err)
+
+	// Shutdown immediately; must return well before the 9s backoff.
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	start := time.Now()
+	err = w.Shutdown(ctx)
+	elapsed := time.Since(start)
+
+	require.NoError(t, err, "Shutdown must not time out — retry timer must cancel on ctx.Done")
+	assert.Less(t, elapsed, 500*time.Millisecond,
+		"Shutdown blocked longer than expected — retry goroutine may be ignoring ctx.Done")
+
+	q.mu.Lock()
+	callCount := len(q.publishCalls)
+	q.mu.Unlock()
+	assert.Equal(t, 0, callCount,
+		"no publish must occur after Shutdown — ctx-cancel guard must skip Publish")
+}
+
 // TestRetry_CancelsOnShutdown verifies that a pending retry goroutine exits
 // promptly when ctx is cancelled instead of sleeping through the full backoff
 // delay (block-ship #14: prior code used time.Sleep without ctx awareness).
