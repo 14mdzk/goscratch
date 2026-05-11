@@ -18,6 +18,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Testing
 
 - Added regression tests for worker shutdown WaitGroup correctness (PR-22, closes v1.2 punch-list row #22): `TestShutdown_WaitsForSlowHandler` asserts that `Shutdown` blocks until an in-flight handler returns (guards against `wg.Done` firing before the handler exits); `TestRetry_MidBackoff_CancelsOnCtxDone` exercises the full `handleMessage → retryJob` path and asserts the retry timer exits on `ctx.Done()` instead of sleeping the full backoff — both tests exercise `internal/worker/worker.go`.
+- Added watcher e2e tests covering the `MemoryWatcher` and `RedisWatcher` notification loop end-to-end (`internal/adapter/casbin/watcher_e2e_test.go`). Two logical enforcer instances (publisher A + subscriber B) are wired via a shared watcher; policy added or removed on A propagates to B exclusively via the incremental watcher path — the backstop reload tick is set to 24 h to prove the watcher drives the change. Covers add and remove ops for both watcher types, plus an isolated-channels assertion for `RedisWatcher`. Closes v1.2 punch-list row #21.
 
 ### Documentation (RUNBOOK)
 
