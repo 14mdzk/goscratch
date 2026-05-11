@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- Bumped default Casbin watcher Redis pub/sub channel from `casbin:policy:update` to `casbin:policy:update:v1` (`internal/adapter/casbin/watcher_redis.go`). The `:v1` suffix isolates the channel by message-envelope version so that any future change to the JSON shape (`{op,sec,ptype,params}`) can be shipped behind a `:v2` bump without old and new instances misparsing each other's payloads during a rolling deploy. The back-stop `Authorizer.ReloadInterval` full reload still converges all instances to the database state regardless of channel skew. Operator upgrade note: `RedisWatcher` is not wired in the current application bootstrap (`internal/platform/app/app.go` constructs `casbinadapter.Adapter` without a watcher), so this change has no runtime effect on the shipping binary today. Pre-versioning the constant prevents a future wiring PR from baking in an unversioned channel name. Callers that construct `NewRedisWatcher` directly with an empty `channel` argument now subscribe to `casbin:policy:update:v1`; pass an explicit string to override. Closes v1.2 punch-list row #19.
+
 ### CI / Tooling
 
 - Added `make vuln` target: installs `govulncheck@v1.3.0` (pinned) and runs `govulncheck ./...` against the module graph. Exits non-zero on any finding.
