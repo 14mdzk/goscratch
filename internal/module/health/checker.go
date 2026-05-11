@@ -70,15 +70,10 @@ func (c *cacheChecker) Check(ctx context.Context) error {
 	return nil
 }
 
-// queueChecker checks the RabbitMQ connection.
+// queueChecker checks the RabbitMQ connection via port.Queue.Ping.
 // Reports "queue(noop)" and returns nil when the adapter is a *queue.NoOpQueue.
-//
-// NOTE: port.Queue does not expose a passive ping primitive and *queue.RabbitMQ
-// does not export its internal connection handle, so QueueDeclarePassive cannot
-// be called directly. The probe uses DeclareQueue with a permanent sentinel queue
-// name instead; AMQP QueueDeclare is idempotent once the queue exists; on a
-// fresh broker the first call creates "healthz.probe" as a durable queue.
-// Tracked as a follow-up in v1.2 punch-list to add port.Queue.Ping().
+// Ping issues a passive AMQP declare on a transient channel and never creates
+// broker-side resources, so a fresh broker does not accumulate a sentinel queue.
 type queueChecker struct {
 	q port.Queue
 }
@@ -99,7 +94,7 @@ func (c *queueChecker) Check(ctx context.Context) error {
 	if _, ok := c.q.(*queue.NoOpQueue); ok {
 		return nil
 	}
-	if err := c.q.DeclareQueue(ctx, "healthz.probe", true); err != nil {
+	if err := c.q.Ping(ctx); err != nil {
 		return errors.New("connection unavailable")
 	}
 	return nil

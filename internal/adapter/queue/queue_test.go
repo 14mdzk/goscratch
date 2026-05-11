@@ -119,6 +119,7 @@ func TestNoOpQueue_AllMethodsNoOp(t *testing.T) {
 	}{
 		{"Publish", func() error { return q.Publish(ctx, "", "", nil) }},
 		{"PublishJSON", func() error { return q.PublishJSON(ctx, "", "", nil) }},
+		{"Ping", func() error { return q.Ping(ctx) }},
 		{"DeclareQueue", func() error { return q.DeclareQueue(ctx, "q", false) }},
 		{"DeclareExchange", func() error { return q.DeclareExchange(ctx, "ex", "direct", false) }},
 		{"BindQueue", func() error { return q.BindQueue(ctx, "q", "ex", "rk") }},
