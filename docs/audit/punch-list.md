@@ -18,7 +18,7 @@ Each PR closes a coherent set of findings. Order chosen so each PR is independen
 | 9 | [Rate-limit hardening](./pr-09-rate-limit-hardening.md) — sliding window Redis, trusted-proxy header, memory cleanup stop chan | 3 should-fix | low | 3h | ✅ shipped [#26](https://github.com/14mdzk/goscratch/pull/26) |
 | 10 | [Authz decision cache](./pr-10-authz-decision-cache.md) — `subject:obj:act → bool` cache with explicit invalidation matrix + bench evidence | Perf follow-up | medium | 4h | ✅ shipped [#28](https://github.com/14mdzk/goscratch/pull/28) |
 | 11 | [Raw-SQL lint guard](./pr-11-casbin-sql-lint.md) — CI script rejects `(INSERT\|UPDATE\|DELETE).*casbin_rule` outside `internal/adapter/casbin/...`; wire into `make lint` + CI | Defense-in-depth (split out of #3b) | low | 1h | ✅ shipped [#25](https://github.com/14mdzk/goscratch/pull/25) |
-| 12 | [Release cut](./pr-12-release-cut.md) — v1.1.0 CHANGELOG slice + README/QUICKSTART/ROADMAP doc sync | "After PRs Land" doc gaps | low | 1h | in review |
+| 12 | [Release cut](./pr-12-release-cut.md) — v1.1.0 CHANGELOG slice + README/QUICKSTART/ROADMAP doc sync | "After PRs Land" doc gaps | low | 1h | ✅ shipped [#30](https://github.com/14mdzk/goscratch/pull/30) |
 
 ---
 
