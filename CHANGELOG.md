@@ -19,6 +19,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - Added regression tests for worker shutdown WaitGroup correctness (PR-22, closes v1.2 punch-list row #22): `TestShutdown_WaitsForSlowHandler` asserts that `Shutdown` blocks until an in-flight handler returns (guards against `wg.Done` firing before the handler exits); `TestRetry_MidBackoff_CancelsOnCtxDone` exercises the full `handleMessage → retryJob` path and asserts the retry timer exits on `ctx.Done()` instead of sleeping the full backoff — both tests exercise `internal/worker/worker.go`.
 
+### Documentation (RUNBOOK)
+
+- `docs/RUNBOOK.md` — operator incident-response playbook covering eight scenarios: rotate `JWT_SECRET`, mass refresh-token revoke (single user + full sweep, API and direct Redis paths), Casbin policy reload, audit-log retention re-run, fast user disable, cache flush during incident, reading audit logs (SQL recipes), reading metrics during incident (PromQL recipes + `/healthz/ready` interpretation). Each section is structured as trigger / pre-flight / commands / verify / rollback. Linked from `README.md`. Closes v1.2 punch-list row #17.
+
 ### CI / Tooling
 
 - Added `make vuln` target: installs `govulncheck@v1.3.0` (pinned) and runs `govulncheck ./...` against the module graph. Exits non-zero on any finding.
