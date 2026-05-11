@@ -1,0 +1,24 @@
+# Example wire-up of the cron-dispatch container alongside the goscratch API.
+# Do not include this file in your production stack verbatim — copy the
+# service definition into the actual compose file and replace placeholders.
+services:
+    cron-dispatch:
+        build:
+            context: ./deploy/docker/cron-dispatch
+        image: goscratch-cron-dispatch:0.1.0
+        restart: unless-stopped
+        environment:
+            # The dispatch container talks to the API over the internal Compose
+            # network. Adjust if running against a different host.
+            GOSCRATCH_API_BASE_URL: "http://api:8080"
+            # Inject via secret manager / `--env-file`; never inline.
+            GOSCRATCH_API_TOKEN: "${GOSCRATCH_API_TOKEN:?GOSCRATCH_API_TOKEN must be set}"
+            GOSCRATCH_AUDIT_RETENTION_DAYS: "90"
+            GOSCRATCH_AUDIT_CRON_SCHEDULE: "0 3 * * *"
+        depends_on:
+            - api
+        networks:
+            - goscratch
+networks:
+    goscratch:
+        external: true

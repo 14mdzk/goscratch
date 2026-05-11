@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- `deploy/docker/cron-dispatch/` — sample external-cron container that POSTs to `/api/jobs/dispatch` on a configurable schedule. Ships the audit-log retention scheduler as a separate operator-deployed image instead of an in-process scheduler tick (variant A from `docs/audit/v1.2-plan.md` §PR-18). Alpine + busybox-crond + curl + jq, no Go code surface added to the API. Operator wires `GOSCRATCH_API_BASE_URL`, `GOSCRATCH_API_TOKEN` (admin-scoped JWT), `GOSCRATCH_AUDIT_RETENTION_DAYS` (default 90), and `GOSCRATCH_AUDIT_CRON_SCHEDULE` (default `0 3 * * *`). Operator upgrade note: existing installations that already POST `audit.cleanup` from their own cron need no action — the new container is opt-in. Closes v1.2 punch-list row #18.
+
 ### Changed
 
 - Bumped default Casbin watcher Redis pub/sub channel from `casbin:policy:update` to `casbin:policy:update:v1` (`internal/adapter/casbin/watcher_redis.go`). The `:v1` suffix isolates the channel by message-envelope version so that any future change to the JSON shape (`{op,sec,ptype,params}`) can be shipped behind a `:v2` bump without old and new instances misparsing each other's payloads during a rolling deploy. The back-stop `Authorizer.ReloadInterval` full reload still converges all instances to the database state regardless of channel skew. Operator upgrade note: `RedisWatcher` is not wired in the current application bootstrap (`internal/platform/app/app.go` constructs `casbinadapter.Adapter` without a watcher), so this change has no runtime effect on the shipping binary today. Pre-versioning the constant prevents a future wiring PR from baking in an unversioned channel name. Callers that construct `NewRedisWatcher` directly with an empty `channel` argument now subscribe to `casbin:policy:update:v1`; pass an explicit string to override. Closes v1.2 punch-list row #19.
