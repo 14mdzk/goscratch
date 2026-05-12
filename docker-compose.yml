@@ -1,7 +1,7 @@
 services:
   # PostgreSQL Database
   postgres:
-    image: postgres:18-alpine
+    image: postgis/postgis:18-master
     container_name: goscratch-postgres
     environment:
       POSTGRES_USER: postgres
