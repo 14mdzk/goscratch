@@ -18,7 +18,7 @@
     "user": "postgres",
     "password": "postgres",
     "name": "goscratch",
-    "ssl_mode": "require",
+    "ssl_mode": "disable",
     "max_open_conns": 25,
     "max_idle_conns": 5,
     "conn_max_lifetime": 300
@@ -37,7 +37,7 @@
     "allow_credentials": false
   },
   "redis": {
-    "enabled": false,
+    "enabled": true,
     "host": "localhost",
     "port": 6379,
     "password": "",
