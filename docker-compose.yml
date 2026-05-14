@@ -3,6 +3,7 @@ services:
   postgres:
     image: postgis/postgis:18-master
     container_name: goscratch-postgres
+    platform: linux/amd64
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
@@ -10,7 +11,7 @@ services:
     ports:
       - "5432:5432"
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - postgres_data:/var/lib/postgresql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 5s
@@ -19,7 +20,7 @@ services:
 
   # Redis Cache (optional)
   redis:
-    image: redis:7-alpine
+    image: redis:8.6-alpine
     container_name: goscratch-redis
     ports:
       - "6379:6379"

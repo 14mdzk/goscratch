@@ -50,7 +50,7 @@ paths:
                       data:
                         $ref: "#/components/schemas/HealthCheckResponse"
 
-  /health/ready:
+  /healthz/ready:
     get:
       operationId: readinessCheck
       tags: [Health]
@@ -69,7 +69,7 @@ paths:
                       data:
                         $ref: "#/components/schemas/HealthCheckResponse"
 
-  /health/live:
+  /healthz/live:
     get:
       operationId: livenessCheck
       tags: [Health]
