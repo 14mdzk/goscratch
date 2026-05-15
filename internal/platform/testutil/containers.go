@@ -23,7 +23,7 @@ var migrationsFS embed.FS
 // StartPostgres starts a PostgreSQL container, runs migrations, and returns the DSN.
 func StartPostgres(ctx context.Context) (connString string, cleanup func(), err error) {
 	pgContainer, err := postgres.Run(ctx,
-		"postgres:17-alpine",
+		"postgis/postgis:18-master",
 		postgres.WithDatabase("testdb"),
 		postgres.WithUsername("testuser"),
 		postgres.WithPassword("testpass"),
