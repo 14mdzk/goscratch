@@ -45,6 +45,8 @@ func TestJWTConfig() config.JWTConfig {
 		Secret:          testJWTSecret,
 		AccessTokenTTL:  15,
 		RefreshTokenTTL: 720,
+		Issuer:          "goscratch",
+		Audience:        "goscratch-api",
 	}
 }
 
