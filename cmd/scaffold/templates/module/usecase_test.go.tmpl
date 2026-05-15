@@ -1,0 +1,43 @@
+package usecase
+
+import (
+	"context"
+	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
+
+func TestSmoke_NewUseCase(t *testing.T) {
+	uc := NewUseCase()
+	assert.NotNil(t, uc)
+}
+
+func TestSmoke_GetByID(t *testing.T) {
+	tests := []struct {
+		name    string
+		id      string
+		wantID  string
+		wantErr bool
+	}{
+		{
+			name:    "returns stub record",
+			id:      "abc-123",
+			wantID:  "abc-123",
+			wantErr: false,
+		},
+	}
+
+	uc := NewUseCase()
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			result, err := uc.GetByID(context.Background(), tc.id)
+			if tc.wantErr {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, tc.wantID, result.ID)
+		})
+	}
+}

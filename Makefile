@@ -1,4 +1,4 @@
-.PHONY: help dev dev-worker dev-no-air build test test-ci test-integration lint lint-casbin-sql vuln clean migrate-up migrate-down migrate-create sqlc docker-up docker-down worker-build
+.PHONY: help dev dev-worker dev-no-air build test test-ci test-integration lint lint-casbin-sql vuln clean migrate-up migrate-down migrate-create sqlc docker-up docker-down worker-build new-module
 
 # Default target
 help:
@@ -205,3 +205,7 @@ deps:
 # All-in-one setup
 setup: install-tools deps docker-up migrate-up
 	@echo "Setup complete! Run 'make dev' to start the server."
+
+.PHONY: new-module
+new-module: ## Scaffold a new module (usage: make new-module name=foo)
+	@go run ./cmd/scaffold module $(name)

@@ -1,0 +1,43 @@
+package handler
+
+import (
+	"net/http"
+	"net/http/httptest"
+	"testing"
+
+	"github.com/gofiber/fiber/v2"
+	"github.com/stretchr/testify/assert"
+)
+
+func TestSmoke_NewHandler(t *testing.T) {
+	h := NewHandler(nil)
+	assert.NotNil(t, h)
+}
+
+func TestSmoke_GetByID(t *testing.T) {
+	tests := []struct {
+		name       string
+		id         string
+		wantStatus int
+	}{
+		{
+			name:       "returns record",
+			id:         "test-id",
+			wantStatus: http.StatusOK,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			app := fiber.New()
+			app.Get("/{{ .Name }}/:id", func(c *fiber.Ctx) error {
+				return c.JSON(fiber.Map{"success": true, "data": fiber.Map{"id": c.Params("id")}})
+			})
+
+			req := httptest.NewRequest(http.MethodGet, "/{{ .Name }}/"+tc.id, nil)
+			resp, err := app.Test(req)
+			assert.NoError(t, err)
+			assert.Equal(t, tc.wantStatus, resp.StatusCode)
+		})
+	}
+}

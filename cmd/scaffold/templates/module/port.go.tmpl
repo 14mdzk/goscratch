@@ -1,0 +1,23 @@
+package usecase
+
+import "context"
+
+// UseCase defines the interface for {{ .Name }} business logic operations.
+// Handlers and decorators depend on this interface rather than on the
+// concrete *useCase struct, enabling testability and extensibility.
+//
+// TODO(scaffold): wire {{ .Title }}UseCase into internal/platform/app/app.go:
+//
+//	uc := {{ .Name }}usecase.NewUseCase(repo)
+//	h  := {{ .Name }}handler.NewHandler(uc)
+//	// register routes on the fiber app
+type UseCase interface {
+	// TODO(scaffold): add method signatures matching {{ .Name }} business operations.
+	GetByID(ctx context.Context, id string) (*{{ .Title }}, error)
+}
+
+// {{ .Title }} is a minimal return type placeholder.
+// TODO(scaffold): replace with the real domain or DTO type once the domain model is defined.
+type {{ .Title }} struct {
+	ID string `json:"id"`
+}
