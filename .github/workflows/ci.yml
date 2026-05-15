@@ -29,6 +29,9 @@ jobs:
       - name: Run casbin SQL lint guard
         run: bash scripts/lint-casbin-sql.sh
 
+      - name: Run OpenAPI drift gate
+        run: go run ./cmd/openapi-drift
+
   test:
     name: Test
     runs-on: ubuntu-latest
