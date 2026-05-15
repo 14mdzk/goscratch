@@ -8,6 +8,12 @@ import (
 	"math"
 )
 
+// hexEncodeBytes encodes b as a lowercase hex string without any prefix.
+// PostGIS geography columns accept this form as their text-protocol input.
+func hexEncodeBytes(b []byte) string {
+	return hex.EncodeToString(b)
+}
+
 // EWKB constants for a 2-D Point with SRID.
 const (
 	wkbLittleEndian byte   = 0x01
@@ -49,7 +55,8 @@ func (p Point) EncodeEWKB() ([]byte, error) {
 // with or without SRID flag) into p.
 //
 // Returns ErrInvalidWKB if b is nil, too short, has an unexpected geometry
-// type, or carries a non-zero SRID other than 4326.
+// type, or carries an SRID flag with a value other than 4326. WKB without an
+// SRID flag (plain WKB, 21 bytes) is accepted without restriction.
 func (p *Point) DecodeEWKB(b []byte) error {
 	if len(b) < 21 { // minimum: 1+4+8+8 = 21 (no SRID)
 		return fmt.Errorf("%w: need at least 21 bytes, got %d", ErrInvalidWKB, len(b))
@@ -80,12 +87,12 @@ func (p *Point) DecodeEWKB(b []byte) error {
 			return fmt.Errorf("%w: SRID-tagged EWKB too short: %d bytes", ErrInvalidWKB, len(b))
 		}
 		srid := bo.Uint32(b[offset : offset+4])
-		if srid != 0 && srid != wkbSRID4326 {
-			return fmt.Errorf("%w: unexpected SRID %d (want 4326 or 0)", ErrInvalidWKB, srid)
+		if srid != wkbSRID4326 {
+			// SRID flag is set: SRID=0 means "unknown" and is ambiguous for a
+			// geography(Point,4326) column. Reject anything that is not exactly 4326.
+			return fmt.Errorf("%w: unexpected SRID %d (want 4326)", ErrInvalidWKB, srid)
 		}
 		offset += 4
-	} else if len(b) < 21 {
-		return fmt.Errorf("%w: WKB too short: %d bytes", ErrInvalidWKB, len(b))
 	}
 
 	lonBits := bo.Uint64(b[offset : offset+8])
@@ -128,8 +135,19 @@ func (p *Point) Scan(src any) error {
 // Value implements driver.Valuer so that Point can be passed as a query
 // argument to pgx v5 (and database/sql) for a geography(Point,4326) column.
 //
-// The value is returned as a []byte EWKB payload. PostGIS accepts a bytea
-// argument and coerces it to geography via its binary input function.
+// The value is returned as a lowercase hex-encoded EWKB string (e.g.
+// "0120000020e6100000..."). pgx v5 transmits string values with OID 25 (text);
+// PostGIS interprets hex-encoded EWKB text as its geography text-input form,
+// which is the correct production query shape:
+//
+//	INSERT INTO t (loc) VALUES ($1)   -- $1 = geo.Point
+//
+// Returning raw []byte would cause pgx to bind the parameter as bytea (OID 17),
+// which PostGIS rejects with "parse error - invalid geometry" for geography columns.
 func (p Point) Value() (driver.Value, error) {
-	return p.EncodeEWKB()
+	b, err := p.EncodeEWKB()
+	if err != nil {
+		return nil, err
+	}
+	return hexEncodeBytes(b), nil
 }

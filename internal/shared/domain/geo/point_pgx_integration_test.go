@@ -63,9 +63,14 @@ func startPostGIS(t *testing.T) (*pgxpool.Pool, func()) {
 	return pool, cleanup
 }
 
-// TestPointRoundTripPostGIS verifies that geo.Point encodes to EWKB, is
-// accepted by a real PostGIS geography(Point,4326) column, and decodes back
-// to the exact same coordinate pair via Scan.
+// TestPointRoundTripPostGIS verifies the production query shape:
+//
+//	INSERT INTO t (loc) VALUES ($1)   -- geo.Point.Value() sends hex EWKB string
+//	SELECT loc FROM t WHERE id = $1   -- Scan receives hex EWKB from text protocol
+//
+// No PostGIS helper functions wrap the parameter or the result. This is the
+// exact path application code takes when storing and loading a
+// geography(Point,4326) column.
 func TestPointRoundTripPostGIS(t *testing.T) {
 	pool, cleanup := startPostGIS(t)
 	defer cleanup()
@@ -88,44 +93,42 @@ func TestPointRoundTripPostGIS(t *testing.T) {
 		p    geo.Point
 	}{
 		{"origin", geo.MustPoint(0, 0)},
-		{"positive", geo.MustPoint(139.6917, 35.6895)},   // Tokyo
-		{"negative", geo.MustPoint(-43.1729, -22.9068)},  // Rio
+		{"positive", geo.MustPoint(139.6917, 35.6895)},  // Tokyo
+		{"negative", geo.MustPoint(-43.1729, -22.9068)}, // Rio
 		{"antipode", geo.MustPoint(-179.9999, -89.9999)},
 		{"max", geo.MustPoint(180, 90)},
 		{"min", geo.MustPoint(-180, -90)},
-		{"prime meridian", geo.MustPoint(0, 51.4779)},     // Greenwich
+		{"prime meridian", geo.MustPoint(0, 51.4779)},  // Greenwich
 		{"new york", geo.MustPoint(-74.006, 40.7128)},
 	}
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			// Insert using driver.Valuer (Value() returns EWKB bytes).
+			// INSERT — raw bind: Value() returns a hex EWKB string; pgx sends
+			// it with OID 25 (text) and PostGIS accepts it for geography columns.
 			var id int
 			err := pool.QueryRow(ctx,
-				"INSERT INTO geo_test (loc) VALUES (ST_GeomFromWKB($1, 4326)) RETURNING id",
+				"INSERT INTO geo_test (loc) VALUES ($1) RETURNING id",
 				tc.p,
 			).Scan(&id)
 			if err != nil {
 				t.Fatalf("INSERT %v: %v", tc.p, err)
 			}
 
-			// Select back and decode via Scan.
-			// Cast geography to geometry before calling ST_AsEWKB so that
-			// the SRID tag is preserved and our decoder receives a full EWKB.
+			// SELECT — raw column: pgx text protocol sends hex-encoded EWKB;
+			// Scan decodes it via DecodeEWKB. No ST_* wrapper, no ::geometry cast.
 			var got geo.Point
 			err = pool.QueryRow(ctx,
-				"SELECT ST_AsEWKB(loc::geometry) FROM geo_test WHERE id = $1",
+				"SELECT loc FROM geo_test WHERE id = $1",
 				id,
 			).Scan(&got)
 			if err != nil {
 				t.Fatalf("SELECT %v: %v", tc.p, err)
 			}
 
-			const tolerance = 1e-9
-			lonDiff := tc.p.Lon - got.Lon
-			latDiff := tc.p.Lat - got.Lat
-			if lonDiff > tolerance || lonDiff < -tolerance ||
-				latDiff > tolerance || latDiff < -tolerance {
+			// geography(Point,4326) stores double-precision coordinates; no
+			// quantization occurs on standard PostGIS builds so exact equality holds.
+			if got.Lon != tc.p.Lon || got.Lat != tc.p.Lat {
 				t.Errorf("round-trip mismatch: inserted {%v, %v}, got {%v, %v}",
 					tc.p.Lon, tc.p.Lat, got.Lon, got.Lat)
 			}

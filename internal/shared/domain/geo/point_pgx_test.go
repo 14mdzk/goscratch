@@ -183,19 +183,39 @@ func TestScan_BadHex(t *testing.T) {
 }
 
 // TestValue_NominalAndNaNInf verifies driver.Valuer behavior.
+// Value() returns a lowercase hex-encoded EWKB string so that pgx v5 binds
+// it with OID 25 (text), which PostGIS accepts for geography columns. Returning
+// []byte would cause pgx to use OID 17 (bytea) and PostGIS would reject it
+// with "parse error - invalid geometry".
 func TestValue_NominalAndNaNInf(t *testing.T) {
-	t.Run("valid point returns bytes", func(t *testing.T) {
+	t.Run("valid point returns hex string", func(t *testing.T) {
 		p := geo.MustPoint(-43.1729, -22.9068) // Rio de Janeiro
 		v, err := p.Value()
 		if err != nil {
 			t.Fatalf("Value() error: %v", err)
 		}
-		b, ok := v.([]byte)
+		s, ok := v.(string)
 		if !ok {
-			t.Fatalf("Value() type = %T, want []byte", v)
+			t.Fatalf("Value() type = %T, want string", v)
 		}
-		if len(b) != 25 {
-			t.Errorf("Value() len = %d, want 25", len(b))
+		// EWKB 25 bytes → 50 hex chars.
+		if len(s) != 50 {
+			t.Errorf("Value() hex len = %d, want 50", len(s))
+		}
+		// Must be valid lower hex (no 0x prefix).
+		for i, c := range s {
+			if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f')) {
+				t.Errorf("Value() hex char %q at position %d is not lowercase hex", c, i)
+				break
+			}
+		}
+		// Round-trip: hex string must decode back to original coordinates.
+		var got geo.Point
+		if err := got.Scan(s); err != nil {
+			t.Fatalf("Scan(Value()) round-trip error: %v", err)
+		}
+		if got.Lon != p.Lon || got.Lat != p.Lat {
+			t.Errorf("round-trip: got {%v, %v}, want {%v, %v}", got.Lon, got.Lat, p.Lon, p.Lat)
 		}
 	})
 
@@ -206,6 +226,28 @@ func TestValue_NominalAndNaNInf(t *testing.T) {
 			t.Errorf("Value() with NaN = %v, want ErrNaNOrInf", err)
 		}
 	})
+}
+
+// TestDecodeEWKB_SRIDZeroWithFlag verifies that EWKB with the SRID flag set
+// but SRID=0 is rejected. SRID=0 is the "unknown" SRID and is ambiguous for
+// a geography(Point,4326) column; it must not be silently accepted as 4326.
+func TestDecodeEWKB_SRIDZeroWithFlag(t *testing.T) {
+	// Construct little-endian EWKB with SRID flag set and SRID=0.
+	b := make([]byte, 25)
+	b[0] = 0x01 // little-endian
+	// geomType = wkbPoint | wkbSRIDFlag = 0x20000001 (little-endian)
+	b[1] = 0x01
+	b[2] = 0x00
+	b[3] = 0x00
+	b[4] = 0x20
+	// SRID = 0 (all zero bytes)
+	b[5], b[6], b[7], b[8] = 0x00, 0x00, 0x00, 0x00
+
+	var p geo.Point
+	err := p.DecodeEWKB(b)
+	if !errors.Is(err, geo.ErrInvalidWKB) {
+		t.Errorf("DecodeEWKB(SRID-flag+SRID=0) = %v, want ErrInvalidWKB", err)
+	}
 }
 
 // TestEWKB_BigEndianDecode verifies that big-endian EWKB can also be decoded.
