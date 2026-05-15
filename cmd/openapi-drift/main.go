@@ -12,11 +12,10 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"os"
-	"path/filepath"
 	"regexp"
-	"runtime"
 	"sort"
 	"strings"
 
@@ -33,6 +32,11 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"gopkg.in/yaml.v3"
 )
+
+// defaultSpecPath is the path to the OpenAPI spec relative to the repository
+// root. The binary is always invoked from the repo root (make / CI), so this
+// relative default resolves correctly without any runtime source-path tricks.
+const defaultSpecPath = "internal/module/docs/openapi.yaml"
 
 // excludedPrefixes lists path prefixes that are intentionally absent from the
 // OpenAPI spec (infrastructure routes, doc UI). Routes whose path starts with
@@ -56,7 +60,9 @@ var reParam = regexp.MustCompile(`\{[^}]+\}`)
 type routeKey = string
 
 func main() {
-	specPath := resolveSpecPath()
+	specPath := flag.String("spec", defaultSpecPath,
+		"path to openapi.yaml (relative to cwd or absolute)")
+	flag.Parse()
 
 	fiberRoutes, err := collectFiberRoutes()
 	if err != nil {
@@ -64,9 +70,9 @@ func main() {
 		os.Exit(1)
 	}
 
-	specRoutes, err := collectSpecRoutes(specPath)
+	specRoutes, err := collectSpecRoutes(*specPath)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "openapi-drift: parsing spec %s: %v\n", specPath, err)
+		fmt.Fprintf(os.Stderr, "openapi-drift: parsing spec %s: %v\n", *specPath, err)
 		os.Exit(1)
 	}
 
@@ -83,14 +89,6 @@ func main() {
 		fmt.Fprintf(os.Stderr, "openapi-drift: EXTRA in spec:       %s\n", r)
 	}
 	os.Exit(1)
-}
-
-// resolveSpecPath returns the absolute path to openapi.yaml, resolved relative
-// to this source file's location (two directories up = repository root).
-func resolveSpecPath() string {
-	_, thisFile, _, _ := runtime.Caller(0)
-	repoRoot := filepath.Join(filepath.Dir(thisFile), "..", "..")
-	return filepath.Join(repoRoot, "internal", "module", "docs", "openapi.yaml")
 }
 
 // --- Fiber route collection ---

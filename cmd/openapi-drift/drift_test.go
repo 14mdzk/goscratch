@@ -1,6 +1,7 @@
 package main
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -270,8 +271,26 @@ func TestCollectFiberRoutes_ExcludesDocs(t *testing.T) {
 		t.Fatalf("collectFiberRoutes() error: %v", err)
 	}
 	for key := range routes {
-		if len(key) > 5 && (key[4:9] == "/docs" || (len(key) > 7 && key[5:10] == "/docs")) {
+		// key format: "METHOD /path" — split on first space to isolate the path.
+		parts := strings.SplitN(key, " ", 2)
+		if len(parts) == 2 && (parts[1] == "/docs" || strings.HasPrefix(parts[1], "/docs/")) {
 			t.Errorf("docs route leaked into route set: %q", key)
 		}
+	}
+}
+
+// --- Flag / spec-path tests ---
+
+func TestDefaultSpecPath(t *testing.T) {
+	if defaultSpecPath != "internal/module/docs/openapi.yaml" {
+		t.Errorf("defaultSpecPath = %q, want %q",
+			defaultSpecPath, "internal/module/docs/openapi.yaml")
+	}
+}
+
+func TestCollectSpecRoutes_NonexistentPath(t *testing.T) {
+	_, err := collectSpecRoutes("/nonexistent/path/openapi.yaml")
+	if err == nil {
+		t.Error("expected error for nonexistent spec path, got nil")
 	}
 }
