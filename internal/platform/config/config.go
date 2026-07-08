@@ -28,6 +28,7 @@ type Config struct {
 	Worker        WorkerConfig        `json:"worker"`
 	Observability ObservabilityConfig `json:"observability"`
 	Email         EmailConfig         `json:"email"`
+	Notification  NotificationConfig  `json:"notification"`
 	RateLimit     RateLimitConfig     `json:"rate_limit"`
 	Health        HealthConfig        `json:"health"`
 }
@@ -170,6 +171,11 @@ type EmailConfig struct {
 	Username string `json:"username" env:"EMAIL_USERNAME"`
 	Password string `json:"password" env:"EMAIL_PASSWORD"`
 	From     string `json:"from" env:"EMAIL_FROM"`
+}
+
+type NotificationConfig struct {
+	Enabled     bool   `json:"enabled" env:"NOTIFICATION_ENABLED"`
+	WebhookURL  string `json:"webhook_url" env:"NOTIFICATION_WEBHOOK_URL"`
 }
 
 type RateLimitConfig struct {

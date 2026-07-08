@@ -12,6 +12,7 @@ import (
 	"github.com/14mdzk/goscratch/internal/adapter/cache"
 	casbinadapter "github.com/14mdzk/goscratch/internal/adapter/casbin"
 	emailadapter "github.com/14mdzk/goscratch/internal/adapter/email"
+	notificationadapter "github.com/14mdzk/goscratch/internal/adapter/notification"
 	"github.com/14mdzk/goscratch/internal/adapter/queue"
 	"github.com/14mdzk/goscratch/internal/adapter/sse"
 	"github.com/14mdzk/goscratch/internal/adapter/storage"
@@ -49,6 +50,7 @@ type App struct {
 	Auditor         port.Auditor
 	Authorizer      port.Authorizer
 	Email           port.EmailSender
+	Notification    port.NotificationSender
 	metricsServer   *nethttp.Server
 	tracerShutdown  func(context.Context) error
 	rateLimitCloser io.Closer
@@ -214,6 +216,17 @@ func New(ctx context.Context, cfg *config.Config) (*App, error) {
 		emailSender = emailadapter.NewNoOpSender(log)
 	}
 
+		// Initialize notification sender
+		var notificationSender port.NotificationSender
+		if cfg.Notification.Enabled {
+			log.Info("Initializing webhook notification sender...")
+			notificationSender = notificationadapter.NewWebhookSender(notificationadapter.WebhookConfig{
+				URL: cfg.Notification.WebhookURL,
+			})
+		} else {
+			notificationSender = notificationadapter.NewNoOpSender(log)
+		}
+
 	// Initialize HTTP server
 	server := http.NewServer(cfg.Server, log, cfg.IsProduction())
 
@@ -352,6 +365,7 @@ func New(ctx context.Context, cfg *config.Config) (*App, error) {
 		Auditor:         auditor,
 		Authorizer:      authorizer,
 		Email:           emailSender,
+		Notification:    notificationSender,
 		metricsServer:   metricsServer,
 		tracerShutdown:  tracerShutdown,
 		rateLimitCloser: rateLimitCloser,
@@ -461,6 +475,9 @@ func (a *App) Shutdown(ctx context.Context) error {
 		}
 		if a.Email != nil {
 			_ = a.Email.Close()
+		}
+		if a.Notification != nil {
+			_ = a.Notification.Close()
 		}
 		return nil
 	})

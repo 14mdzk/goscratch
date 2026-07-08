@@ -14,9 +14,7 @@ import (
 var validJobTypes = map[string]string{
 	worker.JobTypeEmailSend:    "Send an email to a recipient",
 	worker.JobTypeAuditCleanup: "Clean up old audit log entries",
-	// worker.JobTypeNotification is defined but not yet registered —
-	// no handler exists in internal/worker/handlers/. Phase 2 (notification
-	// system) will add the handler and re-add this entry.
+	worker.JobTypeNotification: "Send a notification to a user",
 }
 
 // jobUseCase handles job business logic.
