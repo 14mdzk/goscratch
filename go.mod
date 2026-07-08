@@ -1,6 +1,6 @@
 module github.com/14mdzk/goscratch
 
-go 1.25.10
+go 1.25.11
 
 require (
 	github.com/Blank-Xu/sql-adapter v1.2.1

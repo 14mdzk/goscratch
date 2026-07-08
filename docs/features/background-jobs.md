@@ -65,11 +65,11 @@ Background job processing via RabbitMQ. An HTTP API allows admins to dispatch jo
 |------|-------------|
 | `email.send` | Send an email to a recipient |
 | `audit.cleanup` | Clean up old audit log entries |
-| `notification.send` | Send a notification to a user |
+| `notification.send` | Send a notification to a user (planned — handler not yet registered) |
 
 ## Worker Processing
 
-The worker runs as a separate process (or goroutine) that:
+The worker runs as a separate binary (`cmd/worker/main.go`) that:
 
 1. Declares the queue (durable) on startup
 2. Spawns `concurrency` consumer goroutines
