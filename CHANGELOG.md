@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-07-08
+
 ### Added
 
 - `make new-module name=<name>` — module scaffold generator (`cmd/scaffold`). Running the target produces `internal/module/<name>/{domain,usecase,handler}/` with compilable Go stubs and paired table-driven test skeletons, following the canonical shape of the `user` and `auth` modules. Templates are embedded into the binary via `embed.FS`; the module path is read from `go.mod` so import paths stay correct on forks. Name validation rejects Go reserved words and collisions with existing directories. Closes v1.3 roadmap row A1.
