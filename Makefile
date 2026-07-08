@@ -1,4 +1,4 @@
-.PHONY: help dev dev-worker dev-no-air build test test-ci test-integration lint lint-casbin-sql openapi-drift vuln clean migrate-up migrate-down migrate-create sqlc docker-up docker-down worker-build new-module
+.PHONY: help dev dev-worker dev-no-air build test test-ci test-integration lint lint-casbin-sql openapi-drift vuln clean migrate-up migrate-down migrate-create sqlc docker-up docker-down worker-build new-module new
 
 # Default target
 help:
@@ -22,6 +22,7 @@ help:
 	@echo "  make docker-full      - Start all Docker services (including Redis, RabbitMQ)"
 	@echo "  make seed             - Seed database with initial data"
 	@echo "  make install-tools    - Install development tools"
+	@echo "  make new              - Create issue + branch + link to project (TYPE=feat TITLE=... BODY=...)"
 
 # Variables
 APP_NAME := goscratch
@@ -213,3 +214,57 @@ setup: install-tools deps docker-up migrate-up
 .PHONY: new-module
 new-module: ## Scaffold a new module (usage: make new-module name=foo)
 	@go run ./cmd/scaffold module $(name)
+
+# --- Workflow: create issue → branch → code → PR ---
+# Usage:
+#   make new TITLE="Add user avatar upload" TYPE=feat
+#   make new TITLE="Fix login rate limit" TYPE=fix LABEL=bug
+#   make new TITLE="Refactor config loader" TYPE=refactor BODY="Closes #12"
+#
+# TYPE defaults to feat. LABEL defaults based on TYPE.
+# The branch name is {TYPE}/{issue-number}-{slugified-title}.
+.PHONY: new
+new:
+ifndef TITLE
+	@echo "Error: TITLE is required. Usage: make new TITLE=\"Your issue title\" [TYPE=feat] [BODY=...] [LABEL=...]"
+	@exit 1
+endif
+	@TYPE=$${TYPE:-feat}; \
+	BODY=$${BODY:-}; \
+	LABEL=$${LABEL:-}; \
+	if [ -z "$$LABEL" ]; then \
+		case "$$TYPE" in \
+			feat) LABEL=enhancement;; \
+			fix)  LABEL=bug;; \
+			docs) LABEL=documentation;; \
+			*)    LABEL=$$TYPE;; \
+		esac; \
+	fi; \
+	JSON=$$(gh issue create \
+		--title "$(TITLE)" \
+		--body "$$BODY" \
+		--label "$$LABEL" \
+		--json number,url 2>&1); \
+	if [ $$? -ne 0 ]; then \
+		echo "$$JSON"; \
+		exit 1; \
+	fi; \
+	NUMBER=$$(echo "$$JSON" | jq -r '.number'); \
+	URL=$$(echo "$$JSON" | jq -r '.url'); \
+	SLUG=$$(echo "$(TITLE)" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g' | sed 's/-\+/-/g' | sed 's/^-//;s/-$$//'); \
+	BRANCH="$$TYPE/$${NUMBER}-$${SLUG}"; \
+	git switch -c "$$BRANCH" 2>&1 || exit 1; \
+	if gh project item-add 8 --owner 14mdzk --url "$$URL" 2>/dev/null; then \
+		echo ""; \
+	else \
+		echo "  (project link skipped — verify gh auth has project scope)"; \
+	fi; \
+	echo ""; \
+	echo "🚀 Ready to code"; \
+	echo "   Issue : #$$NUMBER — $(TITLE)"; \
+	echo "   Branch: $$BRANCH"; \
+	echo "   URL   : $$URL"; \
+	echo ""; \
+	echo "Next: commit your changes, then:"; \
+	echo "  git push -u origin $$BRANCH"; \
+	echo "  gh pr create --title \"$$TYPE: $(TITLE)\" --body \"Closes #$$NUMBER\""
