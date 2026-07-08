@@ -27,3 +27,11 @@ var ErrPolygonTooFewPoints = errors.New("geo: polygon ring must have at least 4 
 // ErrNegativeDistance is returned when a Distance is constructed with a negative
 // value.
 var ErrNegativeDistance = errors.New("geo: distance must be non-negative")
+
+// ErrNaNOrInf is returned when a Point's Lon or Lat is NaN or ±Inf, which
+// cannot be encoded in WKB.
+var ErrNaNOrInf = errors.New("geo: point coordinates must be finite (NaN/Inf not allowed)")
+
+// ErrInvalidWKB is returned when a byte slice cannot be decoded as a valid
+// EWKB-encoded Point geometry.
+var ErrInvalidWKB = errors.New("geo: invalid EWKB bytes for Point")
