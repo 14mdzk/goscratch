@@ -96,22 +96,6 @@ func TestUseCase_Dispatch(t *testing.T) {
 		mockQueue.AssertExpectations(t)
 	})
 
-	t.Run("success_notification", func(t *testing.T) {
-		mockQueue := new(MockQueue)
-		mockQueue.On("Publish", ctx, "", "jobs", mock.AnythingOfType("[]uint8")).Return(nil)
-
-		publisher := worker.NewPublisher(mockQueue, "jobs", "")
-		uc := NewUseCase(publisher)
-
-		payload := map[string]string{"user_id": "123", "message": "Hello"}
-		result, err := uc.Dispatch(ctx, "notification.send", payload, 5)
-
-		assert.NoError(t, err)
-		assert.NotNil(t, result)
-		assert.Equal(t, "notification.send", result.Type)
-		mockQueue.AssertExpectations(t)
-	})
-
 	t.Run("invalid_job_type", func(t *testing.T) {
 		mockQueue := new(MockQueue)
 		publisher := worker.NewPublisher(mockQueue, "jobs", "")
@@ -160,7 +144,7 @@ func TestUseCase_ListJobTypes(t *testing.T) {
 		result := uc.ListJobTypes(ctx)
 
 		assert.NotNil(t, result)
-		assert.Len(t, result.Types, 3)
+		assert.Len(t, result.Types, 2) // email.send, audit.cleanup; notification.send removed until Phase 2
 
 		// Collect types
 		typeMap := make(map[string]string)
@@ -170,7 +154,6 @@ func TestUseCase_ListJobTypes(t *testing.T) {
 
 		assert.Contains(t, typeMap, "email.send")
 		assert.Contains(t, typeMap, "audit.cleanup")
-		assert.Contains(t, typeMap, "notification.send")
 
 		// Verify descriptions are not empty
 		for _, desc := range typeMap {
