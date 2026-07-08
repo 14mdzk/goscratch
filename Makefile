@@ -240,17 +240,15 @@ endif
 			*)    LABEL=$$TYPE;; \
 		esac; \
 	fi; \
-	JSON=$$(gh issue create \
+	URL=$$(gh issue create \
 		--title "$(TITLE)" \
 		--body "$$BODY" \
-		--label "$$LABEL" \
-		--json number,url 2>&1); \
+		--label "$$LABEL" 2>&1); \
 	if [ $$? -ne 0 ]; then \
-		echo "$$JSON"; \
+		echo "$$URL"; \
 		exit 1; \
 	fi; \
-	NUMBER=$$(echo "$$JSON" | jq -r '.number'); \
-	URL=$$(echo "$$JSON" | jq -r '.url'); \
+	NUMBER=$$(echo "$$URL" | grep -o '[0-9]*$$'); \
 	SLUG=$$(echo "$(TITLE)" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g' | sed 's/-\+/-/g' | sed 's/^-//;s/-$$//'); \
 	BRANCH="$$TYPE/$${NUMBER}-$${SLUG}"; \
 	git switch -c "$$BRANCH" 2>&1 || exit 1; \
