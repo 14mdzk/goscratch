@@ -216,16 +216,16 @@ func New(ctx context.Context, cfg *config.Config) (*App, error) {
 		emailSender = emailadapter.NewNoOpSender(log)
 	}
 
-		// Initialize notification sender
-		var notificationSender port.NotificationSender
-		if cfg.Notification.Enabled {
-			log.Info("Initializing webhook notification sender...")
-			notificationSender = notificationadapter.NewWebhookSender(notificationadapter.WebhookConfig{
-				URL: cfg.Notification.WebhookURL,
-			})
-		} else {
-			notificationSender = notificationadapter.NewNoOpSender(log)
-		}
+	// Initialize notification sender
+	var notificationSender port.NotificationSender
+	if cfg.Notification.Enabled {
+		log.Info("Initializing webhook notification sender...")
+		notificationSender = notificationadapter.NewWebhookSender(notificationadapter.WebhookConfig{
+			URL: cfg.Notification.WebhookURL,
+		})
+	} else {
+		notificationSender = notificationadapter.NewNoOpSender(log)
+	}
 
 	// Initialize HTTP server
 	server := http.NewServer(cfg.Server, log, cfg.IsProduction())

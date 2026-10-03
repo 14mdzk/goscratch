@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- Notification system (v1.3 Phase 2, #72): pluggable `port.NotificationSender` with webhook and NoOp backends (`internal/adapter/notification/`), a `notification.send` worker handler (`internal/worker/handlers/notification_handler.go`), and `notification.enabled` / `notification.webhook_url` config keys (`NOTIFICATION_ENABLED`, `NOTIFICATION_WEBHOOK_URL`). Jobs dispatch through the existing `/api/jobs/dispatch` API; `notification.send` is re-added to the job-type registry. Spec: `docs/features/notifications.md`.
+
 ## [1.2.0] - 2026-07-08
 
 ### Added

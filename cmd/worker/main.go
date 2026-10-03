@@ -60,6 +60,11 @@ func run() error {
 		return fmt.Errorf("RabbitMQ must be enabled to run the worker. Set rabbitmq.enabled=true in config")
 	}
 
+	// Validate notification configuration before accepting jobs
+	if err := cfg.Notification.Validate(); err != nil {
+		return err
+	}
+
 	// Initialize database connection
 	appLogger.Info("Connecting to database...")
 	pool, err := database.NewPostgresPool(ctx, cfg.Database)

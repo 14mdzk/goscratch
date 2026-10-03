@@ -2,7 +2,7 @@
 
 ## Overview
 
-A pluggable notification system that delivers messages to users via configurable backends. The default backend is a webhook sender that POSTs JSON payloads to an operator-specified URL. A NoOp sender logs notifications without delivering them, making the system zero-dependency in development.
+A pluggable notification system that delivers messages to users via configurable backends. By default (`notification.enabled=false`) a NoOp sender logs notifications without delivering them, keeping the system zero-dependency in development; enabling the webhook backend POSTs JSON payloads to an operator-specified URL.
 
 Notifications are dispatched via the background job system (`notification.send` job type), so they never block the API response.
 
@@ -53,6 +53,8 @@ Notifications are dispatched through the existing job API:
 |-----|-----|---------|-------------|
 | `notification.enabled` | `NOTIFICATION_ENABLED` | `false` | Enable the notification sender |
 | `notification.webhook_url` | `NOTIFICATION_WEBHOOK_URL` | `""` | Webhook URL for the webhook backend |
+
+When `notification.enabled=true`, `notification.webhook_url` is required — startup fails fast if it is empty (validated by both the API and the worker).
 
 ## Notification Backends
 
