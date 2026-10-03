@@ -10,6 +10,7 @@ import (
 	"time"
 
 	emailadapter "github.com/14mdzk/goscratch/internal/adapter/email"
+	notificationadapter "github.com/14mdzk/goscratch/internal/adapter/notification"
 	"github.com/14mdzk/goscratch/internal/adapter/queue"
 	"github.com/14mdzk/goscratch/internal/platform/config"
 	"github.com/14mdzk/goscratch/internal/platform/database"
@@ -57,6 +58,11 @@ func run() error {
 	// Validate queue configuration before creating connections
 	if !cfg.RabbitMQ.Enabled {
 		return fmt.Errorf("RabbitMQ must be enabled to run the worker. Set rabbitmq.enabled=true in config")
+	}
+
+	// Validate notification configuration before accepting jobs
+	if err := cfg.Notification.Validate(); err != nil {
+		return err
 	}
 
 	// Initialize database connection
@@ -112,8 +118,21 @@ func run() error {
 	}
 	defer emailSender.Close()
 
+	// Initialize notification sender
+	var notificationSender port.NotificationSender
+	if cfg.Notification.Enabled {
+		appLogger.Info("Initializing webhook notification sender...")
+		notificationSender = notificationadapter.NewWebhookSender(notificationadapter.WebhookConfig{
+			URL: cfg.Notification.WebhookURL,
+		})
+	} else {
+		notificationSender = notificationadapter.NewNoOpSender(appLogger)
+	}
+	defer notificationSender.Close()
+
 	// Register job handlers
 	w.RegisterHandler(handlers.NewEmailHandler(appLogger, emailSender))
+	w.RegisterHandler(handlers.NewNotificationHandler(appLogger, notificationSender))
 	w.RegisterHandler(handlers.NewAuditCleanupHandler(pool, appLogger))
 
 	// Start worker

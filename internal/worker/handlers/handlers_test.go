@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"testing"
 
 	"github.com/14mdzk/goscratch/internal/port"
@@ -23,6 +24,21 @@ func (m *mockEmailSender) Send(_ context.Context, msg port.EmailMessage) error {
 }
 
 func (m *mockEmailSender) Close() error { return nil }
+
+type mockNotificationSender struct {
+	sent []port.NotificationMessage
+	err  error
+}
+
+func (m *mockNotificationSender) Send(_ context.Context, msg port.NotificationMessage) error {
+	if m.err != nil {
+		return m.err
+	}
+	m.sent = append(m.sent, msg)
+	return nil
+}
+
+func (m *mockNotificationSender) Close() error { return nil }
 
 func newTestLogger() *logger.Logger {
 	return logger.New(logger.Config{
@@ -133,4 +149,84 @@ func TestAuditCleanupHandler_Handle_InvalidPayload(t *testing.T) {
 	err := h.Handle(context.Background(), job)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to unmarshal audit cleanup payload")
+}
+
+// --- NotificationHandler Tests ---
+
+func TestNotificationHandler_Type(t *testing.T) {
+	h := NewNotificationHandler(newTestLogger(), &mockNotificationSender{})
+	assert.Equal(t, worker.JobTypeNotification, h.Type())
+}
+
+func TestNotificationHandler_Handle(t *testing.T) {
+	t.Run("valid_payload", func(t *testing.T) {
+		sender := &mockNotificationSender{}
+		h := NewNotificationHandler(newTestLogger(), sender)
+		job := makeJob(t, worker.JobTypeNotification, NotificationPayload{
+			UserID:  "user-1",
+			Title:   "Welcome",
+			Body:    "Hello!",
+			Channel: "in_app",
+		})
+
+		err := h.Handle(context.Background(), job)
+		require.NoError(t, err)
+		require.Len(t, sender.sent, 1)
+		assert.Equal(t, port.NotificationMessage{
+			UserID:  "user-1",
+			Title:   "Welcome",
+			Body:    "Hello!",
+			Channel: "in_app",
+		}, sender.sent[0])
+	})
+
+	t.Run("missing_user_id", func(t *testing.T) {
+		h := NewNotificationHandler(newTestLogger(), &mockNotificationSender{})
+		job := makeJob(t, worker.JobTypeNotification, NotificationPayload{
+			Title: "Welcome",
+			Body:  "Hello!",
+		})
+
+		err := h.Handle(context.Background(), job)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "notification user_id is required")
+	})
+
+	t.Run("missing_title", func(t *testing.T) {
+		h := NewNotificationHandler(newTestLogger(), &mockNotificationSender{})
+		job := makeJob(t, worker.JobTypeNotification, NotificationPayload{
+			UserID: "user-1",
+			Body:   "Hello!",
+		})
+
+		err := h.Handle(context.Background(), job)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "notification title is required")
+	})
+
+	t.Run("invalid_payload_json", func(t *testing.T) {
+		h := NewNotificationHandler(newTestLogger(), &mockNotificationSender{})
+		job := &worker.Job{
+			ID:      "test-id",
+			Type:    worker.JobTypeNotification,
+			Payload: json.RawMessage(`not-json`),
+		}
+
+		err := h.Handle(context.Background(), job)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "failed to unmarshal notification payload")
+	})
+
+	t.Run("send_error", func(t *testing.T) {
+		h := NewNotificationHandler(newTestLogger(), &mockNotificationSender{err: errors.New("webhook down")})
+		job := makeJob(t, worker.JobTypeNotification, NotificationPayload{
+			UserID: "user-1",
+			Title:  "Welcome",
+			Body:   "Hello!",
+		})
+
+		err := h.Handle(context.Background(), job)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "failed to send notification")
+	})
 }

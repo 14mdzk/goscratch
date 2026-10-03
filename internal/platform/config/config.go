@@ -28,6 +28,7 @@ type Config struct {
 	Worker        WorkerConfig        `json:"worker"`
 	Observability ObservabilityConfig `json:"observability"`
 	Email         EmailConfig         `json:"email"`
+	Notification  NotificationConfig  `json:"notification"`
 	RateLimit     RateLimitConfig     `json:"rate_limit"`
 	Health        HealthConfig        `json:"health"`
 }
@@ -172,6 +173,19 @@ type EmailConfig struct {
 	From     string `json:"from" env:"EMAIL_FROM"`
 }
 
+type NotificationConfig struct {
+	Enabled    bool   `json:"enabled" env:"NOTIFICATION_ENABLED"`
+	WebhookURL string `json:"webhook_url" env:"NOTIFICATION_WEBHOOK_URL"`
+}
+
+// Validate checks the notification configuration for internal consistency.
+func (c NotificationConfig) Validate() error {
+	if c.Enabled && c.WebhookURL == "" {
+		return fmt.Errorf("notification.webhook_url is required when notification is enabled: set NOTIFICATION_WEBHOOK_URL or disable NOTIFICATION_ENABLED")
+	}
+	return nil
+}
+
 type RateLimitConfig struct {
 	Enabled   bool `json:"enabled" env:"RATE_LIMIT_ENABLED"`
 	Max       int  `json:"max" env:"RATE_LIMIT_MAX"`
@@ -298,6 +312,9 @@ func (c *Config) Validate() error {
 	}
 	if c.JWT.Audience == "" {
 		return fmt.Errorf("jwt.audience is required: set JWT_AUDIENCE to the expected audience (e.g. \"goscratch-api\")")
+	}
+	if err := c.Notification.Validate(); err != nil {
+		return err
 	}
 	return nil
 }

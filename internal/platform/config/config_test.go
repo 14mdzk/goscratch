@@ -231,6 +231,32 @@ func TestValidate_AcceptsLongUniqueJWTSecret(t *testing.T) {
 	require.NoError(t, cfg.Validate())
 }
 
+func TestValidate_RejectsEnabledNotificationWithoutWebhookURL(t *testing.T) {
+	cfg := &Config{
+		JWT: JWTConfig{
+			Secret:   "a-32-byte-real-secret-xxxxxxxxxx",
+			Issuer:   "goscratch",
+			Audience: "goscratch-api",
+		},
+		Notification: NotificationConfig{Enabled: true},
+	}
+	err := cfg.Validate()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "NOTIFICATION_WEBHOOK_URL")
+}
+
+func TestValidate_AcceptsEnabledNotificationWithWebhookURL(t *testing.T) {
+	cfg := &Config{
+		JWT: JWTConfig{
+			Secret:   "a-32-byte-real-secret-xxxxxxxxxx",
+			Issuer:   "goscratch",
+			Audience: "goscratch-api",
+		},
+		Notification: NotificationConfig{Enabled: true, WebhookURL: "https://hooks.example.com/notify"},
+	}
+	require.NoError(t, cfg.Validate())
+}
+
 func TestValidate_RejectsEmptyIssuer(t *testing.T) {
 	cfg := &Config{JWT: JWTConfig{
 		Secret:   "a-32-byte-real-secret-xxxxxxxxxx",

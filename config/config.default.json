@@ -84,6 +84,10 @@
     "password": "",
     "from": "noreply@example.com"
   },
+  "notification": {
+    "enabled": false,
+    "webhook_url": ""
+  },
   "rate_limit": {
     "enabled": true,
     "max": 100,

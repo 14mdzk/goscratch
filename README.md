@@ -149,6 +149,7 @@ Goscratch uses a **3-layer configuration system** (each layer overrides the prev
 | Redis | disabled | `REDIS_ENABLED=true` |
 | RabbitMQ | disabled | `RABBITMQ_ENABLED=true` |
 | Email | disabled | `EMAIL_ENABLED=true` |
+| Notification | disabled | `NOTIFICATION_ENABLED=true` |
 
 See `.env.example` and `config/config.default.json` for all options.
 
@@ -194,7 +195,7 @@ Production configs in `deploy/`:
 - `docs/ROADMAP.md` -- Version history and feature tracking
 - `docs/QUICKSTART.md` -- Five-minute setup + secure-defaults checklist for upgrading operators
 - `docs/RUNBOOK.md` -- Incident-response playbooks (rotate JWT secret, mass refresh-token revoke, audit-log retention re-run, cache flush, reading audit logs and metrics)
-- `docs/features/` -- Feature specifications (12 specs)
+- `docs/features/` -- Feature specifications (13 specs)
 - `docs/adr/` -- Architecture decision records (7 ADRs)
 - `docs/audit/` -- Pre-ship audit findings, per-PR scope files, and the punch-list ledger
 - `CHANGELOG.md` -- Release history (current: v1.1.0 — Hardening)

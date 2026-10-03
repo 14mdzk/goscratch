@@ -65,7 +65,7 @@ Background job processing via RabbitMQ. An HTTP API allows admins to dispatch jo
 |------|-------------|
 | `email.send` | Send an email to a recipient |
 | `audit.cleanup` | Clean up old audit log entries |
-| `notification.send` | Send a notification to a user (planned — handler not yet registered) |
+| `notification.send` | Send a notification to a user |
 
 ## Worker Processing
 
