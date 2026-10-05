@@ -1,0 +1,1051 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>goscratch CLI — surface prototype (wayfinder #86)</title>
+<style>
+  :root{
+    --ink:#1f2328; --dim:#6b7280; --line:#e5e7eb; --bg:#f6f7f9; --panel:#fff;
+    --accent:#4f46e5; --termbg:#16181d; --termtext:#d7dce5; --termdim:#8b949e;
+    --err:#f85149; --ok:#3fb950; --cmd:#79c0ff; --prompt:#d2a8ff;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:var(--bg);color:var(--ink)}
+  header{padding:18px 24px 0}
+  h1{font-size:18px;margin:0 0 6px;display:flex;align-items:center;gap:10px}
+  .badge{font-size:11px;font-weight:700;letter-spacing:.06em;color:#b45309;background:#fef3c7;border:1px solid #fcd34d;border-radius:999px;padding:2px 9px}
+  .question{max-width:980px;margin:6px 0;color:var(--ink)}
+  .howto{max-width:980px;color:var(--dim);font-size:13px;margin:4px 0 0}
+  nav#scenarios{display:flex;gap:6px;padding:12px 24px 10px;flex-wrap:wrap}
+  nav#scenarios button{font:12.5px/1 inherit;padding:6px 11px;border:1px solid var(--line);background:#fff;color:var(--dim);border-radius:999px;cursor:pointer}
+  nav#scenarios button.active{background:var(--ink);color:#fff;border-color:var(--ink)}
+  main{display:grid;grid-template-columns:270px minmax(0,1fr) 330px;gap:14px;padding:0 24px 80px;align-items:start}
+  h3{font-size:12px;text-transform:uppercase;letter-spacing:.07em;color:var(--dim);margin:0 0 8px}
+  .chip{display:block;width:100%;text-align:left;font:12px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace;padding:7px 9px;margin:0 0 5px;border:1px solid var(--line);background:#fff;border-radius:8px;cursor:pointer;color:var(--ink)}
+  .chip:hover{border-color:var(--accent);color:var(--accent)}
+  .chip.done{opacity:.5}
+  .chip.done::after{content:" ✓";color:var(--ok)}
+  .chip.next{border-color:var(--accent);box-shadow:0 0 0 2px rgba(79,70,229,.15)}
+  .term{background:var(--termbg);color:var(--termtext);border-radius:10px;padding:12px 14px;height:calc(100vh - 285px);min-height:360px;overflow:auto;font:12.5px/1.55 ui-monospace,SFMono-Regular,Menlo,monospace;white-space:pre-wrap;word-break:break-word}
+  .term .cmd{color:var(--cmd)}
+  .term .err{color:var(--err)}
+  .term .dim{color:var(--termdim)}
+  .term .ok{color:var(--ok)}
+  .term .prompt{color:var(--prompt)}
+  #freeform{display:flex;gap:8px;margin-top:8px}
+  #freeinput{flex:1;font:12.5px ui-monospace,Menlo,monospace;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:#fff}
+  #freeinput:focus{outline:2px solid rgba(79,70,229,.35);border-color:var(--accent)}
+  .term-actions{display:flex;gap:8px;margin-top:6px}
+  .term-actions button{font-size:12px;padding:4px 10px;border:1px solid var(--line);background:#fff;border-radius:7px;cursor:pointer;color:var(--dim)}
+  .term-actions button:hover{color:var(--accent);border-color:var(--accent)}
+  #workspace pre{background:#fff;border:1px solid var(--line);border-radius:10px;padding:10px 12px;font:12px/1.55 ui-monospace,SFMono-Regular,Menlo,monospace;overflow:auto;max-height:calc(100vh - 285px);margin:0;min-height:360px}
+  .t-add{color:#1a7f37;font-weight:600}
+  .t-gone{color:#b91c1c;text-decoration:line-through}
+  .ws-note{color:var(--dim);font-size:12px;margin:6px 0 0}
+  #decisions{padding:6px 24px 40px;max-width:980px}
+  #decisions h2{font-size:15px;margin:10px 0 6px}
+  #decisions ol{margin:6px 0;padding-left:22px}
+  #decisions li{margin:5px 0}
+  #decisions .notes{margin:4px 0 10px}
+  #decisions .notes ul{margin:4px 0;padding-left:20px}
+  .muted{color:var(--dim)}
+  code{font:12px ui-monospace,Menlo,monospace;background:#eef0f3;padding:1px 5px;border-radius:5px}
+  #variant-bar{position:fixed;left:50%;bottom:14px;transform:translateX(-50%);background:#111827;color:#f9fafb;border-radius:999px;display:flex;align-items:center;gap:12px;padding:8px 16px;box-shadow:0 8px 24px rgba(0,0,0,.28);font-size:13px;z-index:10}
+  #variant-bar button{background:none;border:0;color:#93c5fd;font-size:16px;cursor:pointer;padding:0 2px}
+  #variant-bar button:hover{color:#fff}
+  #variant-label{min-width:210px;text-align:center;white-space:nowrap}
+</style>
+</head>
+<body>
+<header>
+  <h1>goscratch CLI — surface prototype <span class="badge">PROTOTYPE · MOCKED OUTPUTS</span></h1>
+  <p class="question"><strong>The question:</strong> <code>cmd/scaffold</code> graduates into a single <code>goscratch</code> CLI that encodes the canonical module pattern across the 8 reference modules. What should its surface look like — command grammar, flag names, help text, error tone? Everything below is hand-mocked to react to; nothing is generated, nothing is committed from here.</p>
+  <p class="howto">Pick a surface with the bar at the bottom (← / → also work). Click commands in order to follow a scenario, or poke any command at any time — type your own in the box. The right panel shows the files each command would touch. Then answer the open questions at the bottom.</p>
+</header>
+
+<nav id="scenarios"></nav>
+
+<main>
+  <section>
+    <h3 id="chips-title">commands</h3>
+    <div id="chips"></div>
+  </section>
+  <section>
+    <h3>mock terminal</h3>
+    <div class="term" id="term"></div>
+    <form id="freeform" autocomplete="off">
+      <input id="freeinput" placeholder="type a command — try 'goscratch help'">
+    </form>
+    <div class="term-actions">
+      <button id="clear">clear terminal</button>
+      <button id="reset">reset workspace</button>
+    </div>
+  </section>
+  <aside>
+    <h3>would-be workspace</h3>
+    <pre id="tree"></pre>
+    <p class="ws-note" id="ws-note">baseline: this repository @ main</p>
+  </aside>
+</main>
+
+<section id="decisions">
+  <h2>Open questions this prototype should settle</h2>
+  <ol>
+    <li><strong>Surface:</strong> A colon commands (<code>make:module</code>) · B nested (<code>make module</code>) · C template-first (<code>new module</code>) · or a hybrid of pieces.</li>
+    <li><strong>Command set:</strong> exactly the plan's four (<code>make:module / make:migration / make:domain / make:job</code>) plus <code>help</code> + <code>version</code>? Extras shown: shell completion (B), <code>templates</code> listing (C), <code>resource</code> preset (C). Trim, keep, or extend?</li>
+    <li><strong>Flag naming:</strong> <code>--type</code> (A/C) vs <code>--kind</code> (B); should <code>--module</code> be required for <code>make:domain</code>, or inferred when run inside <code>internal/module/&lt;module&gt;/</code>?</li>
+    <li><strong>Migrations:</strong> generate the file pair directly (continuing the 6-digit sequence at <code>000005</code>), or shell out to <code>migrate create</code>? The mock generates directly.</li>
+    <li><strong>Error tone:</strong> terse one-liners (A/C) vs full usage dump on every error (B, unless <code>SilenceUsage</code>).</li>
+    <li><strong><code>cmd/scaffold</code>'s fate:</strong> delete outright (the plan says removed) or keep a one-release deprecation shim that points at the new command?</li>
+    <li><strong>Binary naming:</strong> the server binary built by <code>make build</code> is already <code>bin/goscratch</code>; the mock installs the CLI as <code>goscratch</code> too (<code>go install ./cmd/goscratch</code>). Decide what <code>make build</code> should do.</li>
+    <li><strong>ADR numbering:</strong> this ticket's plan slot is ADR-009 (Phase 5, item 16) — the OpenAPI ticket would then become ADR-010 instead of its currently-written 009.</li>
+    <li><strong>--force:</strong> ADR-008 banned it for the old scaffold; keep it banned (collision = delete first)?</li>
+  </ol>
+  <h2>Surface notes</h2>
+  <div class="notes" id="variant-notes"></div>
+</section>
+
+<div id="variant-bar">
+  <button id="var-prev" title="previous surface (←)">←</button>
+  <span id="variant-label"></span>
+  <button id="var-next" title="next surface (→)">→</button>
+</div>
+
+<script>
+"use strict";
+
+/* ============================== state ============================== */
+
+const state = {
+  variant: "A",
+  scenario: "all",
+  tree: null,
+  added: new Set(),
+  removed: new Set(),
+  done: new Set(),
+};
+
+const SCENARIOS = [
+  { key: "all",      label: "All commands" },
+  { key: "first",    label: "First contact" },
+  { key: "module",   label: "Scaffold a module" },
+  { key: "migjob",   label: "Migrations & jobs" },
+  { key: "awkward",  label: "Awkward cases" },
+  { key: "wiring",   label: "Wiring & removal" },
+];
+
+function baseTree(){
+  return {
+    "go.mod": null,
+    "cmd": {
+      "api": {}, "worker": {}, "openapi-drift": {},
+      "scaffold": { "main.go": null, "scaffold.go": null, "scaffold_test.go": null, "templates": {} }
+    },
+    "internal": {
+      "module": {
+        "auth": {}, "docs": {}, "health": {}, "job": {},
+        "role": {}, "sse": {}, "storage": {}, "user": {}
+      },
+      "worker": { "handlers": { "audit_cleanup_handler.go": null, "email_handler.go": null, "notification_handler.go": null } }
+    },
+    "migrations": {
+      "000001_init.up.sql": null, "000001_init.down.sql": null,
+      "000002_init_audit.up.sql": null, "000002_init_audit.down.sql": null,
+      "000003_casbin_rules.up.sql": null, "000003_casbin_rules.down.sql": null,
+      "000004_postgis.up.sql": null, "000004_postgis.down.sql": null
+    }
+  };
+}
+
+function resetWorkspace(){
+  state.tree = baseTree();
+  state.added = new Set();
+  state.removed = new Set();
+  renderTree();
+}
+
+function existsNode(path){
+  let node = state.tree;
+  if (!node) return false;
+  for (const part of path.split("/")) {
+    if (node === null || typeof node !== "object" || !(part in node)) return false;
+    node = node[part];
+  }
+  return true;
+}
+
+function nodeAt(path){
+  let node = state.tree;
+  if (!node) return null;
+  for (const part of path.split("/")) {
+    if (node === null || typeof node !== "object" || !(part in node)) return null;
+    node = node[part];
+  }
+  return node;
+}
+
+function hasLive(path){
+  if (state.removed.has(path)) return false;
+  return existsNode(path);
+}
+
+function addFile(path){
+  const parts = path.split("/");
+  let node = state.tree;
+  let prefix = "";
+  for (let i = 0; i < parts.length; i++) {
+    const part = parts[i];
+    prefix = prefix ? prefix + "/" + part : part;
+    const last = i === parts.length - 1;
+    if (!(part in node)) {
+      node[part] = last ? null : {};
+      state.added.add(prefix);
+    }
+    if (!last) node = node[part];
+  }
+  renderTree();
+}
+
+function markRemoved(path){
+  if (!existsNode(path)) return;
+  state.removed.add(path);
+  const node = nodeAt(path);
+  if (node !== null && typeof node === "object") {
+    for (const k of Object.keys(node)) markRemoved(path + "/" + k);
+  }
+}
+
+/* ============================== tree render ============================== */
+
+function renderTree(){
+  const out = [];
+  walkTree(state.tree, "", out);
+  document.getElementById("tree").innerHTML = out.join("\n");
+}
+
+function depthOf(path){ return path.split("/").length - 1; }
+
+function walkTree(node, base, out){
+  const keys = Object.keys(node).sort((a, b) => a.localeCompare(b));
+  for (const k of keys) {
+    const path = base ? base + "/" + k : k;
+    const child = node[k];
+    const isDir = child !== null && typeof child === "object";
+    let cls = "";
+    if (state.removed.has(path)) cls = "t-gone";
+    else if (state.added.has(path)) cls = "t-add";
+    const indent = "  ".repeat(depthOf(path));
+    const label = escapeHtml(k + (isDir ? "/" : ""));
+    out.push(cls ? `<span class="${cls}">${indent}${label}</span>` : `${indent}${label}`);
+    if (isDir) walkTree(child, path, out);
+  }
+}
+
+function escapeHtml(s){
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+/* ============================== shared outputs ============================== */
+
+function moduleFiles(n){
+  return [
+    `internal/module/${n}/domain/${n}_domain.go`,
+    `internal/module/${n}/usecase/port.go`,
+    `internal/module/${n}/usecase/${n}_usecase.go`,
+    `internal/module/${n}/usecase/${n}_usecase_test.go`,
+    `internal/module/${n}/handler/${n}_handler.go`,
+    `internal/module/${n}/handler/${n}_handler_test.go`
+  ];
+}
+
+function moduleDryRunText(n){
+  const files = moduleFiles(n);
+  return "would create:\n" + files.map(f => "  " + f).join("\n") +
+    `\n${files.length} files (dry run — nothing written)`;
+}
+
+function moduleCreatedText(n){
+  return moduleFiles(n).map(f => "created " + f).join("\n") +
+`\n
+Module "${n}" scaffolded at internal/module/${n}
+Next steps:
+  1. Review the TODO(scaffold) comments in the generated files
+  2. Add fields to internal/module/${n}/domain/${n}_domain.go
+  3. Implement usecase methods in internal/module/${n}/usecase/${n}_usecase.go
+  4. Wire handler + usecase in internal/platform/app/app.go
+  5. Run: go test ./internal/module/${n}/...`;
+}
+
+function migrationText(name, dry){
+  const pair = [`migrations/000005_${name}.up.sql`, `migrations/000005_${name}.down.sql`];
+  if (dry) {
+    return "would create:\n" + pair.map(f => "  " + f).join("\n") +
+      "\n2 files (sequence 000005 continues from 000004_postgis; dry run — nothing written)";
+  }
+  return pair.map(f => "created " + f).join("\n") +
+    "\n\nEdit the pair, then: make migrate-up  (roll back: make migrate-down)";
+}
+
+function domainText(name, mod, type){
+  const title = name.replace(/(^|_)([a-z0-9])/g, (m, a, b) => b.toUpperCase());
+  const kind = type === "value-object" ? "Value object" : "Entity";
+  return `created internal/module/${mod}/domain/${name}.go\n` +
+    `created internal/module/${mod}/domain/${name}_test.go\n\n` +
+    `${kind} "${title}" scaffolded in internal/module/${mod}/domain/`;
+}
+
+function jobText(name){
+  const bare = name.replace(/(^|_)([a-z0-9])/g, (m, a, b) => b.toUpperCase());
+  return `created internal/worker/handlers/${name}_handler.go\n
+Wiring stays manual (TODO(job) markers are in the file):
+  1. Add JobType${bare} to internal/worker/job.go
+  2. Register the handler in cmd/worker/main.go:
+       w.RegisterHandler(handlers.New${bare}Handler(...))`;
+}
+
+function versionText(){
+  return "goscratch v1.3.0-dev (go1.25.13, darwin/arm64)";
+}
+
+/* ============================== output object ============================== */
+
+function out(text, extra){
+  return Object.assign({ text: text }, extra || {});
+}
+
+/* ============================== variant A ============================== */
+
+const defA = {
+  label: "A · colon commands",
+  notes: [
+    "Zero dependencies — plain stdlib plus a small dispatcher (the shape cmd/scaffold has today).",
+    "Matches the plan text verbatim: make:module, make:migration, make:domain, make:job — colon namespacing reads like `make`/Rails tasks.",
+    "Hand-rolled help means full control of wording, but no shell completion for free.",
+    "Long flags only (--type, --dry-run, --dir): no shorthand collisions to manage later."
+  ],
+  help: {
+    root:
+`goscratch — repository code generator
+
+Usage:
+  goscratch <command> [arguments]
+
+Commands:
+  make:module <name>      Scaffold a module: domain, usecase, handler + tests
+  make:migration <name>   Create a migration pair under migrations/
+  make:domain <name>      Scaffold an entity or value object
+  make:job <name>         Scaffold a worker job handler
+  help [command]          Show help for a command
+  version                 Print version information
+
+Flags:
+  --dry-run     Print what would be created; write nothing
+  --dir <path>  Operate as if run from <path> (default: current directory)
+
+Run 'goscratch help <command>' for command details.`,
+    module:
+`make:module — scaffold a module from the canonical pattern
+
+Usage:
+  goscratch make:module <name> [--dry-run] [--dir <path>]
+
+Creates internal/module/<name>/ from the templates shared by all 8 reference
+modules — domain, usecase, handler, plus smoke tests. Import paths come from
+the nearest go.mod, so forks and renames stay correct.
+
+Names must match ^[a-z][a-z0-9_]*$, must not be Go reserved words, and must
+not collide with an existing module. There is no --force: delete first to
+regenerate.
+
+Examples:
+  goscratch make:module orders
+  goscratch make:module orders --dry-run`,
+    migration:
+`make:migration — create a migration pair
+
+Usage:
+  goscratch make:migration <name> [--dry-run] [--dir <path>]
+
+Creates migrations/<seq>_<name>.up.sql and .down.sql, where <seq> continues
+from the highest existing migration (6 digits, zero-padded).
+
+Examples:
+  goscratch make:migration add_orders_table`,
+    domain:
+`make:domain — scaffold an entity or value object
+
+Usage:
+  goscratch make:domain <name> --type=entity|value-object [--module <module>] [--dry-run]
+
+Creates internal/module/<module>/domain/<name>.go plus a test. --module may
+be omitted when run from inside internal/module/<module>/.
+
+Examples:
+  goscratch make:domain order --type=entity --module orders
+  goscratch make:domain money --type=value-object --module orders`,
+    job:
+`make:job — scaffold a worker job handler
+
+Usage:
+  goscratch make:job <name> [--dry-run] [--dir <path>]
+
+Creates internal/worker/handlers/<name>_handler.go. Wiring stays manual:
+add a JobType constant in internal/worker/job.go and register the handler in
+cmd/worker/main.go (TODO(job) markers point at both).
+
+Examples:
+  goscratch make:job send_invoice_email`
+  },
+
+  collision: n => out(`error: internal/module/${n} already exists
+  choose another name, or delete the directory first
+exit status 1`, { err: true }),
+  reserved: n => out(`error: "${n}" is a Go reserved word — pick a different module name
+exit status 1`, { err: true }),
+  invalid: n => out(`error: invalid module name "${n}"
+  names must match ^[a-z][a-z0-9_]*$ (lowercase letter first; letters, digits, underscore)
+exit status 1`, { err: true }),
+  unknown: cmd => out(`error: unknown command "${cmd}"
+Run 'goscratch help' for the command list.
+exit status 1`, { err: true }),
+  missingType: () => out(`error: --type is required for make:domain (entity|value-object)
+usage: goscratch make:domain <name> --type=entity|value-object [--module <module>]
+exit status 1`, { err: true }),
+  badType: t => out(`error: invalid --type "${t}": must be entity or value-object
+exit status 1`, { err: true }),
+  noModule: m => out(`error: module "${m}" not found — run 'goscratch make:module ${m}' first
+  (or pass --module <name> when outside internal/module/<name>/)
+exit status 1`, { err: true }),
+
+  runModule(name, dry){
+    if (!dry && hasLive("internal/module/" + name)) return this.collision(name);
+    if (dry) return out(moduleDryRunText(name));
+    moduleFiles(name).forEach(addFile);
+    return out(moduleCreatedText(name));
+  },
+  runMigration(name, dry){
+    return out(migrationText(name, dry), dry ? {} : {
+      files: [`migrations/000005_${name}.up.sql`, `migrations/000005_${name}.down.sql`]
+    });
+  },
+  runDomain(name, type, mod){
+    if (!mod) return this.missingType();
+    if (!hasLive("internal/module/" + mod)) return this.noModule(mod);
+    if (!type) return this.missingType();
+    if (type !== "entity" && type !== "value-object") return this.badType(type);
+    return out(domainText(name, mod, type), {
+      files: [`internal/module/${mod}/domain/${name}.go`, `internal/module/${mod}/domain/${name}_test.go`]
+    });
+  },
+  runJob(name){
+    return out(jobText(name), { files: [`internal/worker/handlers/${name}_handler.go`] });
+  }
+};
+
+defA.cases = [
+  { id: "a-root",   group: "first", label: "goscratch", run(){ return out(defA.help.root); } },
+  { id: "a-ver",    group: "first", label: "goscratch version", run(){ return out(versionText()); } },
+  { id: "a-hmod",   group: "first", label: "goscratch help make:module", run(){ return out(defA.help.module); } },
+
+  { id: "a-m-dry",  group: "module", label: "goscratch make:module orders --dry-run", run(){ return defA.runModule("orders", true); } },
+  { id: "a-m-new",  group: "module", label: "goscratch make:module orders", run(){ return defA.runModule("orders", false); } },
+  { id: "a-m-col",  group: "module", label: "goscratch make:module storage", run(){ return defA.collision("storage"); } },
+  { id: "a-hmig",   group: "module", label: "goscratch help make:migration", run(){ return out(defA.help.migration); } },
+
+  { id: "a-mig",    group: "migjob", label: "goscratch make:migration add_orders_table", run(){ return defA.runMigration("add_orders_table", false); } },
+  { id: "a-dom-e",  group: "migjob", label: "goscratch make:domain order --type=entity --module orders", run(){ return defA.runDomain("order", "entity", "orders"); } },
+  { id: "a-dom-v",  group: "migjob", label: "goscratch make:domain money --type=value-object --module orders", run(){ return defA.runDomain("money", "value-object", "orders"); } },
+  { id: "a-job",    group: "migjob", label: "goscratch make:job send_invoice_email", run(){ return defA.runJob("send_invoice_email"); } },
+
+  { id: "a-inv",    group: "awkward", label: "goscratch make:module User", run(){ return defA.invalid("User"); } },
+  { id: "a-res",    group: "awkward", label: "goscratch make:module type", run(){ return defA.reserved("type"); } },
+  { id: "a-mtype",  group: "awkward", label: "goscratch make:domain order --module orders", run(){ return defA.runDomain("order", null, "orders"); } },
+  { id: "a-nomod",  group: "awkward", label: "goscratch make:domain order --type=entity --module ghost", run(){ return defA.runDomain("order", "entity", "ghost"); } },
+  { id: "a-unk",    group: "awkward", label: "goscratch frobnicate", run(){ return defA.unknown("frobnicate"); } },
+
+  { id: "a-wire",   group: "wiring", label: "make new-module name=orders", run(){ return wiringOutput("A"); } },
+  { id: "a-rm",     group: "wiring", label: "rm -rf cmd/scaffold", run(){ markRemoved("cmd/scaffold"); return scaffoldRemovedOutput(); } },
+  { id: "a-shim",   group: "wiring", label: "go run ./cmd/scaffold module orders", run(){ return out(`error: the scaffold generator has moved to cmd/goscratch
+  run: go run ./cmd/goscratch make:module orders
+exit status 1`, { err: true }); } }
+];
+
+defA.moduleFlagRequired = () => out(`error: --module is required when not run from inside internal/module/<module>
+  usage: goscratch make:domain <name> --type=entity|value-object --module <module>
+exit status 1`, { err: true });
+
+defA.free = function(line){
+  const s = line.trim().replace(/^goscratch\s+/, "");
+  if (s === "" || s === "help") return out(defA.help.root);
+  if (s === "version") return out(versionText());
+  if (s === "help make:module") return out(defA.help.module);
+  if (s === "help make:migration") return out(defA.help.migration);
+  if (s === "help make:domain") return out(defA.help.domain);
+  if (s === "help make:job") return out(defA.help.job);
+  let m;
+  if ((m = s.match(/^make:module\s+(\S+)(?:\s+--dry-run)?$/))) return defA.runModule(m[1], s.includes("--dry-run"));
+  if ((m = s.match(/^make:migration\s+(\S+)(?:\s+--dry-run)?$/))) return defA.runMigration(m[1], s.includes("--dry-run"));
+  if ((m = s.match(/^make:domain\s+(\S+)\s+--type=(\S+)(?:\s+--module[= ](\S+))?$/))) {
+    if (!m[3]) return defA.moduleFlagRequired();
+    return defA.runDomain(m[1], m[2], m[3]);
+  }
+  if (s.match(/^make:domain\s+\S+(?:\s+--module[= ]\S+)?$/)) return defA.missingType();
+  if ((m = s.match(/^make:job\s+(\S+)$/))) return defA.runJob(m[1]);
+  return null;
+};
+
+/* ============================== variant B ============================== */
+
+const defB = {
+  label: "B · nested subcommands",
+  notes: [
+    "Conventional nested grammar (git-like); the framework supplies help, completion, and consistent flag parsing.",
+    "Adds github.com/spf13/cobra (+pflag) to a repo that has kept its tooling dependency-light.",
+    "By default cobra dumps full usage on every error — the mock shows that; 'SilenceUsage' would restore terse errors.",
+    "The `make` namespace leaves room for future generators (e.g. `goscratch make openapi`).",
+    "Flags shown long-only; cobra supports POSIX shorthands if we want them."
+  ],
+  help: {
+    root:
+`goscratch is a code generator for this repository: modules, migrations,
+domain types, and job handlers, all from the canonical patterns.
+
+Usage:
+  goscratch [command]
+
+Available Commands:
+  completion  Generate the autocompletion script for the specified shell
+  help        Help about any command
+  make        Generate code from the canonical templates
+  version     Print version information
+
+Flags:
+  -h, --help   help for goscratch
+
+Use "goscratch [command] --help" for more information about a command.`,
+    make:
+`Generate code from the canonical templates
+
+Usage:
+  goscratch make [command]
+
+Available Commands:
+  domain      Scaffold an entity or value object
+  job         Scaffold a worker job handler
+  migration   Create a migration pair under migrations/
+  module      Scaffold a module (domain, usecase, handler + tests)
+
+Flags:
+  -h, --help   help for make
+
+Use "goscratch make [command] --help" for more information about a command.`,
+    module:
+`Scaffold a module from the canonical pattern
+
+Creates internal/module/<name>/ from the templates shared by all 8 reference
+modules — domain, usecase, handler, plus smoke tests.
+
+Usage:
+  goscratch make module <name> [flags]
+
+Examples:
+  goscratch make module orders
+  goscratch make module orders --dry-run
+
+Flags:
+      --dir string   operate as if run from this directory
+      --dry-run      print what would be created; write nothing
+  -h, --help         help for module`
+  },
+
+  usageBlock: cmd => `Usage:
+  goscratch ${cmd} [flags]
+
+Flags:
+  -h, --help         help for ${cmd.split(" ").pop()}
+      --dry-run      print what would be created; write nothing
+      --dir string   operate as if run from this directory`,
+
+  collision: n => out(`Error: module "${n}" already exists at internal/module/${n}
+
+` + defB.usageBlock("make module <name>") + `
+exit status 1`, { err: true }),
+  reserved: n => out(`Error: "${n}" is a Go reserved word
+
+` + defB.usageBlock("make module <name>") + `
+exit status 1`, { err: true }),
+  invalid: n => out(`Error: invalid module name "${n}": must match ^[a-z][a-z0-9_]*$
+
+` + defB.usageBlock("make module <name>") + `
+exit status 1`, { err: true }),
+  unknown: cmd => out(`Error: unknown command "${cmd}" for "goscratch"
+Run 'goscratch --help' for usage.
+exit status 1`, { err: true }),
+  missingType: () => out(`Error: required flag(s) "kind" not set
+
+` + defB.usageBlock("make domain <name>") + `
+exit status 1`, { err: true }),
+  badType: t => out(`Error: invalid argument "${t}" for "--kind" flag: must be entity or value-object
+exit status 1`, { err: true }),
+  noModule: m => out(`Error: module "${m}" not found — scaffold it first: goscratch make module ${m}
+exit status 1`, { err: true }),
+
+  runModule(name, dry){
+    if (!dry && hasLive("internal/module/" + name)) return this.collision(name);
+    if (dry) return out(moduleDryRunText(name));
+    moduleFiles(name).forEach(addFile);
+    return out(moduleCreatedText(name));
+  },
+  runMigration(name, dry){
+    return out(migrationText(name, dry), dry ? {} : {
+      files: [`migrations/000005_${name}.up.sql`, `migrations/000005_${name}.down.sql`]
+    });
+  },
+  runDomain(name, kind, mod){
+    if (!kind) return this.missingType();
+    if (!hasLive("internal/module/" + mod)) return this.noModule(mod);
+    if (kind !== "entity" && kind !== "value-object") return this.badType(kind);
+    return out(domainText(name, mod, kind), {
+      files: [`internal/module/${mod}/domain/${name}.go`, `internal/module/${mod}/domain/${name}_test.go`]
+    });
+  },
+  runJob(name){
+    return out(jobText(name), { files: [`internal/worker/handlers/${name}_handler.go`] });
+  }
+};
+
+defB.cases = [
+  { id: "b-root",  group: "first", label: "goscratch", run(){ return out(defB.help.root); } },
+  { id: "b-ver",   group: "first", label: "goscratch version", run(){ return out(versionText()); } },
+  { id: "b-make",  group: "first", label: "goscratch make --help", run(){ return out(defB.help.make); } },
+  { id: "b-modh",  group: "first", label: "goscratch make module --help", run(){ return out(defB.help.module); } },
+
+  { id: "b-m-dry", group: "module", label: "goscratch make module orders --dry-run", run(){ return defB.runModule("orders", true); } },
+  { id: "b-m-new", group: "module", label: "goscratch make module orders", run(){ return defB.runModule("orders", false); } },
+  { id: "b-m-col", group: "module", label: "goscratch make module storage", run(){ return defB.collision("storage"); } },
+
+  { id: "b-mig",   group: "migjob", label: "goscratch make migration add_orders_table", run(){ return defB.runMigration("add_orders_table", false); } },
+  { id: "b-dom-e", group: "migjob", label: "goscratch make domain order --kind=entity --module=orders", run(){ return defB.runDomain("order", "entity", "orders"); } },
+  { id: "b-dom-v", group: "migjob", label: "goscratch make domain money --kind=value-object --module=orders", run(){ return defB.runDomain("money", "value-object", "orders"); } },
+  { id: "b-job",   group: "migjob", label: "goscratch make job send_invoice_email", run(){ return defB.runJob("send_invoice_email"); } },
+  { id: "b-comp",  group: "migjob", label: "goscratch completion zsh", run(){ return out(`#compdef goscratch
+compdef _goscratch goscratch
+
+# zsh completion for goscratch (generated)
+... 440 more lines
+
+Install: goscratch completion zsh > "\${fpath[1]}/_goscratch"`); } },
+
+  { id: "b-inv",   group: "awkward", label: "goscratch make module User", run(){ return defB.invalid("User"); } },
+  { id: "b-res",   group: "awkward", label: "goscratch make module type", run(){ return defB.reserved("type"); } },
+  { id: "b-mtype", group: "awkward", label: "goscratch make domain order --module=orders", run(){ return defB.runDomain("order", null, "orders"); } },
+  { id: "b-nomod", group: "awkward", label: "goscratch make domain order --kind=entity --module=ghost", run(){ return defB.runDomain("order", "entity", "ghost"); } },
+  { id: "b-unk",   group: "awkward", label: "goscratch frobnicate", run(){ return defB.unknown("frobnicate"); } },
+
+  { id: "b-wire",  group: "wiring", label: "make new-module name=orders", run(){ return wiringOutput("B"); } },
+  { id: "b-rm",    group: "wiring", label: "rm -rf cmd/scaffold", run(){ markRemoved("cmd/scaffold"); return scaffoldRemovedOutput(); } },
+  { id: "b-shim",  group: "wiring", label: "go run ./cmd/scaffold module orders", run(){ return out(`error: the scaffold generator has moved to cmd/goscratch
+  run: go run ./cmd/goscratch make module orders
+exit status 1`, { err: true }); } }
+];
+
+defB.moduleFlagRequired = () => out(`Error: --module is required when not run from inside internal/module/<module>
+
+` + defB.usageBlock("make domain <name>") + `
+exit status 1`, { err: true });
+
+defB.free = function(line){
+  const s = line.trim().replace(/^goscratch\s+/, "");
+  if (s === "" || s === "help") return out(defB.help.root);
+  if (s === "version") return out(versionText());
+  if (s === "make --help" || s === "help make") return out(defB.help.make);
+  if (s === "make module --help" || s === "help make module") return out(defB.help.module);
+  let m;
+  if ((m = s.match(/^make module\s+(\S+)(?:\s+--dry-run)?$/))) return defB.runModule(m[1], s.includes("--dry-run"));
+  if ((m = s.match(/^make migration\s+(\S+)(?:\s+--dry-run)?$/))) return defB.runMigration(m[1], s.includes("--dry-run"));
+  if ((m = s.match(/^make domain\s+(\S+)\s+--kind=(\S+)(?:\s+--module[= ](\S+))?$/))) {
+    if (!m[3]) return defB.moduleFlagRequired();
+    return defB.runDomain(m[1], m[2], m[3]);
+  }
+  if (s.match(/^make domain\s+\S+(?:\s+--module[= ]\S+)?$/)) return defB.missingType();
+  if ((m = s.match(/^make job\s+(\S+)$/))) return defB.runJob(m[1]);
+  if (s.match(/^completion\s+\S+$/)) return out("#compdef goscratch\ncompdef _goscratch goscratch\n\n(zsh completion — same as the button)");
+  return null;
+};
+
+/* ============================== variant C ============================== */
+
+const defC = {
+  label: "C · template-first",
+  notes: [
+    "Templates are first-class: `goscratch templates` lists them; a new template adds no new verb to the surface.",
+    "`resource` is a preset that composes module + entity + migration in one step — fewer commands, but it hides decisions (the entity name is derived from the module name by trimming a trailing “s” — critique that rule).",
+    "The interactive picker when <template> is omitted is friendly for humans; every prompt needs a flag-equivalent for scripts.",
+    "Verb `new` collides in spirit with `make new` (the repo's issue→branch workflow) — alternatives: `gen`, `add`, `scaffold`.",
+    "Same zero-dependency ambition as A; --type/--module flags mirror A."
+  ],
+  help: {
+    root:
+`goscratch — scaffold from templates
+
+Usage:
+  goscratch new <template> <name> [flags]
+  goscratch templates [template]    List templates
+  goscratch version                 Print version information
+
+Templates:
+  module      module: domain, usecase, handler + tests       (6 files)
+  migration   migration pair under migrations/               (2 files)
+  domain      entity or value object (--type)                (2 files)
+  job         worker job handler                             (1 file)
+  resource    module + entity + migration — preset           (10 files)
+
+Flags:
+  --type string     domain template only: entity | value-object
+  --module string   module a domain type belongs to
+  --dir string      operate as if run from <path>
+  --dry-run         print what would be created; write nothing
+
+Run 'goscratch new' with no arguments to choose interactively.`,
+    templates:
+`TEMPLATES
+
+  module      internal/module/<name>/                      domain, usecase, handler + tests
+  migration   migrations/<seq>_<name>.{up,down}.sql
+  domain      internal/module/<module>/domain/<name>.go    --type entity|value-object
+  job         internal/worker/handlers/<name>_handler.go
+  resource    preset: module + domain(entity) + migration(create_<name>)`,
+    interactive:
+`? Choose a template (↑/↓, enter):
+  ❯ module      module (domain, usecase, handler + tests)
+    migration   migration pair under migrations/
+    domain      entity or value object
+    job         worker job handler
+    resource    module + entity + migration (preset)
+
+? Module name: orders
+
+(mocked — the real one continues into generation here)`
+  },
+
+  collision: n => out(`error: internal/module/${n} already exists
+  choose another name, or delete the directory first
+exit status 1`, { err: true }),
+  reserved: n => out(`error: "${n}" is a Go reserved word — pick a different module name
+exit status 1`, { err: true }),
+  invalid: n => out(`error: invalid module name "${n}"
+  names must match ^[a-z][a-z0-9_]*$ (lowercase letter first; letters, digits, underscore)
+exit status 1`, { err: true }),
+  unknownTpl: t => out(`error: unknown template "${t}"
+Available: module, migration, domain, job, resource
+exit status 1`, { err: true }),
+  unknown: cmd => out(`error: unknown command "${cmd}"
+Run 'goscratch templates' to see templates, or 'goscratch --help'.
+exit status 1`, { err: true }),
+  missingType: () => out(`error: --type is required for the domain template (entity|value-object)
+usage: goscratch new domain <name> --type=entity|value-object [--module <module>]
+exit status 1`, { err: true }),
+  badType: t => out(`error: invalid --type "${t}": must be entity or value-object
+exit status 1`, { err: true }),
+  noModule: m => out(`error: module "${m}" not found — scaffold it first: goscratch new module ${m}
+exit status 1`, { err: true }),
+
+  runModule(name, dry){
+    if (!dry && hasLive("internal/module/" + name)) return this.collision(name);
+    if (dry) return out(moduleDryRunText(name));
+    moduleFiles(name).forEach(addFile);
+    return out(moduleCreatedText(name));
+  },
+  runMigration(name, dry){
+    return out(migrationText(name, dry), dry ? {} : {
+      files: [`migrations/000005_${name}.up.sql`, `migrations/000005_${name}.down.sql`]
+    });
+  },
+  runDomain(name, type, mod){
+    if (!type) return this.missingType();
+    if (!hasLive("internal/module/" + mod)) return this.noModule(mod);
+    if (type !== "entity" && type !== "value-object") return this.badType(type);
+    return out(domainText(name, mod, type), {
+      files: [`internal/module/${mod}/domain/${name}.go`, `internal/module/${mod}/domain/${name}_test.go`]
+    });
+  },
+  runJob(name){
+    return out(jobText(name), { files: [`internal/worker/handlers/${name}_handler.go`] });
+  },
+  runResource(name){
+    if (hasLive("internal/module/" + name)) return this.collision(name);
+    const entity = name.replace(/s$/, "");
+    moduleFiles(name).forEach(addFile);
+    addFile(`internal/module/${name}/domain/${entity}.go`);
+    addFile(`internal/module/${name}/domain/${entity}_test.go`);
+    addFile(`migrations/000005_create_${name}.up.sql`);
+    addFile(`migrations/000005_create_${name}.down.sql`);
+    return out(moduleFiles(name).map(f => "created " + f).join("\n") +
+      `\ncreated internal/module/${name}/domain/${entity}.go` +
+      `\ncreated internal/module/${name}/domain/${entity}_test.go` +
+      `\ncreated migrations/000005_create_${name}.up.sql` +
+      `\ncreated migrations/000005_create_${name}.down.sql` +
+      `\n\nresource "${name}" scaffolded (10 files)`);
+  }
+};
+
+defC.cases = [
+  { id: "c-root",  group: "first", label: "goscratch", run(){ return out(defC.help.root); } },
+  { id: "c-tpl",   group: "first", label: "goscratch templates", run(){ return out(defC.help.templates); } },
+  { id: "c-ver",   group: "first", label: "goscratch version", run(){ return out(versionText()); } },
+
+  { id: "c-m-dry", group: "module", label: "goscratch new module orders --dry-run", run(){ return defC.runModule("orders", true); } },
+  { id: "c-m-new", group: "module", label: "goscratch new module orders", run(){ return defC.runModule("orders", false); } },
+  { id: "c-m-col", group: "module", label: "goscratch new module storage", run(){ return defC.collision("storage"); } },
+  { id: "c-res",   group: "module", label: "goscratch new resource orders", run(){ return defC.runResource("orders"); } },
+
+  { id: "c-mig",   group: "migjob", label: "goscratch new migration add_orders_table", run(){ return defC.runMigration("add_orders_table", false); } },
+  { id: "c-dom-e", group: "migjob", label: "goscratch new domain order --type=entity --module=orders", run(){ return defC.runDomain("order", "entity", "orders"); } },
+  { id: "c-dom-v", group: "migjob", label: "goscratch new domain money --type=value-object --module=orders", run(){ return defC.runDomain("money", "value-object", "orders"); } },
+  { id: "c-job",   group: "migjob", label: "goscratch new job send_invoice_email", run(){ return defC.runJob("send_invoice_email"); } },
+
+  { id: "c-inter", group: "awkward", label: "goscratch new", run(){ return out(defC.help.interactive); } },
+  { id: "c-inv",   group: "awkward", label: "goscratch new module User", run(){ return defC.invalid("User"); } },
+  { id: "c-resv",  group: "awkward", label: "goscratch new module type", run(){ return defC.reserved("type"); } },
+  { id: "c-mtype", group: "awkward", label: "goscratch new domain order --module=orders", run(){ return defC.runDomain("order", null, "orders"); } },
+  { id: "c-tplunk",group: "awkward", label: "goscratch new widget foo", run(){ return defC.unknownTpl("widget"); } },
+  { id: "c-unk",   group: "awkward", label: "goscratch frobnicate", run(){ return defC.unknown("frobnicate"); } },
+
+  { id: "c-wire",  group: "wiring", label: "make new-module name=orders", run(){ return wiringOutput("C"); } },
+  { id: "c-rm",    group: "wiring", label: "rm -rf cmd/scaffold", run(){ markRemoved("cmd/scaffold"); return scaffoldRemovedOutput(); } },
+  { id: "c-shim",  group: "wiring", label: "go run ./cmd/scaffold module orders", run(){ return out(`error: the scaffold generator has moved to cmd/goscratch
+  run: go run ./cmd/goscratch new module orders
+exit status 1`, { err: true }); } }
+];
+
+defC.moduleFlagRequired = () => out(`error: --module is required when not run from inside internal/module/<module>
+  usage: goscratch new domain <name> --type=entity|value-object --module <module>
+exit status 1`, { err: true });
+
+defC.free = function(line){
+  const s = line.trim().replace(/^goscratch\s+/, "");
+  if (s === "new") return out(defC.help.interactive);
+  if (s === "" || s === "help") return out(defC.help.root);
+  if (s === "templates") return out(defC.help.templates);
+  if (s === "version") return out(versionText());
+  let m;
+  if ((m = s.match(/^new module\s+(\S+)(?:\s+--dry-run)?$/))) return defC.runModule(m[1], s.includes("--dry-run"));
+  if ((m = s.match(/^new resource\s+(\S+)$/))) return defC.runResource(m[1]);
+  if ((m = s.match(/^new migration\s+(\S+)(?:\s+--dry-run)?$/))) return defC.runMigration(m[1], s.includes("--dry-run"));
+  if ((m = s.match(/^new domain\s+(\S+)\s+--type=(\S+)(?:\s+--module[= ](\S+))?$/))) {
+    if (!m[3]) return defC.moduleFlagRequired();
+    return defC.runDomain(m[1], m[2], m[3]);
+  }
+  if (s.match(/^new domain\s+\S+(?:\s+--module[= ]\S+)?$/)) return defC.missingType();
+  if ((m = s.match(/^new job\s+(\S+)$/))) return defC.runJob(m[1]);
+  if ((m = s.match(/^new\s+(\S+)/))) return defC.unknownTpl(m[1]);
+  return null;
+};
+
+/* ============================== wiring outputs ============================== */
+
+function wiringOutput(v){
+  const target = v === "A" ? "make:module" : v === "B" ? "make module" : "new module";
+  return out(
+`diff --git a/Makefile b/Makefile
+  new-module: ## Scaffold a new module (usage: make new-module name=foo)
+- \t@go run ./cmd/scaffold module $(name)
++ \t@go run ./cmd/goscratch ${target} $(name)
+
+and the target now runs the new generator:
+
+  $ make new-module name=orders
+  created internal/module/orders/domain/orders_domain.go
+  ... (the module command output shown earlier)
+
+Decision point: is the delegation line all that changes, or does
+'make new-module' keep a different default (e.g. name validation only)?`);
+}
+
+function scaffoldRemovedOutput(){
+  return out(
+`removed cmd/scaffold/ (main.go, scaffold.go, scaffold_test.go, templates/)
+
+CHANGELOG [Unreleased] → Removed:
+  - cmd/scaffold — replaced by cmd/goscratch; use 'goscratch make:module <name>'
+    (make new-module now delegates to the new binary)
+
+Decision point: delete outright, or keep a one-release shim that prints the
+new command and exits 1?`);
+}
+
+/* ============================== registry ============================== */
+
+const VARIANTS = { A: defA, B: defB, C: defC };
+const ORDER = ["A", "B", "C"];
+
+/* ============================== terminal ============================== */
+
+function termEl(){ return document.getElementById("term"); }
+
+function lineClass(line){
+  if (/^(error:|Error:)/.test(line)) return "err";
+  if (/^exit status/.test(line)) return "dim";
+  if (/^created /.test(line)) return "ok";
+  if (/^(would create|\d+ files|\(|#|\.\.\.)/.test(line)) return "dim";
+  if (/^\? /.test(line)) return "prompt";
+  if (/^(  ❯|  module|  migration|  domain|  job|  resource)/.test(line)) return "prompt";
+  return "";
+}
+
+function printCommand(label){
+  const el = termEl();
+  el.innerHTML += `\n<span class="cmd">$ ${escapeHtml(label)}</span>\n`;
+  scrollTerm();
+}
+
+function printOutput(result){
+  const el = termEl();
+  const lines = result.text.split("\n");
+  for (const line of lines) {
+    const cls = lineClass(line);
+    el.innerHTML += (cls ? `<span class="${cls}">${escapeHtml(line)}</span>` : escapeHtml(line)) + "\n";
+  }
+  scrollTerm();
+}
+
+function printNote(text){
+  const el = termEl();
+  el.innerHTML += `<span class="dim">— ${escapeHtml(text)} —</span>\n`;
+  scrollTerm();
+}
+
+function scrollTerm(){
+  const el = termEl();
+  el.scrollTop = el.scrollHeight;
+}
+
+function clearTerm(){ termEl().innerHTML = ""; }
+
+/* ============================== UI wiring ============================== */
+
+function currentDef(){ return VARIANTS[state.variant]; }
+
+function renderScenarios(){
+  const nav = document.getElementById("scenarios");
+  nav.innerHTML = "";
+  for (const s of SCENARIOS) {
+    const b = document.createElement("button");
+    b.textContent = s.label;
+    b.className = state.scenario === s.key ? "active" : "";
+    b.onclick = () => { state.scenario = s.key; renderScenarios(); renderChips(); };
+    nav.appendChild(b);
+  }
+}
+
+function visibleCases(){
+  const all = currentDef().cases;
+  const list = state.scenario === "all" ? all : all.filter(c => c.group === state.scenario);
+  return list;
+}
+
+function nextUndone(cases){
+  return cases.find(c => !state.done.has(state.variant + ":" + c.id));
+}
+
+function renderChips(){
+  const wrap = document.getElementById("chips");
+  const cases = visibleCases();
+  const next = nextUndone(cases);
+  wrap.innerHTML = "";
+  for (const c of cases) {
+    const b = document.createElement("button");
+    b.className = "chip";
+    const key = state.variant + ":" + c.id;
+    if (state.done.has(key)) b.className += " done";
+    if (next && next.id === c.id) b.className += " next";
+    b.textContent = c.label;
+    b.title = c.label;
+    b.onclick = () => runCase(c);
+    wrap.appendChild(b);
+  }
+}
+
+function runCase(c){
+  const def = currentDef();
+  printCommand(c.label);
+  const result = c.run();
+  if (result.files) result.files.forEach(addFile);
+  printOutput(result);
+  state.done.add(state.variant + ":" + c.id);
+  renderChips();
+}
+
+function setVariant(v){
+  state.variant = v;
+  state.done = new Set();
+  document.getElementById("variant-label").textContent = `${v} · ${VARIANTS[v].label.split("·")[1].trim()}`;
+  renderVariantNotes();
+  clearTerm();
+  resetWorkspace();
+  printNote(`surface ${v}: ${VARIANTS[v].label.split("·")[1].trim()}`);
+  renderChips();
+}
+
+function renderVariantNotes(){
+  const el = document.getElementById("variant-notes");
+  const notes = currentDef().notes;
+  el.innerHTML = `<p class="muted"><strong>${escapeHtml(currentDef().label)}</strong></p><ul>` +
+    notes.map(n => `<li>${escapeHtml(n)}</li>`).join("") + "</ul>";
+}
+
+function handleFree(raw){
+  const line = raw.trim();
+  if (!line) return;
+  if (line === "clear") { clearTerm(); return; }
+  if (line === "reset") { resetWorkspace(); printNote("workspace reset"); return; }
+  const def = currentDef();
+  const res = def.free(line);
+  printCommand(line);
+  if (res) {
+    if (res.files) res.files.forEach(addFile);
+    printOutput(res);
+  } else {
+    const after = line.replace(/^goscratch\s+/, "");
+    const cmd = after.split(/\s+/)[0] || line;
+    printOutput(def.unknown(cmd));
+  }
+}
+
+/* ============================== init ============================== */
+
+function init(){
+  resetWorkspace();
+  renderScenarios();
+  renderChips();
+  setVariant("A");
+
+  document.getElementById("freeform").addEventListener("submit", e => {
+    e.preventDefault();
+    const input = document.getElementById("freeinput");
+    handleFree(input.value);
+    input.value = "";
+  });
+  document.getElementById("clear").onclick = clearTerm;
+  document.getElementById("reset").onclick = () => { resetWorkspace(); printNote("workspace reset"); };
+  document.getElementById("var-prev").onclick = () => cycleVariant(-1);
+  document.getElementById("var-next").onclick = () => cycleVariant(1);
+  document.addEventListener("keydown", e => {
+    const tag = (document.activeElement && document.activeElement.tagName) || "";
+    if (tag === "INPUT" || tag === "TEXTAREA") return;
+    if (e.key === "ArrowLeft") cycleVariant(-1);
+    if (e.key === "ArrowRight") cycleVariant(1);
+  });
+}
+
+function cycleVariant(dir){
+  const i = ORDER.indexOf(state.variant);
+  const next = ORDER[(i + dir + ORDER.length) % ORDER.length];
+  setVariant(next);
+}
+
+document.addEventListener("DOMContentLoaded", init);
+</script>
+</body>
+</html>
