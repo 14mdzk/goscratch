@@ -392,3 +392,4 @@ Tracked so they are not re-debated each cycle. None are sliced or scheduled. Eac
 | **Frontend reference app** | Out of repo scope | If shipped, lives in a sibling repo, not here |
 | **Distributed tracing across services** | Discussion needed | Second service exists |
 | **Real-time location streaming over SSE** | Discussion needed | Geospatial consumer of v1.3 Tier C primitives exists and asks for it |
+| **RabbitMQ concurrent delivery dispatch** (goroutine-per-delivery + guarded ack) | Discussion needed | Retry-heavy or slow-handler workloads surface consumer head-of-line blocking in practice; v1.3 accepts serial dispatch and documents `worker.concurrency` as the lever ([#94](https://github.com/14mdzk/goscratch/issues/94), [#103](https://github.com/14mdzk/goscratch/issues/103)) |
