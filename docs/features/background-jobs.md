@@ -189,7 +189,7 @@ that matter for operators:
 
 ## Audit Logging
 
-Each job dispatched via the API is recorded in `audit_logs` with `action=CREATE`, `resource=job`, `resource_id=<job_id>`, and metadata `{job_type, max_retry}`. Failed dispatch attempts are not audited (no job exists).
+Each job dispatched via the API is recorded in `audit_logs` with `action=CREATE`, `resource=job`, `resource_id=<job_id>`, and metadata `{job_type, max_retry}`. The `<job_id>` is constructed once in `Dispatch`: it is the ID returned in the dispatch response, the `resource_id` in the audit row, and the `id` encoded in the queued message — so audit rows join to worker logs on `job_id`. Failed dispatch attempts are not audited (no job exists).
 
 ## Dependencies
 

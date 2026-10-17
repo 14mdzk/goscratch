@@ -6,6 +6,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
 
 	"github.com/14mdzk/goscratch/internal/port"
 	"github.com/14mdzk/goscratch/internal/worker"
@@ -110,6 +111,35 @@ func TestUseCase_Dispatch(t *testing.T) {
 		assert.NoError(t, err)
 		assert.NotNil(t, result)
 		assert.Equal(t, "notification.send", result.Type)
+		mockQueue.AssertExpectations(t)
+	})
+
+	t.Run("response_id_matches_published_message_id", func(t *testing.T) {
+		mockQueue := new(MockQueue)
+		var published []byte
+		mockQueue.On("Publish", ctx, "", "jobs", mock.AnythingOfType("[]uint8")).
+			Run(func(args mock.Arguments) {
+				published = args.Get(3).([]byte)
+			}).
+			Return(nil)
+
+		publisher := worker.NewPublisher(mockQueue, "jobs", "")
+		uc := NewUseCase(publisher)
+
+		payload := map[string]string{"to": "user@example.com"}
+		result, err := uc.Dispatch(ctx, "email.send", payload, 3)
+
+		assert.NoError(t, err)
+		assert.NotNil(t, result)
+		require.NotNil(t, published, "expected one Publish call")
+
+		// The response ID must be the queued message's ID so audit
+		// resource_id joins to worker logs on job_id (issue #96).
+		queued, err := worker.DecodeJob(published)
+		require.NoError(t, err)
+		assert.Equal(t, queued.ID, result.ID)
+		assert.Equal(t, "email.send", queued.Type)
+		assert.Equal(t, 3, queued.MaxRetry)
 		mockQueue.AssertExpectations(t)
 	})
 

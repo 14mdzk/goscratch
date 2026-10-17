@@ -19,6 +19,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - Queue config: `rabbitmq.enabled` is now a deprecated alias (applies only when `queue.backend` is unset); the dead `worker.enabled` key is deleted and `worker.in_process` is required with the `goroutine` backend. Operator action: set `queue.backend` explicitly and ensure `worker.in_process` matches the backend matrix (`goroutine`+in-process, `rabbitmq`+external `cmd/worker`); unreachable RabbitMQ brokers now fail boot instead of silently falling back to NoOp.
 
+### Fixed
+
+- Job dispatch ID mismatch (#96): `Dispatch` constructed the queued job and the response ID separately, so audit `resource_id` could not be joined to the queued message's `id` or worker `job_id` logs. The job is now constructed once and published via `PublishRaw`; response ID, audit `resource_id`, and queued message ID are the same value. Covered by a regression test asserting response ID == encoded message ID.
+
 ## [1.2.0] - 2026-07-08
 
 ### Added

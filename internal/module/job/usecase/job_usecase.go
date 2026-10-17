@@ -4,8 +4,6 @@ import (
 	"context"
 	"time"
 
-	"github.com/google/uuid"
-
 	"github.com/14mdzk/goscratch/internal/module/job/dto"
 	"github.com/14mdzk/goscratch/internal/worker"
 	"github.com/14mdzk/goscratch/pkg/apperr"
@@ -39,16 +37,25 @@ func (uc *jobUseCase) Dispatch(ctx context.Context, jobType string, payload any,
 		return nil, apperr.BadRequestf("invalid job type: %s", jobType)
 	}
 
+	// Construct the job once: its ID is the identity returned to the caller
+	// and recorded in the audit trail, and the same encoded bytes go on
+	// the queue — so response ID, audit resource_id, and queued message ID
+	// are always the same value.
+	job, err := worker.NewJobWithRetry(jobType, payload, maxRetry)
+	if err != nil {
+		return nil, apperr.Internalf("failed to create job: %s", err.Error())
+	}
+
 	// Publish with retry
-	if err := uc.publisher.PublishWithRetry(ctx, jobType, payload, maxRetry); err != nil {
+	if err := uc.publisher.PublishRaw(ctx, job); err != nil {
 		return nil, apperr.Internalf("failed to dispatch job: %s", err.Error())
 	}
 
 	return &dto.JobResponse{
-		ID:        uuid.New().String(),
+		ID:        job.ID,
 		Type:      jobType,
 		Status:    "queued",
-		CreatedAt: time.Now().Format(time.RFC3339),
+		CreatedAt: job.CreatedAt.Format(time.RFC3339),
 	}, nil
 }
 
