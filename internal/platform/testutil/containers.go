@@ -115,3 +115,39 @@ func StartRedis(ctx context.Context) (addr string, cleanup func(), err error) {
 
 	return fmt.Sprintf("%s:%s", host, port.Port()), cleanup, nil
 }
+
+// StartRabbitMQ starts a RabbitMQ container and returns the AMQP URL.
+func StartRabbitMQ(ctx context.Context) (url string, cleanup func(), err error) {
+	rabbitContainer, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
+		ContainerRequest: testcontainers.ContainerRequest{
+			Image:        "rabbitmq:3-management-alpine",
+			ExposedPorts: []string{"5672/tcp", "15672/tcp"},
+			WaitingFor: wait.ForLog("Server startup complete").
+				WithStartupTimeout(60 * time.Second),
+		},
+		Started: true,
+	})
+	if err != nil {
+		return "", nil, fmt.Errorf("failed to start rabbitmq container: %w", err)
+	}
+
+	cleanup = func() {
+		if rabbitContainer != nil {
+			_ = rabbitContainer.Terminate(ctx)
+		}
+	}
+
+	host, err := rabbitContainer.Host(ctx)
+	if err != nil {
+		cleanup()
+		return "", nil, fmt.Errorf("failed to get rabbitmq host: %w", err)
+	}
+
+	port, err := rabbitContainer.MappedPort(ctx, "5672")
+	if err != nil {
+		cleanup()
+		return "", nil, fmt.Errorf("failed to get rabbitmq port: %w", err)
+	}
+
+	return fmt.Sprintf("amqp://guest:guest@%s:%s/", host, port.Port()), cleanup, nil
+}

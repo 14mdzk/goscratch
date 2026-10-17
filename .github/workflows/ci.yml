@@ -79,3 +79,17 @@ jobs:
 
       - name: Run govulncheck
         run: govulncheck ./...
+
+  integration-rabbit:
+    name: Integration (RabbitMQ)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Run RabbitMQ live-broker integration tests
+        run: go test -race -tags=integration ./internal/adapter/queue/... ./internal/worker/...
