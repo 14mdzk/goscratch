@@ -1,10 +1,14 @@
 // cmd/openapi-drift checks that every route registered in the Fiber app has
 // a matching entry in internal/module/docs/openapi.yaml, and vice-versa.
+// It also validates the spec document itself (valid OpenAPI 3.0.x, all $refs
+// resolve, operations complete) via kin-openapi, so structural rot fails the
+// same gate as route drift.
 //
 // Exit codes:
 //
-//	0  — routes and spec are in sync
-//	1  — drift detected (missing or extra entries printed to stderr)
+//	0  — routes and spec are in sync, and the spec document is valid
+//	1  — drift detected (missing or extra entries printed to stderr), or the
+//	     spec document is invalid
 //
 // The binary constructs the Fiber app by calling RegisterRoutes on each module
 // with nil-safe or stub dependencies. It does NOT import internal/platform/app
@@ -19,6 +23,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/gofiber/fiber/v2"
 	"gopkg.in/yaml.v3"
 
@@ -69,6 +74,11 @@ func main() {
 	fiberRoutes, err := collectFiberRoutes()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "openapi-drift: collecting Fiber routes: %v\n", err)
+		os.Exit(1)
+	}
+
+	if err := validateSpecDocument(*specPath); err != nil {
+		fmt.Fprintf(os.Stderr, "openapi-drift: invalid spec %s: %v\n", *specPath, err)
 		os.Exit(1)
 	}
 
@@ -212,6 +222,23 @@ func normalizePath(path string) string {
 }
 
 // --- OpenAPI spec parsing ---
+
+// validateSpecDocument loads the spec and validates it as OpenAPI 3.0.x:
+// the document must parse, every $ref must resolve, and every operation must
+// be complete (responses, parameter shapes). Structural rot fails the gate
+// the same way route drift does.
+func validateSpecDocument(specPath string) error {
+	data, err := os.ReadFile(specPath)
+	if err != nil {
+		return err
+	}
+	loader := openapi3.NewLoader()
+	doc, err := loader.LoadFromData(data)
+	if err != nil {
+		return err
+	}
+	return doc.Validate(loader.Context)
+}
 
 // openAPISpec is a minimal representation of an OpenAPI 3.x document.
 type openAPISpec struct {
