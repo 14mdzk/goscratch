@@ -22,7 +22,7 @@ import (
 
 // Adapter implements port.Authorizer using Casbin
 type Adapter struct {
-	enforcer       *casbin.Enforcer
+	enforcer       *casbin.SyncedEnforcer
 	db             *sql.DB
 	reloadInterval time.Duration
 	watcher        persist.Watcher
@@ -118,7 +118,7 @@ func NewAdapter(cfg Config) (*Adapter, error) {
 	}
 
 	// Create enforcer
-	enforcer, err := casbin.NewEnforcer(m, adapter)
+	enforcer, err := casbin.NewSyncedEnforcer(m, adapter)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create casbin enforcer: %w", err)
 	}

@@ -16,7 +16,7 @@ func newBenchAdapter(b *testing.B, cacheSize, numPolicies int) *Adapter {
 	b.Helper()
 	m, err := model.NewModelFromString(defaultModel)
 	require.NoError(b, err)
-	enforcer, err := casbinlib.NewEnforcer(m)
+	enforcer, err := casbinlib.NewSyncedEnforcer(m)
 	require.NoError(b, err)
 
 	for i := range numPolicies {
