@@ -10,9 +10,13 @@ type Queue interface {
 	// PublishJSON sends a JSON-serializable message
 	PublishJSON(ctx context.Context, exchange, routingKey string, message any) error
 
-	// Consume starts consuming messages from a queue
-	// The handler function is called for each message
-	// Return nil to acknowledge, error to reject/requeue
+	// Consume starts consuming messages from a queue.
+	// The handler function is called for each message. Return nil to
+	// acknowledge, error to reject/requeue.
+	//
+	// The handler may block for the length of a retry backoff: adapters must
+	// not settle (ack/nack) the delivery until the handler returns, so the
+	// broker owns the job across the wait.
 	Consume(ctx context.Context, queue string, handler func(body []byte) error) error
 
 	// Ping verifies the broker connection without mutating broker state.

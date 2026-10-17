@@ -2,6 +2,7 @@ package worker
 
 import (
 	"context"
+	"math/rand"
 	"sync"
 	"time"
 
@@ -23,6 +24,34 @@ type Worker struct {
 	wg     sync.WaitGroup
 
 	mu sync.RWMutex
+}
+
+// Retry backoff bounds. delay = min(1s * 2^(attempts-1), 60s) scaled by a
+// jitter factor in [0.5, 1.0): retries spread out instead of firing in
+// lockstep after a shared outage. The 60s cap also bounds how long one
+// held delivery can occupy a consumer channel. Code constants only.
+const (
+	retryBaseDelay = time.Second
+	retryMaxDelay  = 60 * time.Second
+)
+
+// retryDelay returns the backoff for a job that has `attempts` attempts
+// recorded (post-increment). attempt 1 -> [0.5s, 1s), 2 -> [1s, 2s),
+// converging to [30s, 60s) from attempt 7 on.
+func retryDelay(attempts int) time.Duration {
+	if attempts < 1 {
+		attempts = 1
+	}
+	shift := attempts - 1
+	if shift > 6 {
+		shift = 6
+	}
+	capped := retryBaseDelay << shift
+	if capped > retryMaxDelay || capped <= 0 {
+		capped = retryMaxDelay
+	}
+	half := float64(capped) / 2
+	return time.Duration(half + rand.Float64()*half)
 }
 
 // Config holds worker configuration
@@ -79,6 +108,12 @@ func (w *Worker) Start() error {
 		w.logger.Warn("Failed to declare queue (may already exist)", "error", err)
 	}
 
+	// Ensure the dead-letter queue exists: every terminal path parks there,
+	// so the DLQ must exist before the first job can die.
+	if err := w.queue.DeclareQueue(w.ctx, w.dlqName(), true); err != nil {
+		w.logger.Warn("Failed to declare DLQ (may already exist)", "error", err)
+	}
+
 	// Start worker goroutines
 	for i := 0; i < w.concurrency; i++ {
 		w.wg.Add(1)
@@ -114,13 +149,45 @@ func (w *Worker) consume(workerID int) {
 	w.logger.Debug("Worker goroutine stopped", "worker_id", workerID)
 }
 
-// handleMessage processes a single message
+// dlqName derives the dead-letter queue: <queue>.dlq, declared durable at
+// startup next to the main queue. Parked payloads are the original bytes
+// verbatim so replay is a republish away; operators inspect via the broker
+// UI (no redrive tooling in v1.3).
+func (w *Worker) dlqName() string {
+	return w.queueName + ".dlq"
+}
+
+// park publishes the original payload bytes verbatim to the DLQ. Reason
+// metadata goes to the structured log at park time, never into the parked
+// bytes, so the job stays replayable unmodified.
+func (w *Worker) park(original []byte, reason string, fields ...any) error {
+	args := append([]any{"reason", reason, "dlq", w.dlqName()}, fields...)
+	w.logger.Error("Parking job in DLQ", args...)
+	return w.queue.Publish(w.ctx, w.exchange, w.dlqName(), original)
+}
+
+// handleMessage processes a single message.
+//
+// Settlement contract (see port.Queue.Consume): nil ACKs the delivery,
+// a non-nil error rejects it for redelivery. Retries hold the delivery
+// across the backoff — the broker owns the job while we wait — and only
+// settle once the job is republished (ACK), parked (ACK), or handed back
+// to the broker on shutdown (error → Nack with requeue). Attempts are
+// incremented exactly once per processing run, so a redelivery after a
+// shutdown-cancel re-increments to the same number: no double-count.
 func (w *Worker) handleMessage(workerID int, msg []byte) error {
 	// Decode job
 	job, err := DecodeJob(msg)
 	if err != nil {
-		w.logger.Error("Failed to decode job", "error", err, "worker_id", workerID)
-		return nil // Acknowledge malformed messages to avoid retry loop
+		w.logger.Error("Failed to decode job; attempting DLQ park",
+			"error", err, "worker_id", workerID)
+		if perr := w.park(msg, "undecodable", "error", err, "worker_id", workerID); perr != nil {
+			// Poison guard: requeueing an undecodable payload loops forever
+			// with no attempt counter to stop it. ACK and move on.
+			w.logger.Error("DLQ park failed for undecodable payload; ACKing to avoid poison loop",
+				"park_error", perr, "worker_id", workerID)
+		}
+		return nil
 	}
 
 	// Increment attempts
@@ -139,11 +206,15 @@ func (w *Worker) handleMessage(workerID int, msg []byte) error {
 	w.mu.RUnlock()
 
 	if !exists {
-		w.logger.Error("No handler registered for job type",
+		w.logger.Error("No handler registered for job type; parking",
 			"job_type", job.Type,
 			"job_id", job.ID,
 		)
-		return nil // Acknowledge unhandled job types
+		if perr := w.park(msg, "unhandled-job-type",
+			"job_type", job.Type, "job_id", job.ID); perr != nil {
+			return perr // requeue: the job was never parked
+		}
+		return nil
 	}
 
 	// Create context with timeout
@@ -164,17 +235,22 @@ func (w *Worker) handleMessage(workerID int, msg []byte) error {
 			"attempt", job.Attempts,
 		)
 
-		// Retry if possible
-		if job.CanRetry() {
-			w.retryJob(job)
-		} else {
-			w.logger.Error("Job exhausted retries",
+		if !job.CanRetry() {
+			w.logger.Error("Job exhausted retries; parking",
 				"job_id", job.ID,
 				"job_type", job.Type,
 				"attempts", job.Attempts,
 			)
+			if perr := w.park(msg, "retries-exhausted",
+				"job_id", job.ID, "job_type", job.Type,
+				"attempts", job.Attempts, "last_error", err,
+			); perr != nil {
+				return perr // requeue: the job was never parked
+			}
+			return nil
 		}
-		return nil // Acknowledge to avoid immediate redelivery
+
+		return w.holdForRetry(job)
 	}
 
 	w.logger.Info("Job completed successfully",
@@ -186,54 +262,55 @@ func (w *Worker) handleMessage(workerID int, msg []byte) error {
 	return nil
 }
 
-// retryJob re-queues a failed job for retry after an exponential backoff.
-//
-// The retry goroutine is registered on w.wg so Shutdown's wg.Wait() does not
-// return until pending retries either fire or cancel. The delay uses a Timer
-// + select on w.ctx.Done() instead of time.Sleep so a long backoff cannot
-// outlive a shutdown signal (block-ship #14: prior code slept past ctx and
-// then attempted Publish on a closed channel).
-func (w *Worker) retryJob(job *Job) {
-	delay := time.Duration(job.Attempts*job.Attempts) * time.Second
+// holdForRetry waits out the backoff in the handler's own goroutine, then
+// republishes the job with the incremented attempt and returns nil so the
+// adapter ACKs the held delivery. The wait honors the worker context (not
+// the per-handler timeout): on shutdown-cancel it returns an error WITHOUT
+// republishing, so the adapter Nacks with requeue and the broker redelivers
+// — attempts were never republished, so the next run re-increments to the
+// same number. No retry goroutines, no WaitGroup tracking: shutdown never
+// waits out a backoff.
+func (w *Worker) holdForRetry(job *Job) error {
+	delay := retryDelay(job.Attempts)
 
-	w.logger.Info("Scheduling job retry",
+	w.logger.Info("Holding delivery for retry backoff",
 		"job_id", job.ID,
 		"job_type", job.Type,
 		"attempt", job.Attempts,
 		"delay", delay,
 	)
 
-	data, err := job.Encode()
-	if err != nil {
-		w.logger.Error("Failed to encode job for retry", "error", err, "job_id", job.ID)
-		return
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+
+	select {
+	case <-timer.C:
+	case <-w.ctx.Done():
+		w.logger.Debug("Retry cancelled by shutdown; delivery returns to broker",
+			"job_id", job.ID)
+		return w.ctx.Err()
 	}
 
-	w.wg.Add(1)
-	go func() {
-		defer w.wg.Done()
+	// Re-check: shutdown may have landed between timer fire and publish.
+	if err := w.ctx.Err(); err != nil {
+		w.logger.Debug("Retry skipped: ctx cancelled before republish",
+			"job_id", job.ID)
+		return err
+	}
 
-		timer := time.NewTimer(delay)
-		defer timer.Stop()
+	data, err := job.Encode()
+	if err != nil {
+		w.logger.Error("Failed to encode job for retry; ACKing to avoid poison loop",
+			"error", err, "job_id", job.ID)
+		return nil
+	}
 
-		select {
-		case <-timer.C:
-		case <-w.ctx.Done():
-			w.logger.Debug("Retry cancelled by shutdown", "job_id", job.ID)
-			return
-		}
-
-		// Re-check ctx before publishing — Shutdown may have closed the queue
-		// channel between timer fire and this point.
-		if err := w.ctx.Err(); err != nil {
-			w.logger.Debug("Retry skipped: ctx cancelled before publish", "job_id", job.ID)
-			return
-		}
-
-		if err := w.queue.Publish(w.ctx, w.exchange, w.queueName, data); err != nil {
-			w.logger.Error("Failed to retry job", "error", err, "job_id", job.ID)
-		}
-	}()
+	if err := w.queue.Publish(w.ctx, w.exchange, w.queueName, data); err != nil {
+		w.logger.Error("Failed to republish job for retry; delivery returns to broker",
+			"error", err, "job_id", job.ID)
+		return err
+	}
+	return nil
 }
 
 // Shutdown gracefully stops the worker

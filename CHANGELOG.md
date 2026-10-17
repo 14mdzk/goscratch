@@ -8,6 +8,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- RabbitMQ hardening (v1.3, #94): publisher-side reconnect (connection NotifyClose marks the cached channel dead; next publish redials once and retries once, original error on failure), held retry across `min(1s*2^(attempts-1),60s)` backoff with jitter, and DLQ parking (`<queue>.dlq`, durable) for exhausted/undecodable/unhandled jobs with broker-UI replay (RUNBOOK §9). No redrive tooling, no new config keys.
+
 - Casbin Redis watcher wiring (v1.3, D2/D3): policy writes propagate to peer pods immediately when Redis and authorization are both enabled; a watcher failure warns and continues on the 5-minute backstop reload. Every watcher event path flushes the decision cache (covered by regression tests).
 
 - Queue backend spectrum (v1.3, #84/#90): `queue.backend` (`goroutine` | `rabbitmq` | `redis`-reserved) with a `GoroutineQueue` in-memory tier (zero infrastructure, best-effort durability) and an in-process worker that starts before the HTTP listener with its own shutdown drain phase. ADR-010; spec: `docs/features/background-jobs.md`.
