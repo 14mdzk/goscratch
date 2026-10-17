@@ -196,10 +196,12 @@ func New(ctx context.Context, cfg *config.Config) (*App, error) {
 		sseBroker = sse.NewNoOpBroker()
 	}
 
-	// Initialize auditor
+	// Initialize auditor. The Postgres auditor is wrapped so failed INSERTs
+	// surface in the operator logs instead of vanishing inside the
+	// decorators' best-effort `_ = auditor.Log(...)` calls (NoOp never fails).
 	var auditor port.Auditor
 	if cfg.Audit.Enabled {
-		auditor = audit.NewPostgresAuditor(pool)
+		auditor = audit.NewLoggingAuditor(audit.NewPostgresAuditor(pool), log)
 	} else {
 		auditor = audit.NewNoOpAuditor()
 	}
