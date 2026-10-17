@@ -8,6 +8,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- Casbin Redis watcher wiring (v1.3, D2/D3): policy writes propagate to peer pods immediately when Redis and authorization are both enabled; a watcher failure warns and continues on the 5-minute backstop reload. Every watcher event path flushes the decision cache (covered by regression tests).
+
 - Queue backend spectrum (v1.3, #84/#90): `queue.backend` (`goroutine` | `rabbitmq` | `redis`-reserved) with a `GoroutineQueue` in-memory tier (zero infrastructure, best-effort durability) and an in-process worker that starts before the HTTP listener with its own shutdown drain phase. ADR-010; spec: `docs/features/background-jobs.md`.
 - Notification system (v1.3 Phase 2, #72): pluggable `port.NotificationSender` with webhook and NoOp backends (`internal/adapter/notification/`), a `notification.send` worker handler (`internal/worker/handlers/notification_handler.go`), and `notification.enabled` / `notification.webhook_url` config keys (`NOTIFICATION_ENABLED`, `NOTIFICATION_WEBHOOK_URL`). Jobs dispatch through the existing `/api/jobs/dispatch` API; `notification.send` is re-added to the job-type registry. Spec: `docs/features/notifications.md`.
 

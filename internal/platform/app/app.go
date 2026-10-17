@@ -34,8 +34,10 @@ import (
 	"github.com/14mdzk/goscratch/internal/worker"
 	"github.com/14mdzk/goscratch/internal/worker/handlers"
 	"github.com/14mdzk/goscratch/pkg/logger"
+	"github.com/casbin/casbin/v3/persist"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"github.com/redis/go-redis/v9"
 )
 
 // App holds all application dependencies
@@ -58,6 +60,10 @@ type App struct {
 	// inProcessWorker runs job consumption inside the API process. Non-nil
 	// only when queue.backend=goroutine with worker.in_process=true.
 	inProcessWorker *worker.Worker
+	// watcherRedisClient is the dedicated Redis connection of the Casbin
+	// watcher. Non-nil only when the watcher is wired (Redis + authorization
+	// both enabled and subscribe succeeded); closed at shutdown.
+	watcherRedisClient *redis.Client
 }
 
 // New creates a new App instance with all dependencies
@@ -202,10 +208,34 @@ func New(ctx context.Context, cfg *config.Config) (*App, error) {
 	// boot must NOT silently open every authenticated endpoint (block-ship #3).
 	// The NoOpAdapter is intentionally NOT used as a fallback here.
 	var authorizer port.Authorizer
+	var watcherRedisClient *redis.Client
 	if cfg.Authorization.Enabled {
 		log.Info("Initializing Casbin authorization...")
+		// Wire the Redis watcher when Redis is available so policy writes
+		// propagate to peer pods immediately; otherwise the 5-minute
+		// backstop reload remains the convergence path. A watcher failure
+		// warns and continues unwatched (mirrors the cache fallback above):
+		// losing live propagation must not kill boot.
+		var watcher persist.Watcher
+		if cfg.Redis.Enabled {
+			watcherRedisClient = redis.NewClient(&redis.Options{
+				Addr:     cfg.Redis.Addr(),
+				Password: cfg.Redis.Password,
+				DB:       cfg.Redis.DB,
+			})
+			rw, werr := casbinadapter.NewRedisWatcher(ctx, watcherRedisClient, "")
+			if werr != nil {
+				log.Warn("Casbin Redis watcher unavailable; policy propagation falls back to the backstop reload", "error", werr)
+				_ = watcherRedisClient.Close()
+				watcherRedisClient = nil
+			} else {
+				log.Info("Casbin Redis watcher subscribed")
+				watcher = rw
+			}
+		}
 		authorizer, err = casbinadapter.NewAdapter(casbinadapter.Config{
 			DatabaseURL: cfg.Database.DSN(),
+			Watcher:     watcher,
 		})
 		if err != nil {
 			return nil, fmt.Errorf("authorization enabled but Casbin init failed: %w", err)
@@ -389,22 +419,23 @@ func New(ctx context.Context, cfg *config.Config) (*App, error) {
 	}
 
 	return &App{
-		Config:          cfg,
-		Logger:          log,
-		DB:              pool,
-		Server:          server,
-		Cache:           cacheAdapter,
-		Queue:           queueAdapter,
-		Storage:         storageAdapter,
-		SSE:             sseBroker,
-		Auditor:         auditor,
-		Authorizer:      authorizer,
-		Email:           emailSender,
-		Notification:    notificationSender,
-		metricsServer:   metricsServer,
-		tracerShutdown:  tracerShutdown,
-		rateLimitCloser: rateLimitCloser,
-		inProcessWorker: inProcessWorker,
+		Config:             cfg,
+		Logger:             log,
+		DB:                 pool,
+		Server:             server,
+		Cache:              cacheAdapter,
+		Queue:              queueAdapter,
+		Storage:            storageAdapter,
+		SSE:                sseBroker,
+		Auditor:            auditor,
+		Authorizer:         authorizer,
+		Email:              emailSender,
+		Notification:       notificationSender,
+		metricsServer:      metricsServer,
+		tracerShutdown:     tracerShutdown,
+		rateLimitCloser:    rateLimitCloser,
+		inProcessWorker:    inProcessWorker,
+		watcherRedisClient: watcherRedisClient,
 	}, nil
 }
 
@@ -516,6 +547,9 @@ func (a *App) Shutdown(ctx context.Context) error {
 		}
 		if a.Cache != nil {
 			_ = a.Cache.Close()
+		}
+		if a.watcherRedisClient != nil {
+			_ = a.watcherRedisClient.Close()
 		}
 		if a.Queue != nil {
 			_ = a.Queue.Close()
