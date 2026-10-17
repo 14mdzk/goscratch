@@ -71,7 +71,7 @@ func tokLookupKey(token string) string {
 // userIdxKey returns the per-user index key:
 // refresh:user:<userID>:<sha256-hex(token)>
 // Value stored: "1".  Used by RevokeAllForUser to delete all tokens for a user
-// via prefix iteration.
+// via an atomic prefix sweep.
 func userIdxKey(userID, token string) string {
 	return fmt.Sprintf("refresh:user:%s:%s", userID, tokenHash(token))
 }
@@ -165,6 +165,9 @@ func (uc *authUseCase) Refresh(ctx context.Context, req dto.RefreshRequest) (*dt
 	}
 
 	// Revoke old token: delete both keys (idxKey was validated above).
+	// Delete-first is deliberate: the worst case is a forced re-login
+	// (fail-closed). Writing the new keys first would leave old and new
+	// tokens simultaneously valid if the process died before the delete.
 	_ = uc.cache.Delete(ctx, lookupKey)
 	_ = uc.cache.Delete(ctx, idxKey)
 
@@ -230,9 +233,11 @@ func (uc *authUseCase) Logout(ctx context.Context, callerID, refreshToken string
 	return nil
 }
 
-// RevokeAllForUser implements the Revoker interface. It scans all per-user
-// index keys for userID and for each match deletes both the index key and its
-// corresponding lookup key.
+// RevokeAllForUser implements the Revoker interface. It deletes every key
+// under the per-user index prefix in one atomic Lua sweep (see
+// RedisCache.DeleteByPrefix): the sweep either fully applies or fully fails,
+// so a password change can never leave a partial revocation behind. Errors
+// propagate fail-closed to ChangePassword.
 func (uc *authUseCase) RevokeAllForUser(ctx context.Context, userID string) error {
 	prefix := fmt.Sprintf("refresh:user:%s:", userID)
 	return uc.cache.DeleteByPrefix(ctx, prefix)

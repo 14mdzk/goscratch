@@ -3,6 +3,7 @@ package cache
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"testing"
 	"time"
 
@@ -324,6 +325,28 @@ func TestRedisCache_DeleteByPrefix_NoMatchingKeys(t *testing.T) {
 	// Should not error even if no keys match
 	err := rc.DeleteByPrefix(ctx, "refresh:user:nonexistent:")
 	assert.NoError(t, err)
+}
+
+func TestRedisCache_DeleteByPrefix_MultiBatchSweep(t *testing.T) {
+	rc, _ := newTestRedisCache(t)
+	ctx := context.Background()
+
+	// More keys than one SCAN COUNT batch: the script must loop to cursor 0.
+	const n = 250
+	for i := 0; i < n; i++ {
+		require.NoError(t, rc.Set(ctx, fmt.Sprintf("refresh:user:u9:%03d", i), []byte("v"), time.Minute))
+	}
+	require.NoError(t, rc.Set(ctx, "refresh:user:other:000", []byte("keep"), time.Minute))
+
+	require.NoError(t, rc.DeleteByPrefix(ctx, "refresh:user:u9:"))
+
+	for i := 0; i < n; i++ {
+		_, err := rc.Get(ctx, fmt.Sprintf("refresh:user:u9:%03d", i))
+		assert.ErrorIs(t, err, port.ErrCacheMiss, "key %d must be swept", i)
+	}
+	val, err := rc.Get(ctx, "refresh:user:other:000")
+	require.NoError(t, err)
+	assert.Equal(t, []byte("keep"), val)
 }
 
 func TestRedisCache_SetAndGet_BinaryData(t *testing.T) {
