@@ -2,13 +2,21 @@ package worker
 
 import (
 	"context"
+	"fmt"
 	"math/rand"
 	"sync"
 	"time"
 
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
+
 	"github.com/14mdzk/goscratch/internal/port"
 	"github.com/14mdzk/goscratch/pkg/logger"
 )
+
+// workerTracerName identifies worker-side spans in traces.
+const workerTracerName = "goscratch-worker"
 
 // Worker consumes jobs from a queue and dispatches them to handlers
 type Worker struct {
@@ -217,14 +225,33 @@ func (w *Worker) handleMessage(workerID int, msg []byte) error {
 		return nil
 	}
 
+	// Continue the dispatching trace (if any): extract before deriving the
+	// timeout context so the handler span links to the dispatch span.
+	msgCtx := job.ExtractTraceContext(w.ctx)
+
 	// Create context with timeout
-	ctx, cancel := context.WithTimeout(w.ctx, 5*time.Minute)
+	ctx, cancel := context.WithTimeout(msgCtx, 5*time.Minute)
 	defer cancel()
 
-	// Execute handler
+	// Execute handler inside a span so worker-side work links to the trace
+	// that dispatched the job. Without a traceparent this starts a new root
+	// span. The span context flows into the handler, correlating its logs.
+	handlerCtx, span := otel.Tracer(workerTracerName).Start(ctx,
+		fmt.Sprintf("job %s", job.Type),
+		trace.WithAttributes(
+			attribute.String("job_id", job.ID),
+			attribute.String("job_type", job.Type),
+			attribute.Int("attempt", job.Attempts),
+		),
+	)
+	defer span.End()
+
 	start := time.Now()
-	err = handler.Handle(ctx, job)
+	err = handler.Handle(handlerCtx, job)
 	duration := time.Since(start)
+	if err != nil {
+		span.RecordError(err)
+	}
 
 	if err != nil {
 		w.logger.Error("Job failed",

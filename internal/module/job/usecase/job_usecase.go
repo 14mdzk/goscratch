@@ -46,6 +46,9 @@ func (uc *jobUseCase) Dispatch(ctx context.Context, jobType string, payload any,
 		return nil, apperr.Internalf("failed to create job: %s", err.Error())
 	}
 
+	// Continue the dispatching trace (if any) on the worker side.
+	job.InjectTraceContext(ctx)
+
 	// Publish with retry
 	if err := uc.publisher.PublishRaw(ctx, job); err != nil {
 		return nil, apperr.Internalf("failed to dispatch job: %s", err.Error())
