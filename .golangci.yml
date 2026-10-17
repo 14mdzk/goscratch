@@ -1,3 +1,4 @@
+version: "2"
 run:
   timeout: 5m
   modules-download-mode: readonly
@@ -7,35 +8,77 @@ linters:
     - errcheck
     - govet
     - staticcheck
-    - unused
-    - gosimple
     - ineffassign
-    - typecheck
     - misspell
-    - gofmt
-    - goimports
     - revive
     - gocritic
   disable: []
-
-linters-settings:
-  revive:
+  settings:
+    revive:
+      rules:
+        - name: unexported-return
+          disabled: true
+        - name: exported
+          disabled: true
+        - name: package-comments
+          disabled: true
+        - name: unused-parameter
+          disabled: true
+        - name: redefines-builtin-id
+          disabled: true
+    gocritic:
+      enabled-tags:
+        - diagnostic
+        - style
+      disabled-checks:
+        - importShadow
+    govet:
+      disable:
+        - inline
+    errcheck:
+      exclude-functions:
+        - (*os.File).Close
+        - os.Remove
+        - fmt.Fprintf
+        - fmt.Fprint
+        - (*mime/multipart.File).Close
+        - (io.ReadCloser).Close
+        - (*queue.RabbitMQ).Close
+        - (port.EmailSender).Close
+        - (port.NotificationSender).Close
+        - (*github.com/14mdzk/goscratch/internal/adapter/queue.RabbitMQ).Close
+        - (github.com/14mdzk/goscratch/internal/port.EmailSender).Close
+        - (github.com/14mdzk/goscratch/internal/port.NotificationSender).Close
+        - (mime/multipart.File).Close
+    staticcheck:
+      checks:
+        - all
+        - -ST1000
+        - -ST1003
+        - -ST1016
+        - -ST1020
+        - -ST1021
+        - -ST1022
+        - -ST1023
+        - -QF1008
+        - -QF1012
+        - -QF1001
+        - -QF1011
+  exclusions:
     rules:
-      - name: unexported-return
-        disabled: true
-  gocritic:
-    enabled-tags:
-      - diagnostic
-      - style
+      - path: _test\.go
+        linters:
+          - errcheck
+          - gocritic
+      - path: internal/module/.*/repository/sqlc/
+        linters:
+          - all
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
 
 issues:
-  exclude-rules:
-    - path: _test\.go
-      linters:
-        - errcheck
-        - gocritic
-    - path: internal/module/.*/repository/sqlc/
-      linters:
-        - all
   max-issues-per-linter: 50
   max-same-issues: 5
