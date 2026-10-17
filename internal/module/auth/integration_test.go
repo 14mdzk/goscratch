@@ -220,15 +220,18 @@ func TestAuthLogoutFlow(t *testing.T) {
 
 	loginData := parseResponse(t, loginResp)
 	tokens := loginData["data"].(map[string]interface{})
+	accessToken := tokens["access_token"].(string)
 	refreshToken := tokens["refresh_token"].(string)
 
 	t.Run("logout invalidates refresh token", func(t *testing.T) {
-		// Logout
+		// Logout is auth-gated (callerID comes from the JWT), so the
+		// login-issued access token must accompany the request.
 		body, _ := json.Marshal(map[string]string{
 			"refresh_token": refreshToken,
 		})
 		req, _ := http.NewRequest(http.MethodPost, "/auth/logout", bytes.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", "Bearer "+accessToken)
 
 		resp, err := app.Test(req, -1)
 		require.NoError(t, err)
