@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-10-17 — Developer tooling, spec generation, spatial primitives
+
+Tooling release: module/migration generators, a drift-gated hand-edited OpenAPI spec (generator evaluated and rejected in ADR-011), spatial primitive types with EWKB + GeoJSON + Haversine, an admin audit-log query endpoint, JWT-secret overlap rotation, worker trace propagation, a k6 load baseline, and CI quality gates (coverage-drop, openapi-drift, migration-fixture). One removal: the deprecated `GET /health` alias is gone (use `/healthz/live`). Operators upgrading should read the Changed entries below — `queue.backend` is now required and RabbitMQ-unreachable fails boot.
+
 ### Added
 
 - RabbitMQ hardening (v1.3, #94): publisher-side reconnect (connection NotifyClose marks the cached channel dead; next publish redials once and retries once, original error on failure), held retry across `min(1s*2^(attempts-1),60s)` backoff with jitter, and DLQ parking (`<queue>.dlq`, durable) for exhausted/undecodable/unhandled jobs with broker-UI replay (RUNBOOK §9). No redrive tooling, no new config keys.

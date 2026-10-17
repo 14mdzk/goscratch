@@ -248,11 +248,11 @@ PR slicing plan + status ledger: see `docs/audit/punch-list.md`. Per-PR scope fi
 
 ---
 
-## v1.2 - Production-Readiness Follow-ups (RELEASE PENDING)
+## v1.2 - Production-Readiness Follow-ups (RELEASED 2026-07-08)
 
 Plan source: [`docs/audit/v1.2-plan.md`](./audit/v1.2-plan.md). Slicing ledger: [`docs/audit/v1.2-punch-list.md`](./audit/v1.2-punch-list.md).
 
-v1.1 closed correctness and security defects in the code. v1.2 closes the gaps surrounding the code: operator runbooks, supply-chain CVE scanning, dependency-drift control, and integration-test coverage left after the v1.1 hardening rush. Three tiers, ~5 working days total. All 10 planned PRs plus the PR-13 follow-up have merged; tag + `[Unreleased]` → `[1.2.0]` cut pending.
+v1.1 closed correctness and security defects in the code. v1.2 closes the gaps surrounding the code: operator runbooks, supply-chain CVE scanning, dependency-drift control, and integration-test coverage left after the v1.1 hardening rush. Three tiers, ~5 working days total. All 10 planned PRs plus the PR-13 follow-up have merged; cut as `[1.2.0]` (tag `v1.2.0`).
 
 ### Tier A — Security / CI Hardening
 
@@ -302,9 +302,11 @@ Inherits v1.1 out-of-scope (circuit breakers, event bus, plugin adapters, gRPC, 
 
 ---
 
-## v1.3 - Developer Tooling + Spec Generation + Spatial Primitives (PLANNED)
+## v1.3 - Developer Tooling + Spec Generation + Spatial Primitives (RELEASED 2026-10-17)
 
 Theme: take the drift-prone surfaces v1.1/v1.2 audits kept catching (hand-edited OpenAPI spec, module-pattern divergence) and turn them into generated artifacts. Ship spatial **types** that any future module can consume so PR-52's PostGIS dependency is justified without committing this repo to a domain (`location`/`points_of_interest`) it has no first consumer for. Slice picked for smallest blast radius first; each PR ≤ 1 day where possible.
+
+Shipped as `[1.3.0]` (tag `v1.3.0` to be pushed post-merge): A1–A3, B1 + ADR-011 Tier-B execution (fold+delete, schema-aware gate, auth/storage reconcile; generator rejected), C1–C4, D1–D4, E1–E4 (+E5), F1–F4, plus #94/#96/#97/#98 hardening and #119/#122 test repairs. Full row→evidence table: [`docs/audit/v1.3-release-cut.md`](./audit/v1.3-release-cut.md). Carried out of v1.3: goscratch CLI (prototype only), oasdiff/spectral/contract-test harness, point-in-polygon + ST_DWithin, `info.servers` env templating.
 
 ### Tier A — Developer tooling (codegen + scaffold)
 

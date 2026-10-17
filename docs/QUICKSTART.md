@@ -149,6 +149,18 @@ curl -s http://localhost:3000/healthz/live
 # {"status":"ok"}
 ```
 
+## Upgrading to v1.3
+
+- `GET /health` is removed (deprecated since v1.2). Move probes and
+  healthchecks to `/healthz/live` (liveness) / `/healthz/ready` (readiness).
+- `queue.backend` is now required: set it explicitly (`goroutine` for
+  zero-infrastructure dev, `rabbitmq` + external `cmd/worker` for
+  production) and ensure `worker.in_process` matches. The API fails boot
+  on an unreachable broker instead of silently falling back.
+- Rotating `JWT_SECRET` without dropping sessions: set
+  `JWT_SECRET_PREVIOUS` to the old value during the overlap window (see
+  `docs/RUNBOOK.md` §1), then clear it after old tokens expire.
+
 Then verify Prometheus is reachable on the **internal** port only:
 
 ```bash

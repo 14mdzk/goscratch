@@ -10,7 +10,7 @@ info:
     applies to every route and answers 429 when exhausted; the auth
     endpoints additionally carry a tighter dedicated budget (20 requests
     per 5 minutes per IP, fail-closed with 503 when its backend is down).
-  version: "0.5.0"
+  version: "1.3.0"
   contact:
     name: Goscratch
     url: https://github.com/14mdzk/goscratch
