@@ -392,3 +392,4 @@ Tracked so they are not re-debated each cycle. None are sliced or scheduled. Eac
 | **Frontend reference app** | Out of repo scope | If shipped, lives in a sibling repo, not here |
 | **Distributed tracing across services** | Discussion needed | Second service exists |
 | **Real-time location streaming over SSE** | Discussion needed | Geospatial consumer of v1.3 Tier C primitives exists and asks for it |
+| **Atomic audit for successful mutations** (tx-aware `Transactor` nesting + tx-ownership rework; in-tx insert vs outbox+relay) | Discussion needed — v1.4 direction from the v1.3 transaction-adoption decision ([#85](https://github.com/14mdzk/goscratch/issues/85)) | A compliance requirement demands no-unaudited-mutations, or observed audit loss becomes material |
