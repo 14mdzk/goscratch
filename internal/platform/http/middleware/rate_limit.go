@@ -96,6 +96,7 @@ type memoryBackend struct {
 	mu        sync.Mutex
 	windows   map[string]*slidingWindow
 	stop      chan struct{}
+	done      chan struct{}
 	closeOnce sync.Once
 }
 
@@ -108,6 +109,7 @@ func newMemoryBackend() *memoryBackend {
 	mb := &memoryBackend{
 		windows: make(map[string]*slidingWindow),
 		stop:    make(chan struct{}),
+		done:    make(chan struct{}),
 	}
 	// Start periodic cleanup
 	go mb.cleanup()
@@ -153,6 +155,7 @@ func (mb *memoryBackend) Allow(_ context.Context, key string, maxReqs int, windo
 func (mb *memoryBackend) cleanup() {
 	ticker := time.NewTicker(1 * time.Minute)
 	defer ticker.Stop()
+	defer close(mb.done)
 
 	for {
 		select {

@@ -5,7 +5,6 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"runtime"
 	"testing"
 	"time"
 
@@ -230,34 +229,35 @@ func TestRateLimit_RemainingHeaderDecreases(t *testing.T) {
 
 // TestMemoryStore_Close_StopsJanitor verifies that Close() terminates the
 // cleanup goroutine and is safe to call multiple times (idempotent).
+// It observes the janitor's own lifecycle signal instead of counting global
+// goroutines, which unrelated runtime activity can perturb in either
+// direction (previously flaked in CI as "4 is not >= 5").
 func TestMemoryStore_Close_StopsJanitor(t *testing.T) {
-	before := runtime.NumGoroutine()
 	mb := newMemoryBackend()
 
-	// Give the goroutine a moment to be scheduled.
-	time.Sleep(10 * time.Millisecond)
-	after := runtime.NumGoroutine()
-	require.GreaterOrEqual(t, after, before, "janitor goroutine should have started")
-
-	// Signal stop and assert the goroutine exits within 200ms.
-	done := make(chan struct{})
+	// Signal stop and assert Close returns promptly.
+	closeReturned := make(chan struct{})
 	go func() {
-		defer close(done)
+		defer close(closeReturned)
 		_ = mb.Close()
 	}()
 
 	select {
-	case <-done:
-		// Close returned; goroutine will exit on next select iteration.
+	case <-closeReturned:
+		// Close returned; the janitor exits on its next select iteration.
 	case <-time.After(200 * time.Millisecond):
 		t.Fatal("Close() did not return within 200ms")
 	}
 
-	// Give scheduler time to let the goroutine exit.
-	time.Sleep(50 * time.Millisecond)
-	final := runtime.NumGoroutine()
-	assert.LessOrEqual(t, final, before+1, "goroutine count should return to baseline after Close")
+	// The janitor goroutine itself must exit.
+	select {
+	case <-mb.done:
+		// Terminated as required.
+	case <-time.After(2 * time.Second):
+		t.Fatal("janitor goroutine did not stop after Close()")
+	}
 
-	// Idempotent: second Close must not panic.
+	// Idempotent: second Close must not panic and must not block.
 	require.NotPanics(t, func() { _ = mb.Close() })
+	assert.NoError(t, mb.Close())
 }
