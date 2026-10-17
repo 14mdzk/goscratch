@@ -71,6 +71,7 @@ func (c DatabaseConfig) DSN() string {
 
 type JWTConfig struct {
 	Secret          string `json:"secret" env:"JWT_SECRET"`
+	PreviousSecret  string `json:"previous_secret" env:"JWT_SECRET_PREVIOUS"`
 	AccessTokenTTL  int    `json:"access_token_ttl" env:"JWT_ACCESS_TOKEN_TTL"`
 	RefreshTokenTTL int    `json:"refresh_token_ttl" env:"JWT_REFRESH_TOKEN_TTL"`
 	Issuer          string `json:"issuer" env:"JWT_ISSUER"`
@@ -313,6 +314,17 @@ func (c *Config) Validate() error {
 	}
 	if len(c.JWT.Secret) < MinJWTSecretLen {
 		return fmt.Errorf("jwt.secret is %d bytes; minimum is %d: set the JWT_SECRET env override to a longer value", len(c.JWT.Secret), MinJWTSecretLen)
+	}
+	// An overlap-rotation previous secret must satisfy the same rules as the
+	// main secret. Empty disables rotation. Equal-to-current is tolerated
+	// (behaves as unset).
+	if c.JWT.PreviousSecret != "" {
+		if c.JWT.PreviousSecret == PlaceholderJWTSecret {
+			return fmt.Errorf("jwt.previous_secret is the committed placeholder %q: set the JWT_SECRET_PREVIOUS env override to a real value of at least %d bytes", PlaceholderJWTSecret, MinJWTSecretLen)
+		}
+		if len(c.JWT.PreviousSecret) < MinJWTSecretLen {
+			return fmt.Errorf("jwt.previous_secret is %d bytes; minimum is %d: set the JWT_SECRET_PREVIOUS env override to a longer value", len(c.JWT.PreviousSecret), MinJWTSecretLen)
+		}
 	}
 	if c.JWT.Issuer == "" {
 		return fmt.Errorf("jwt.issuer is required: set JWT_ISSUER to the service identifier (e.g. \"goscratch\")")

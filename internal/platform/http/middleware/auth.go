@@ -15,22 +15,25 @@ import (
 
 // AuthConfig holds authentication middleware configuration
 type AuthConfig struct {
-	JWTSecret    string
-	JWTIssuer    string
-	JWTAudience  string
-	TokenLookup  string // "header:Authorization" or "cookie:token"
-	ContextKey   string // Key to store user claims in context
-	ErrorHandler fiber.ErrorHandler
+	JWTSecret         string
+	JWTPreviousSecret string // overlap-rotation window: also accepted for verification, never for signing
+	JWTIssuer         string
+	JWTAudience       string
+	TokenLookup       string // "header:Authorization" or "cookie:token"
+	ContextKey        string // Key to store user claims in context
+	ErrorHandler      fiber.ErrorHandler
 }
 
-// DefaultAuthConfig returns default authentication configuration
-func DefaultAuthConfig(jwtSecret string) AuthConfig {
+// DefaultAuthConfig returns default authentication configuration.
+// previousSecret is the overlap-rotation window (empty disables it).
+func DefaultAuthConfig(jwtSecret, previousSecret string) AuthConfig {
 	return AuthConfig{
-		JWTSecret:   jwtSecret,
-		JWTIssuer:   "goscratch",
-		JWTAudience: "goscratch-api",
-		TokenLookup: "header:Authorization",
-		ContextKey:  "user",
+		JWTSecret:         jwtSecret,
+		JWTPreviousSecret: previousSecret,
+		JWTIssuer:         "goscratch",
+		JWTAudience:       "goscratch-api",
+		TokenLookup:       "header:Authorization",
+		ContextKey:        "user",
 	}
 }
 
@@ -77,7 +80,7 @@ func Auth(cfg AuthConfig) fiber.Handler {
 		}
 
 		// Parse and validate token
-		raw, err := parseToken(token, cfg.JWTSecret, cfg.JWTIssuer, cfg.JWTAudience)
+		raw, err := parseToken(token, cfg.JWTSecret, cfg.JWTPreviousSecret, cfg.JWTIssuer, cfg.JWTAudience)
 		if err != nil {
 			if errors.Is(err, jwt.ErrTokenExpired) {
 				return response.Unauthorized(c, "Token has expired")
@@ -110,7 +113,7 @@ func OptionalAuth(cfg AuthConfig) fiber.Handler {
 			return c.Next()
 		}
 
-		raw, err := parseToken(token, cfg.JWTSecret, cfg.JWTIssuer, cfg.JWTAudience)
+		raw, err := parseToken(token, cfg.JWTSecret, cfg.JWTPreviousSecret, cfg.JWTIssuer, cfg.JWTAudience)
 		if err != nil {
 			return c.Next() // Invalid token, continue without auth
 		}
@@ -159,7 +162,12 @@ func extractToken(c *fiber.Ctx, lookup string) (string, error) {
 // audience checks. Both iss and aud must be non-empty in the server config; a
 // token that omits or mismatches either claim is unconditionally rejected
 // (should-fix: audit middleware/auth.go:129).
-func parseToken(tokenString, secret, issuer, audience string) (*Claims, error) {
+//
+// previousSecret is the overlap-rotation window: when set, a token that fails
+// under the current secret is retried under the previous one. When both fail
+// the current-secret error is returned, so expired-vs-invalid messaging stays
+// accurate. Signing always uses the current secret (see generateAccessToken).
+func parseToken(tokenString, secret, previousSecret, issuer, audience string) (*Claims, error) {
 	// Strict: the server config must provide both iss and aud (enforced by
 	// config.Validate). A call with empty issuer or audience is a programming
 	// error — reject the token immediately rather than skipping validation.
@@ -167,6 +175,20 @@ func parseToken(tokenString, secret, issuer, audience string) (*Claims, error) {
 		return nil, apperr.ErrUnauthorized
 	}
 
+	claims, err := tryParseToken(tokenString, secret, issuer, audience)
+	if err == nil {
+		return claims, nil
+	}
+	if previousSecret == "" {
+		return nil, err
+	}
+	if prevClaims, prevErr := tryParseToken(tokenString, previousSecret, issuer, audience); prevErr == nil {
+		return prevClaims, nil
+	}
+	return nil, err
+}
+
+func tryParseToken(tokenString, secret, issuer, audience string) (*Claims, error) {
 	parserOpts := []jwt.ParserOption{
 		jwt.WithValidMethods([]string{"HS256"}),
 		jwt.WithIssuer(issuer),

@@ -387,11 +387,11 @@ func New(ctx context.Context, cfg *config.Config) (*App, error) {
 	// Auth module is constructed first so its Revoker can be injected into the
 	// user module (ChangePassword must revoke auth sessions cross-module).
 	authModule := auth.NewModule(sharedUserRepo, cacheAdapter, auditor, cfg.JWT)
-	userModule := user.NewModule(pool, transactor, auditor, authorizer, cacheAdapter, cfg.JWT.Secret, authModule.Revoker())
-	roleModule := role.NewModule(authorizer, cfg.JWT.Secret)
-	storageModule := storagemodule.NewModule(storageAdapter, auditor, cfg.JWT.Secret)
-	sseModule := ssemodule.NewModule(sseBroker, authorizer, cfg.JWT.Secret)
-	jobModule := job.NewModule(publisher, auditor, authorizer, cfg.JWT.Secret)
+	userModule := user.NewModule(pool, transactor, auditor, authorizer, cacheAdapter, cfg.JWT.Secret, cfg.JWT.PreviousSecret, authModule.Revoker())
+	roleModule := role.NewModule(authorizer, cfg.JWT.Secret, cfg.JWT.PreviousSecret)
+	storageModule := storagemodule.NewModule(storageAdapter, auditor, cfg.JWT.Secret, cfg.JWT.PreviousSecret)
+	sseModule := ssemodule.NewModule(sseBroker, authorizer, cfg.JWT.Secret, cfg.JWT.PreviousSecret)
+	jobModule := job.NewModule(publisher, auditor, authorizer, cfg.JWT.Secret, cfg.JWT.PreviousSecret)
 
 	server.RegisterModules(docsModule, healthModule, userModule, authModule, roleModule, storageModule, sseModule, jobModule)
 

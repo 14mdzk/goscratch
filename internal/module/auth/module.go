@@ -14,10 +14,11 @@ import (
 
 // Module represents the auth module
 type Module struct {
-	handler   *handler.Handler
-	jwtSecret string
-	cache     port.Cache
-	revoker   usecase.Revoker
+	handler           *handler.Handler
+	jwtSecret         string
+	jwtPreviousSecret string
+	cache             port.Cache
+	revoker           usecase.Revoker
 }
 
 // NewModule creates a new auth module.
@@ -33,10 +34,11 @@ func NewModule(userRepo usecase.UserRepo, cache port.Cache, auditor port.Auditor
 	// Expose the concrete usecase as a Revoker so other modules (user) can call
 	// RevokeAllForUser without going through the audit decorator.
 	return &Module{
-		handler:   h,
-		jwtSecret: jwtCfg.Secret,
-		cache:     cache,
-		revoker:   uc.(usecase.Revoker),
+		handler:           h,
+		jwtSecret:         jwtCfg.Secret,
+		jwtPreviousSecret: jwtCfg.PreviousSecret,
+		cache:             cache,
+		revoker:           uc.(usecase.Revoker),
 	}
 }
 
@@ -73,6 +75,6 @@ func (m *Module) RegisterRoutes(router fiber.Router) {
 
 	// Logout is authenticated — Auth middleware validates the JWT before the
 	// handler runs. The callerID is read from the JWT claims by the handler.
-	authMiddleware := middleware.Auth(middleware.DefaultAuthConfig(m.jwtSecret))
+	authMiddleware := middleware.Auth(middleware.DefaultAuthConfig(m.jwtSecret, m.jwtPreviousSecret))
 	authGroup.Post("/logout", authMiddleware, m.handler.Logout)
 }
