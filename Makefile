@@ -1,4 +1,4 @@
-.PHONY: help dev dev-worker dev-no-air build test test-ci test-integration lint lint-casbin-sql openapi-drift vuln clean migrate-up migrate-down migrate-create sqlc docker-up docker-down worker-build new-module new
+.PHONY: help dev dev-worker dev-no-air build test test-ci test-integration lint lint-casbin-sql lint-migration-fixture openapi-drift vuln clean migrate-up migrate-down migrate-create sqlc docker-up docker-down worker-build new-module new
 
 # Default target
 help:
@@ -90,12 +90,15 @@ vuln:
 	@govulncheck ./...
 
 # Lint
-lint: lint-casbin-sql openapi-drift
+lint: lint-casbin-sql lint-migration-fixture openapi-drift
 	@echo "Running linter..."
 	@golangci-lint run ./...
 
 lint-casbin-sql:
 	@bash scripts/lint-casbin-sql.sh
+
+lint-migration-fixture:
+	@bash scripts/lint-migration-fixture.sh
 
 openapi-drift:
 	@echo "Running OpenAPI route drift check..."
