@@ -1,4 +1,4 @@
-.PHONY: help dev dev-worker dev-no-air build test test-ci test-integration lint lint-casbin-sql lint-migration-fixture openapi-drift vuln clean migrate-up migrate-down migrate-create sqlc docker-up docker-down worker-build new-module new
+.PHONY: help dev dev-worker dev-no-air build test test-ci test-integration lint lint-casbin-sql lint-migration-fixture openapi-drift vuln clean migrate-up migrate-down migrate-create sqlc docker-up docker-down worker-build new-module new k6-baseline
 
 # Default target
 help:
@@ -81,6 +81,13 @@ test-coverage:
 	@go test -v -race -coverprofile=coverage.out ./...
 	@go tool cover -html=coverage.out -o coverage.html
 	@echo "Coverage report: coverage.html"
+
+# Load baseline (Tier F2): needs a live seeded stack —
+#   docker compose up -d postgres redis && make migrate-up seed && go run ./cmd/api
+# then `make k6-baseline`. Not a CI gate (no live stack in CI).
+k6-baseline:
+	@echo "Running k6 load baseline (BASE_URL=$${BASE_URL:-http://localhost:8080})..."
+	@k6 run k6/baseline.js
 
 # Vulnerability scanning
 vuln:
