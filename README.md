@@ -27,7 +27,7 @@ make dev
 ```
 
 Then visit:
-- Health check: http://localhost:3000/health
+- Health check: http://localhost:3000/healthz/live
 - API docs: http://localhost:3000/docs
 
 Test credentials (from seeded data):

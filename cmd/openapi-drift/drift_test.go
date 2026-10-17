@@ -236,7 +236,6 @@ func TestCollectFiberRoutes_ContainsExpectedRoutes(t *testing.T) {
 	}
 
 	expected := []string{
-		"GET /health",
 		"GET /healthz/live",
 		"GET /healthz/ready",
 		"POST /auth/login",

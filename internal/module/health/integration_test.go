@@ -29,17 +29,13 @@ func TestHealthEndpoint(t *testing.T) {
 	require.NoError(t, err)
 	defer appCleanup()
 
-	t.Run("GET /health returns 200 (liveness alias)", func(t *testing.T) {
+	t.Run("GET /health returns 404 (alias removed in v1.3)", func(t *testing.T) {
 		req, _ := http.NewRequest(http.MethodGet, "/health", nil)
 		resp, err := app.Test(req, -1)
 		require.NoError(t, err)
 		defer resp.Body.Close()
 
-		assert.Equal(t, http.StatusOK, resp.StatusCode)
-
-		body, err := io.ReadAll(resp.Body)
-		require.NoError(t, err)
-		assert.Contains(t, string(body), `"status":"alive"`)
+		assert.Equal(t, http.StatusNotFound, resp.StatusCode)
 	})
 
 	t.Run("GET /healthz/live returns 200", func(t *testing.T) {

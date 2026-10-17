@@ -129,19 +129,15 @@ func TestReadinessTimeout(t *testing.T) {
 	assert.NotEmpty(t, checks["slow"])
 }
 
-// TestHealthAliasLiveness: GET /health (back-compat alias) returns 200 with
-// the liveness payload.
-func TestHealthAliasLiveness(t *testing.T) {
+// TestHealthAliasRemoved: GET /health (alias removed in v1.3, deprecated
+// since v1.2) is no longer registered — callers must use /healthz/live.
+func TestHealthAliasRemoved(t *testing.T) {
 	app := setupApp(0)
 
 	req := httptest.NewRequest(http.MethodGet, "/health", nil)
 	resp, err := app.Test(req)
 	require.NoError(t, err)
-	assert.Equal(t, http.StatusOK, resp.StatusCode)
-
-	result := parseBody(t, resp)
-	assert.Equal(t, "alive", result["status"])
-	assert.NotEmpty(t, result["timestamp"])
+	assert.Equal(t, http.StatusNotFound, resp.StatusCode)
 }
 
 // TestNewHandler verifies the constructor is non-nil.

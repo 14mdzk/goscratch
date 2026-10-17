@@ -28,14 +28,10 @@ func NewModule(readinessTimeout time.Duration, checkers ...HealthChecker) *Modul
 //   - GET /healthz/live   — liveness (process alive, no dependency check)
 //   - GET /healthz/ready  — readiness (all dependency sub-checks)
 //
-// Back-compat alias (deprecated — keep for existing callers):
-//   - GET /health         — liveness alias; deprecated, use /healthz/live
-//
-// Removed paths (previously /health/ready and /health/live):
-// those old paths are no longer registered; callers must migrate to /healthz/*.
+// Removed paths (previously /health, /health/ready, /health/live):
+// those old paths are no longer registered; callers must migrate to
+// /healthz/*. The /health alias was deprecated in v1.2 and removed in v1.3.
 func (m *Module) RegisterRoutes(router fiber.Router) {
 	router.Get("/healthz/live", m.handler.LivenessCheck)
 	router.Get("/healthz/ready", m.handler.ReadinessCheck)
-	// Deprecated: use /healthz/live. Kept for back-compat with existing probes.
-	router.Get("/health", m.handler.LivenessCheck)
 }

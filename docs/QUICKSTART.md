@@ -68,7 +68,7 @@ The server starts at http://localhost:3000 with hot-reload enabled.
 ### 7. Verify it works
 
 ```bash
-curl http://localhost:3000/health
+curl http://localhost:3000/healthz/live
 ```
 
 Expected response:
@@ -145,7 +145,7 @@ Required for any non-local environment (staging, production) and for anyone upgr
 After applying changes, restart the API and confirm:
 
 ```bash
-curl -s http://localhost:3000/health
+curl -s http://localhost:3000/healthz/live
 # {"status":"ok"}
 ```
 
