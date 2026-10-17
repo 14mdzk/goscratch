@@ -61,25 +61,33 @@ func (c *RedisCache) Delete(ctx context.Context, key string) error {
 	return nil
 }
 
-// DeleteByPrefix removes all keys whose name starts with prefix using SCAN +
-// DEL. It is used by ChangePassword to revoke all active refresh tokens for a
-// user without knowing each individual token hash.
+// deleteByPrefixScript sweeps keys matching ARGV[1] in a single server-side
+// execution: SCAN loops inside the script, each batch is DELeted, and the
+// total deleted count is returned. Server-side execution is atomic — no other
+// client interleaves — so a transport failure can no longer leave a partial
+// revocation behind: the call either fully applied or fully failed, and the
+// caller retries idempotently. Used by ChangePassword to revoke all active
+// refresh tokens for a user without knowing each individual token hash.
+const deleteByPrefixScript = `
+local cursor = "0"
+local deleted = 0
+local pattern = ARGV[1]
+repeat
+  local res = redis.call("SCAN", cursor, "MATCH", pattern, "COUNT", 100)
+  cursor = res[1]
+  local keys = res[2]
+  if #keys > 0 then
+    deleted = deleted + redis.call("DEL", unpack(keys))
+  end
+until cursor == "0"
+return deleted
+`
+
+// DeleteByPrefix removes all keys whose name starts with prefix using the
+// atomic Lua sweep above.
 func (c *RedisCache) DeleteByPrefix(ctx context.Context, prefix string) error {
-	var cursor uint64
-	for {
-		keys, nextCursor, err := c.client.Scan(ctx, cursor, prefix+"*", 100).Result()
-		if err != nil {
-			return fmt.Errorf("redis scan error: %w", err)
-		}
-		if len(keys) > 0 {
-			if err := c.client.Del(ctx, keys...).Err(); err != nil {
-				return fmt.Errorf("redis del error: %w", err)
-			}
-		}
-		cursor = nextCursor
-		if cursor == 0 {
-			break
-		}
+	if err := c.client.Eval(ctx, deleteByPrefixScript, nil, prefix+"*").Err(); err != nil {
+		return fmt.Errorf("redis delete-by-prefix error: %w", err)
 	}
 	return nil
 }
