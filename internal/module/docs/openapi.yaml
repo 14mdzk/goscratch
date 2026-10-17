@@ -33,25 +33,6 @@ tags:
 
 paths:
   # ── Health ──────────────────────────────────────────────────────────────
-  /health:
-    get:
-      operationId: healthCheck
-      tags: [Health]
-      summary: Basic health check
-      description: Returns the overall health status of the service.
-      responses:
-        "200":
-          description: Service is healthy
-          content:
-            application/json:
-              schema:
-                allOf:
-                  - $ref: "#/components/schemas/SuccessResponse"
-                  - type: object
-                    properties:
-                      data:
-                        $ref: "#/components/schemas/HealthCheckResponse"
-
   /healthz/ready:
     get:
       operationId: readinessCheck

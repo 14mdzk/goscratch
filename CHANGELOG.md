@@ -31,6 +31,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- Removed the deprecated `GET /health` liveness alias (v1.3, Tier D1; deprecated since v1.2). Use `GET /healthz/live`. Operator action: update container healthchecks, reverse-proxy locations, and monitoring probes — `deploy/docker/docker-compose.prod.yml` and `deploy/nginx/nginx.conf` already track the new path.
+
 - Queue config: `rabbitmq.enabled` is now a deprecated alias (applies only when `queue.backend` is unset); the dead `worker.enabled` key is deleted and `worker.in_process` is required with the `goroutine` backend. Operator action: set `queue.backend` explicitly and ensure `worker.in_process` matches the backend matrix (`goroutine`+in-process, `rabbitmq`+external `cmd/worker`); unreachable RabbitMQ brokers now fail boot instead of silently falling back to NoOp.
 
 ### Fixed
