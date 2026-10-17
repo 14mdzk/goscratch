@@ -62,12 +62,10 @@ jobs:
     needs: [test]
     if: github.event_name == 'pull_request'
     steps:
+      # No setup-go: the comparison script parses coverprofile lines with
+      # awk and never resolves source files (deliberately — profiles may
+      # reference files absent from this checkout).
       - uses: actions/checkout@v7
-
-      - uses: actions/setup-go@v7
-        with:
-          go-version-file: go.mod
-          cache: true
 
       - name: Download PR coverage profile
         uses: actions/download-artifact@v4
