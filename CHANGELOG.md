@@ -17,6 +17,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - Admin audit-log query endpoint (v1.3, Tier E4): `GET /api/audit/logs` (Auth + `audit:read` permission) with `action` / `user_id` / `resource` / `resource_id` / `start_time` / `end_time` filters and forward-only keyset pagination (`cursor`, `limit` default 50 max 100, opaque `(created_at, id)` cursor minted by `port.EncodeAuditCursor`). Invalid cursor/time → 400. Migration `000005` seeds the `admin → audit read` Casbin policy row; spec entry in `internal/module/docs/openapi.yaml` (drift-gated).
 
+- CI coverage drop gate (v1.3, Tier F4): the `test` job uploads its `coverage.out` as a `coverage-profile` artifact, and a new PR-only `coverage-gate` job compares the PR total against the latest successful `main` run via `scripts/check-coverage-drop.sh`, failing the PR on a drop of more than 1 percentage point. No baseline artifact yet (first run after merge) warns and passes by design.
+
 ### Changed
 
 - Queue config: `rabbitmq.enabled` is now a deprecated alias (applies only when `queue.backend` is unset); the dead `worker.enabled` key is deleted and `worker.in_process` is required with the `goroutine` backend. Operator action: set `queue.backend` explicitly and ensure `worker.in_process` matches the backend matrix (`goroutine`+in-process, `rabbitmq`+external `cmd/worker`); unreachable RabbitMQ brokers now fail boot instead of silently falling back to NoOp.
