@@ -19,6 +19,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - CI coverage drop gate (v1.3, Tier F4): the `test` job uploads its `coverage.out` as a `coverage-profile` artifact, and a new PR-only `coverage-gate` job compares the PR total against the latest successful `main` run via `scripts/check-coverage-drop.sh`, failing the PR on a drop of more than 1 percentage point. No baseline artifact yet (first run after merge) warns and passes by design.
 
+- k6 load baseline harness (v1.3, Tier F2): `k6/baseline.js` + `make k6-baseline` — login once in `setup()`, then a 4-VU upload → download → delete loop paced at ~72 req/min under the default 100 req/min sliding-window limiter (self-cleaning, no residue). Local-dev floor: p99 ≈ 7 ms at ~1 req/s, 0% failed. Runbook + numbers in `k6/README.md`; not a CI gate (needs a live seeded stack).
+
 ### Changed
 
 - Queue config: `rabbitmq.enabled` is now a deprecated alias (applies only when `queue.backend` is unset); the dead `worker.enabled` key is deleted and `worker.in_process` is required with the `goroutine` backend. Operator action: set `queue.backend` explicitly and ensure `worker.in_process` matches the backend matrix (`goroutine`+in-process, `rabbitmq`+external `cmd/worker`); unreachable RabbitMQ brokers now fail boot instead of silently falling back to NoOp.
