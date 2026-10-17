@@ -2,7 +2,7 @@
 
 ## Overview
 
-Background job processing via RabbitMQ. An HTTP API allows admins to dispatch jobs, and a separate worker process consumes and executes them. Jobs support configurable retry with exponential backoff.
+Background job processing over a queue tier (`goroutine` by default, `rabbitmq` for durable deployments). An HTTP API allows admins to dispatch jobs, and a worker consumes and executes them. Jobs support retry with capped exponential backoff plus jitter.
 
 ## API Endpoints
 
@@ -79,9 +79,27 @@ The worker runs as a separate binary (`cmd/worker/main.go`) that:
 
 ### Retry Logic
 
-- On failure, if `attempts < max_retry`, the job is re-published to the queue after a delay
-- Delay uses exponential backoff: `attempts^2` seconds (1s, 4s, 9s, ...)
-- Malformed messages and unhandled job types are acknowledged without retry
+Retries hold the delivery: on a handler failure with retries left, the worker
+waits out the backoff in the handler's own goroutine, republishes the job
+with `attempts+1`, and only then ACKs — the broker owns the job across the
+wait, so a restart mid-backoff loses nothing. If shutdown lands mid-wait the
+worker does not republish; it returns an error so the broker redelivers
+(`attempts` was never republished, so the next run re-increments to the same
+number).
+
+- Delay is capped exponential backoff with jitter: `min(1s * 2^(attempts-1), 60s)`
+  scaled by a random factor in `[0.5, 1.0)` (attempt 1 → [0.5s, 1s), converging
+  to [30s, 60s)). The 60s cap bounds how long one held delivery can occupy a
+  consumer channel (consumers dispatch serially; size `worker.concurrency`
+  and `rabbitmq.prefetch_count` accordingly).
+- Terminal paths never drop silently: exhausted retries, undecodable
+  payloads, and unhandled job types are parked verbatim into `<queue>.dlq`
+  (e.g. `jobs` → `jobs.dlq`, declared durable at startup) and then ACKed.
+  Parked payloads are the original bytes, so replay is a republish away.
+  If the park itself fails the delivery is requeued — except undecodable
+  payloads, which ACK after a failed park (a requeue loop on an undecodable
+  payload has no attempt counter to stop it). No redrive tooling in v1.3:
+  inspect and replay via the broker UI (see `docs/RUNBOOK.md` §9).
 
 ### Job Struct
 
@@ -155,6 +173,11 @@ that matter for operators:
    30s. After 5 failed attempts the consumer halts and the failure is logged;
    the parent context cancellation is honored on every wait so shutdown is
    never blocked by a reconnect loop.
+3. **Publisher reconnect.** A separate watcher listens for connection-level
+   `NotifyClose` and marks the cached publisher channel dead, so an API-only
+   process survives a broker bounce: the next publish redials once and
+   retries the publish once, and a failed retry surfaces the original error
+   unchanged. No new config keys; the reconnect knobs stay code constants.
 
 ## Architecture
 

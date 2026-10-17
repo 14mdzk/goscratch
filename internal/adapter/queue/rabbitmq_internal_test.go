@@ -80,6 +80,7 @@ type fakeChannel struct {
 	qosBeforeConsume    bool
 	closed              bool
 	publishCount        int
+	publishErr          error
 	passiveDeclareCount int
 	passiveDeclareErr   error
 }
@@ -94,6 +95,9 @@ func (c *fakeChannel) PublishWithContext(_ context.Context, _, _ string, _, _ bo
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.publishCount++
+	if c.publishErr != nil {
+		return c.publishErr
+	}
 	return nil
 }
 
@@ -388,4 +392,90 @@ func TestRabbitMQ_Close_Idempotent(t *testing.T) {
 	// Publish after close must error rather than panic on a nil channel.
 	err = q.Publish(context.Background(), "ex", "rk", []byte("x"))
 	assert.Error(t, err)
+}
+
+func TestRabbitMQ_ConnClose_MarksPublisherDead(t *testing.T) {
+	conn := newFakeConn()
+	dial := func(url string) (amqpConnection, error) { return conn, nil }
+
+	q, err := newRabbitMQ("amqp://test", Options{}, dial)
+	require.NoError(t, err)
+	defer q.Close()
+
+	require.NotNil(t, conn.notifyCh, "constructor must register connection NotifyClose")
+
+	conn.notifyCh <- &amqp.Error{Code: 320, Reason: "connection closed"}
+
+	require.Eventually(t, func() bool {
+		q.pubMu.Lock()
+		defer q.pubMu.Unlock()
+		return q.pubDead
+	}, 2*time.Second, 5*time.Millisecond, "watcher must mark publisher dead on connection close")
+}
+
+func TestRabbitMQ_Publish_DeadChannel_RedialsAndRetriesOnce(t *testing.T) {
+	conn := newFakeConn()
+	var dials int32
+	dial := func(url string) (amqpConnection, error) {
+		atomic.AddInt32(&dials, 1)
+		return conn, nil
+	}
+
+	q, err := newRabbitMQ("amqp://test", Options{}, dial)
+	require.NoError(t, err)
+	defer q.Close()
+	require.Equal(t, int32(1), atomic.LoadInt32(&dials))
+
+	// Poison the cached publisher channel: publishes fail closed.
+	conn.channels[0].publishErr = amqp.ErrClosed
+
+	require.NoError(t, q.Publish(context.Background(), "ex", "rk", []byte("x")))
+	assert.Equal(t, int32(2), atomic.LoadInt32(&dials), "exactly one redial")
+	assert.Equal(t, 1, conn.channels[0].publishCount, "failed attempt on stale channel")
+	require.Len(t, conn.channels, 2, "redial opens a fresh connection channel")
+	assert.Equal(t, 1, conn.channels[1].publishCount, "exactly one retry on the fresh channel")
+}
+
+func TestRabbitMQ_Publish_RedialFailure_ReturnsOriginalError(t *testing.T) {
+	conn := newFakeConn()
+	dialCalls := 0
+	dial := func(url string) (amqpConnection, error) {
+		dialCalls++
+		if dialCalls > 1 {
+			return nil, assertErr("redial refused")
+		}
+		return conn, nil
+	}
+
+	q, err := newRabbitMQ("amqp://test", Options{}, dial)
+	require.NoError(t, err)
+	defer q.Close()
+
+	original := amqp.ErrClosed
+	conn.channels[0].publishErr = original
+
+	err = q.Publish(context.Background(), "ex", "rk", []byte("x"))
+	require.Error(t, err)
+	assert.Equal(t, original, err, "failed retry must surface the original publish error, not redial noise")
+}
+
+func TestRabbitMQ_Publish_NonClosedError_DoesNotRedial(t *testing.T) {
+	conn := newFakeConn()
+	var dials int32
+	dial := func(url string) (amqpConnection, error) {
+		atomic.AddInt32(&dials, 1)
+		return conn, nil
+	}
+
+	q, err := newRabbitMQ("amqp://test", Options{}, dial)
+	require.NoError(t, err)
+	defer q.Close()
+
+	// A genuine broker rejection (not a dead channel) must not trigger redial.
+	rejection := assertErr("403 ACCESS_REFUSED")
+	conn.channels[0].publishErr = rejection
+
+	err = q.Publish(context.Background(), "ex", "rk", []byte("x"))
+	assert.Equal(t, rejection, err)
+	assert.Equal(t, int32(1), atomic.LoadInt32(&dials), "no redial for non-closed errors")
 }

@@ -3,6 +3,7 @@ package worker
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"sync"
 	"testing"
@@ -114,32 +115,45 @@ func TestHandleMessage_DispatchesToCorrectHandler(t *testing.T) {
 	assert.Equal(t, job.ID, receivedJobID)
 }
 
-func TestHandleMessage_UnknownJobType(t *testing.T) {
+func TestHandleMessage_UnknownJobType_Parks(t *testing.T) {
 	q := &mockQueue{}
 	log := newTestLogger()
-	w := New(q, log, Config{})
+	w := New(q, log, Config{QueueName: "t"})
 
 	job, _ := NewJob("unknown.type", "data")
 	data, _ := job.Encode()
 
-	// Should not error (ack malformed/unknown)
+	// Parks, then ACKs (nil error).
 	err := w.handleMessage(0, data)
 	assert.NoError(t, err)
+
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	require.Len(t, q.publishCalls, 1, "unhandled job must be parked exactly once")
+	assert.Equal(t, "t.dlq", q.publishCalls[0].routingKey)
+	assert.Equal(t, data, q.publishCalls[0].body, "parked payload must be the original bytes verbatim")
 }
 
-func TestHandleMessage_InvalidJSON(t *testing.T) {
+func TestHandleMessage_InvalidJSON_Parks(t *testing.T) {
 	q := &mockQueue{}
 	log := newTestLogger()
-	w := New(q, log, Config{})
+	w := New(q, log, Config{QueueName: "t"})
 
-	err := w.handleMessage(0, []byte("not-json"))
-	assert.NoError(t, err) // ack malformed messages
+	raw := []byte("not-json")
+	err := w.handleMessage(0, raw)
+	assert.NoError(t, err) // park, then ACK
+
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	require.Len(t, q.publishCalls, 1, "undecodable payload must be parked exactly once")
+	assert.Equal(t, "t.dlq", q.publishCalls[0].routingKey)
+	assert.Equal(t, raw, q.publishCalls[0].body)
 }
 
-func TestHandleMessage_RetryOnFailure(t *testing.T) {
+func TestHandleMessage_RetryOnFailure_HoldsAndRepublishes(t *testing.T) {
 	q := &mockQueue{}
 	log := newTestLogger()
-	w := New(q, log, Config{})
+	w := New(q, log, Config{QueueName: "t"})
 
 	handler := &testHandler{
 		jobType: "fail.job",
@@ -149,20 +163,46 @@ func TestHandleMessage_RetryOnFailure(t *testing.T) {
 	}
 	w.RegisterHandler(handler)
 
-	// Job with MaxRetry=3, Attempts=0. After handleMessage increments, Attempts=1 < MaxRetry=3 -> retry
+	// Attempts=0 -> increment to 1 -> CanRetry, held backoff [0.5s, 1s).
 	job, _ := NewJob("fail.job", "data")
 	data, _ := job.Encode()
 
 	err := w.handleMessage(0, data)
-	assert.NoError(t, err) // still returns nil (ack to avoid immediate redelivery)
+	assert.NoError(t, err, "held retry republishes, then ACKs")
 
-	// Give the goroutine in retryJob time to publish
-	time.Sleep(2 * time.Second)
-
+	// Synchronous now: exactly one republish, attempts incremented once.
 	q.mu.Lock()
-	callCount := len(q.publishCalls)
-	q.mu.Unlock()
-	assert.Equal(t, 1, callCount, "should have re-published the job for retry")
+	defer q.mu.Unlock()
+	require.Len(t, q.publishCalls, 1, "should have re-published the job for retry exactly once")
+	call := q.publishCalls[0]
+	assert.Equal(t, "t", call.routingKey, "retry republishes to the main queue, not the DLQ")
+	rep := &Job{}
+	require.NoError(t, json.Unmarshal(call.body, rep))
+	assert.Equal(t, 1, rep.Attempts, "republished job must carry attempts+1")
+	assert.Equal(t, job.ID, rep.ID)
+}
+
+func TestRetryDelay_Bounds(t *testing.T) {
+	// attempt -> [cap/2, cap) with cap = min(1s*2^(n-1), 60s).
+	cases := []struct {
+		attempts int
+		min      time.Duration
+		max      time.Duration
+	}{
+		{attempts: 0, min: 500 * time.Millisecond, max: time.Second},
+		{attempts: 1, min: 500 * time.Millisecond, max: time.Second},
+		{attempts: 2, min: time.Second, max: 2 * time.Second},
+		{attempts: 3, min: 2 * time.Second, max: 4 * time.Second},
+		{attempts: 7, min: 30 * time.Second, max: 60 * time.Second},
+		{attempts: 100, min: 30 * time.Second, max: 60 * time.Second},
+	}
+	for _, tc := range cases {
+		for i := 0; i < 25; i++ {
+			d := retryDelay(tc.attempts)
+			assert.GreaterOrEqual(t, d, tc.min, "attempts=%d", tc.attempts)
+			assert.Less(t, d, tc.max, "attempts=%d (cap respected, jitter below cap)", tc.attempts)
+		}
+	}
 }
 
 func TestHandleMessage_ExhaustedRetries(t *testing.T) {
@@ -184,14 +224,14 @@ func TestHandleMessage_ExhaustedRetries(t *testing.T) {
 	data, _ := job.Encode()
 
 	err := w.handleMessage(0, data)
-	assert.NoError(t, err)
+	assert.NoError(t, err) // parked, then ACKs
 
-	// No retry should happen
-	time.Sleep(100 * time.Millisecond)
+	// No retry: exactly one DLQ park with the original bytes.
 	q.mu.Lock()
-	callCount := len(q.publishCalls)
-	q.mu.Unlock()
-	assert.Equal(t, 0, callCount, "should not retry exhausted job")
+	defer q.mu.Unlock()
+	require.Len(t, q.publishCalls, 1, "exhausted job must be parked exactly once, never retried")
+	assert.Equal(t, "jobs.dlq", q.publishCalls[0].routingKey)
+	assert.Equal(t, data, q.publishCalls[0].body, "parked payload must be the original bytes verbatim")
 }
 
 func TestHandleMessage_IncrementsAttempts(t *testing.T) {
@@ -349,16 +389,11 @@ func TestShutdown_SlowHandler_WGDoneBeforeReturn_WouldFail(t *testing.T) {
 	t.Skip("documentation test — skip always; see TestShutdown_WaitsForSlowHandler for the live assertion")
 }
 
-// TestRetry_MidBackoff_CancelsOnCtxDone is the integration-path regression for
-// block-ship #14. Unlike TestRetry_CancelsOnShutdown which calls retryJob()
-// directly, this test exercises the full path:
-//
-//  1. handleMessage calls a handler that returns an error.
-//  2. handleMessage calls retryJob() with a long backoff (Attempts=3 → 9s delay).
-//  3. Shutdown is triggered immediately after handleMessage returns.
-//  4. Assert Shutdown does NOT block for the full 9s backoff — the retry timer
-//     must select on ctx.Done() and exit early.
-func TestRetry_MidBackoff_CancelsOnCtxDone(t *testing.T) {
+// TestHandleMessage_MidBackoff_CancelsOnCtxDone: a shutdown-cancel during the
+// held backoff must NOT republish; handleMessage returns an error so the
+// adapter Nacks with requeue (attempts were never republished: no
+// double-count on redelivery).
+func TestHandleMessage_MidBackoff_CancelsOnCtxDone(t *testing.T) {
 	q := &mockQueue{}
 	log := newTestLogger()
 	w := New(q, log, Config{QueueName: "t", Concurrency: 1})
@@ -370,94 +405,84 @@ func TestRetry_MidBackoff_CancelsOnCtxDone(t *testing.T) {
 		},
 	})
 
-	// Attempts=2 → after IncrementAttempts Attempts=3, delay = 3*3 = 9s.
+	// Attempts=1 -> after increment Attempts=2, held backoff [1s, 2s).
 	job, err := NewJob("always.fail", "payload")
 	require.NoError(t, err)
-	job.Attempts = 2
-
+	job.Attempts = 1
 	jobData, err := job.Encode()
 	require.NoError(t, err)
 
-	// handleMessage fires the handler synchronously; retryJob spawns a goroutine
-	// with a 9s timer. We call handleMessage directly so we control timing.
-	err = w.handleMessage(0, jobData)
-	require.NoError(t, err)
+	result := make(chan error, 1)
+	go func() {
+		result <- w.handleMessage(0, jobData)
+	}()
 
-	// Shutdown immediately; must return well before the 9s backoff.
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
+	// Let the handler fail and the hold begin, then cancel mid-backoff.
+	time.Sleep(200 * time.Millisecond)
+	w.cancel()
 
-	start := time.Now()
-	err = w.Shutdown(ctx)
-	elapsed := time.Since(start)
-
-	require.NoError(t, err, "Shutdown must not time out — retry timer must cancel on ctx.Done")
-	assert.Less(t, elapsed, 500*time.Millisecond,
-		"Shutdown blocked longer than expected — retry goroutine may be ignoring ctx.Done")
+	select {
+	case err := <-result:
+		require.Error(t, err, "cancelled hold must return an error (Nack path)")
+	case <-time.After(5 * time.Second):
+		t.Fatal("handleMessage did not return after ctx cancel")
+	}
 
 	q.mu.Lock()
-	callCount := len(q.publishCalls)
-	q.mu.Unlock()
-	assert.Equal(t, 0, callCount,
-		"no publish must occur after Shutdown — ctx-cancel guard must skip Publish")
+	defer q.mu.Unlock()
+	assert.Equal(t, 0, len(q.publishCalls),
+		"no publish must occur after cancel — ctx-cancel guard must skip republish")
 }
 
-// TestRetry_CancelsOnShutdown verifies that a pending retry goroutine exits
-// promptly when ctx is cancelled instead of sleeping through the full backoff
-// delay (block-ship #14: prior code used time.Sleep without ctx awareness).
-func TestRetry_CancelsOnShutdown(t *testing.T) {
+// TestHandleMessage_ParkFailure_Requeues: when the DLQ park itself fails
+// (broker down), an exhausted job must come back as an error so the adapter
+// requeues — never ACK a message that was not parked.
+func TestHandleMessage_ParkFailure_Requeues(t *testing.T) {
+	q := &mockQueue{publishErr: errors.New("broker down")}
+	log := newTestLogger()
+	w := New(q, log, Config{QueueName: "t"})
+
+	w.RegisterHandler(&testHandler{
+		jobType: "fail.job",
+		handleFn: func(_ context.Context, _ *Job) error {
+			return errors.New("processing failed")
+		},
+	})
+
+	job, _ := NewJob("fail.job", "data")
+	job.Attempts = 99 // exhausted
+	data, _ := job.Encode()
+
+	err := w.handleMessage(0, data)
+	assert.Error(t, err, "failed park must surface as an error (requeue), never an ACK")
+}
+
+// TestHandleMessage_UndecodableParkFailure_Acks: poison-message guard —
+// requeueing an undecodable payload loops forever with no attempt counter,
+// so a failed park still ACKs (with an error log).
+func TestHandleMessage_UndecodableParkFailure_Acks(t *testing.T) {
+	q := &mockQueue{publishErr: errors.New("broker down")}
+	log := newTestLogger()
+	w := New(q, log, Config{QueueName: "t"})
+
+	err := w.handleMessage(0, []byte("not-json"))
+	assert.NoError(t, err, "failed park of an undecodable payload must still ACK (poison guard)")
+}
+
+// TestWorker_Start_DeclaresDLQ: the DLQ must exist before the first job can
+// die — Start declares it durable next to the main queue.
+func TestWorker_Start_DeclaresDLQ(t *testing.T) {
 	q := &mockQueue{}
 	log := newTestLogger()
 	w := New(q, log, Config{QueueName: "t", Concurrency: 1})
 
-	// Schedule a retry with a long delay (Attempts=3 -> 9s).
-	job, _ := NewJob("retry.test", "data")
-	job.Attempts = 3
-	w.retryJob(job)
-
-	// Immediately shutdown. Total Shutdown duration must be much shorter than
-	// the 9s scheduled delay because the retry goroutine selects on ctx.Done.
+	require.NoError(t, w.Start())
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
-
-	start := time.Now()
-	err := w.Shutdown(ctx)
-	elapsed := time.Since(start)
-
-	require.NoError(t, err, "Shutdown should not time out — retry goroutine must exit on ctx.Done")
-	assert.Less(t, elapsed, 500*time.Millisecond, "Shutdown must not wait for full retry backoff")
-
-	q.mu.Lock()
-	callCount := len(q.publishCalls)
-	q.mu.Unlock()
-	assert.Equal(t, 0, callCount, "no publish must happen after Shutdown — ctx-cancel guard must skip Publish")
-}
-
-// TestRetry_TrackedByWaitGroup verifies that the retry goroutine is registered
-// on w.wg so Shutdown's wg.Wait actually waits for it. We use a 0-attempt job
-// (delay=0) so the retry fires immediately, then assert publish completed
-// before Shutdown returned.
-func TestRetry_TrackedByWaitGroup(t *testing.T) {
-	q := &mockQueue{}
-	log := newTestLogger()
-	w := New(q, log, Config{QueueName: "t", Concurrency: 1})
-
-	// Attempts=1 -> 1*1*time.Second = 1s delay. Wait for it via Shutdown.
-	job, _ := NewJob("retry.test", "data")
-	job.Attempts = 1
-	w.retryJob(job)
-
-	// Give the timer time to fire. Shutdown waits for wg.
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	defer cancel()
-
-	// Sleep just past the retry timer so Publish has fired before we cancel.
-	time.Sleep(1100 * time.Millisecond)
-
 	require.NoError(t, w.Shutdown(ctx))
 
 	q.mu.Lock()
-	callCount := len(q.publishCalls)
-	q.mu.Unlock()
-	assert.Equal(t, 1, callCount, "retry must have published once before Shutdown returned")
+	defer q.mu.Unlock()
+	assert.Contains(t, q.declareCalls, "t")
+	assert.Contains(t, q.declareCalls, "t.dlq")
 }

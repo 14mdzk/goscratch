@@ -471,6 +471,48 @@ N/A — read-only.
 
 ---
 
+## §9. Inspect and replay the dead-letter queue
+
+### Trigger
+
+Repeated `Parking job in DLQ` error logs, or jobs that never complete and
+never visibly retry (they exhausted retries, failed to decode, or hit an
+unregistered job type).
+
+### Pre-flight
+
+Terminal job paths park the ORIGINAL payload bytes verbatim into
+`<queue>.dlq` (e.g. `jobs` → `jobs.dlq`, durable) and then ACK — so the jobs
+are not lost, but nothing redrives them automatically in v1.3. Find which
+terminal path parked them via the `reason` log field (`retries-exhausted`,
+`undecodable`, `unhandled-job-type`).
+
+### Commands
+
+# 1. List parked messages (management UI or equivalent):
+#    queues → jobs.dlq → Get messages (requeue: No, ACK them out or leave).
+# 2. For `retries-exhausted`: fix the underlying handler/dependency first,
+#    then republish the parked bytes verbatim to the main queue (`jobs`).
+#    The payload still carries its old `attempts`; reset it or set a higher
+#    `max_retry` if the job must run again from scratch.
+# 3. For `undecodable`: do NOT republish as-is — fix the producer format
+#    first (republishing verbatim re-parks or poison-loops).
+# 4. For `unhandled-job-type`: deploy the worker build that registers the
+#    handler first, then republish.
+
+### Verify
+
+# The replayed job completes (worker `Job completed successfully` with the
+# same `job_id`) and the DLQ depth returns to baseline.
+
+### Rollback
+
+# Replayed jobs are new deliveries; if the replay was wrong, the job runs
+# again at most once per republish — delete the duplicate effect at the
+# handler level (handlers must stay idempotent).
+
+---
+
 ## Appendix — incident-response checklist
 
 1. **Acknowledge** in the incident channel. Capture timestamp and the on-call paged.

@@ -15,6 +15,7 @@ type mockQueue struct {
 	mu           sync.Mutex
 	publishCalls []publishCall
 	publishErr   error
+	declareCalls []string
 }
 
 type publishCall struct {
@@ -38,8 +39,13 @@ func (m *mockQueue) PublishJSON(_ context.Context, _, _ string, _ any) error { r
 func (m *mockQueue) Consume(_ context.Context, _ string, _ func(body []byte) error) error {
 	return nil
 }
-func (m *mockQueue) Ping(_ context.Context) error                                 { return nil }
-func (m *mockQueue) DeclareQueue(_ context.Context, _ string, _ bool) error       { return nil }
+func (m *mockQueue) Ping(_ context.Context) error { return nil }
+func (m *mockQueue) DeclareQueue(_ context.Context, name string, _ bool) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.declareCalls = append(m.declareCalls, name)
+	return nil
+}
 func (m *mockQueue) DeclareExchange(_ context.Context, _, _ string, _ bool) error { return nil }
 func (m *mockQueue) BindQueue(_ context.Context, _, _, _ string) error            { return nil }
 func (m *mockQueue) Close() error                                                 { return nil }

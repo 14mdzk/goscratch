@@ -20,9 +20,12 @@ import (
 //   - One channel per Consume call, opened inside Consume and dedicated to a
 //     single goroutine. AMQP channels are not goroutine-safe, so the consumer
 //     must never share with the publisher.
-//   - On NotifyClose for either the connection or a consumer channel, the
-//     consumer loop attempts a bounded reconnect (capped backoff, max attempts)
-//     while honoring the parent context.
+//   - A single watcher goroutine listens for connection-level NotifyClose and
+//     marks the cached publisher channel dead. The next publish then redials
+//     once (bounded by the reconnect knobs below) and retries the publish
+//     once; if the retry also fails the original error is returned unchanged.
+//     Consumer channels reconnect independently in runConsumer with the same
+//     bounds. No new config keys: the knobs stay code constants.
 
 // Default values for tunables not present in config.
 const (
@@ -111,6 +114,19 @@ type RabbitMQ struct {
 	pubMu  sync.Mutex
 	pubCh  amqpChannel
 	closed bool
+	// pubDead marks the cached publisher channel as known-dead (connection
+	// NotifyClose fired). The next publish redials instead of failing on the
+	// stale channel. Guarded by pubMu.
+	pubDead bool
+	// connCloseCh carries connection-level close notifications for the
+	// current connection. Replaced on every redial; the watcher goroutine
+	// re-reads it under pubMu. Guarded by pubMu.
+	connCloseCh chan *amqp.Error
+	// wakeup nudges the watcher goroutine to re-read connCloseCh after a
+	// redial. Buffered so redial never blocks. watchStop terminates the
+	// watcher; closed once in Close.
+	wakeup    chan struct{}
+	watchStop chan struct{}
 }
 
 // NewRabbitMQ creates a new RabbitMQ connection with default options.
@@ -134,13 +150,46 @@ func newRabbitMQ(url string, opts Options, dial dialer) (*RabbitMQ, error) {
 		_ = conn.Close()
 		return nil, fmt.Errorf("failed to open publisher channel: %w", err)
 	}
-	return &RabbitMQ{
-		url:   url,
-		dial:  dial,
-		opts:  opts.withDefaults(),
-		conn:  conn,
-		pubCh: pubCh,
-	}, nil
+	q := &RabbitMQ{
+		url:         url,
+		dial:        dial,
+		opts:        opts.withDefaults(),
+		conn:        conn,
+		pubCh:       pubCh,
+		connCloseCh: conn.NotifyClose(make(chan *amqp.Error, 1)),
+		wakeup:      make(chan struct{}, 1),
+		watchStop:   make(chan struct{}),
+	}
+	go q.watchConnection()
+	return q, nil
+}
+
+// watchConnection marks the cached publisher channel dead when the broker
+// closes the connection. Exactly one watcher runs per adapter; it exits when
+// Close closes watchStop. Redial replaces connCloseCh and nudges wakeup so
+// the watcher follows the current connection without leaking goroutines.
+func (q *RabbitMQ) watchConnection() {
+	for {
+		q.pubMu.Lock()
+		connCloseCh := q.connCloseCh
+		q.pubMu.Unlock()
+		select {
+		case <-q.watchStop:
+			return
+		case <-q.wakeup:
+			continue
+		case connErr := <-connCloseCh:
+			q.pubMu.Lock()
+			q.pubDead = true
+			q.pubMu.Unlock()
+			slog.Warn("rabbitmq connection closed; publisher marked dead, next publish redials", "reason", connErr)
+			select {
+			case <-q.watchStop:
+				return
+			case <-q.wakeup:
+			}
+		}
+	}
 }
 
 // withPubChannel runs fn with the cached publisher channel under a mutex.
@@ -155,7 +204,14 @@ func (q *RabbitMQ) withPubChannel(fn func(ch amqpChannel) error) error {
 	return fn(q.pubCh)
 }
 
-func (q *RabbitMQ) Publish(ctx context.Context, exchange, routingKey string, body []byte) error {
+// isChannelClosedError reports whether err is a dead channel/connection as
+// opposed to a genuine broker rejection (undeclared exchange, too large,
+// access refused). Only the former heals with a redial.
+func isChannelClosedError(err error) bool {
+	return errors.Is(err, amqp.ErrClosed)
+}
+
+func (q *RabbitMQ) publishOnce(ctx context.Context, exchange, routingKey string, body []byte, contentType string) error {
 	return q.withPubChannel(func(ch amqpChannel) error {
 		return ch.PublishWithContext(
 			ctx,
@@ -164,7 +220,7 @@ func (q *RabbitMQ) Publish(ctx context.Context, exchange, routingKey string, bod
 			false, // mandatory
 			false, // immediate
 			amqp.Publishing{
-				ContentType:  "application/octet-stream",
+				ContentType:  contentType,
 				Body:         body,
 				DeliveryMode: amqp.Persistent,
 				Timestamp:    time.Now(),
@@ -173,26 +229,64 @@ func (q *RabbitMQ) Publish(ctx context.Context, exchange, routingKey string, bod
 	})
 }
 
+func (q *RabbitMQ) Publish(ctx context.Context, exchange, routingKey string, body []byte) error {
+	return q.publishWithRedial(ctx, exchange, routingKey, body, "application/octet-stream")
+}
+
+// publishWithRedial publishes once; when the attempt dies on a dead
+// channel/connection it redials once and retries the publish once. A failed
+// retry surfaces the ORIGINAL error unchanged so callers (and the usecase
+// 500 mapping) see the failure that actually happened, not the redial noise.
+func (q *RabbitMQ) publishWithRedial(ctx context.Context, exchange, routingKey string, body []byte, contentType string) error {
+	err := q.publishOnce(ctx, exchange, routingKey, body, contentType)
+	if err == nil || !isChannelClosedError(err) {
+		return err
+	}
+	q.pubMu.Lock()
+	defer q.pubMu.Unlock()
+	if q.closed {
+		return err
+	}
+	// The failed call proves the cached channel dead (even when the watcher
+	// has not fired yet, e.g. a server-side channel exception with a live
+	// connection). Mark it and heal with exactly one redial + one retry.
+	q.pubDead = true
+	if rerr := q.redialLocked(); rerr != nil {
+		slog.Warn("rabbitmq publisher redial failed; returning original publish error", "redial_error", rerr)
+		return err
+	}
+	if retryErr := q.publishLocked(ctx, exchange, routingKey, body, contentType); retryErr != nil {
+		return err
+	}
+	return nil
+}
+
+// publishLocked publishes on the cached channel; caller holds pubMu.
+func (q *RabbitMQ) publishLocked(ctx context.Context, exchange, routingKey string, body []byte, contentType string) error {
+	if q.closed {
+		return errors.New("rabbitmq: adapter closed")
+	}
+	return q.pubCh.PublishWithContext(
+		ctx,
+		exchange,
+		routingKey,
+		false,
+		false,
+		amqp.Publishing{
+			ContentType:  contentType,
+			Body:         body,
+			DeliveryMode: amqp.Persistent,
+			Timestamp:    time.Now(),
+		},
+	)
+}
+
 func (q *RabbitMQ) PublishJSON(ctx context.Context, exchange, routingKey string, message any) error {
 	body, err := json.Marshal(message)
 	if err != nil {
 		return fmt.Errorf("failed to marshal message: %w", err)
 	}
-	return q.withPubChannel(func(ch amqpChannel) error {
-		return ch.PublishWithContext(
-			ctx,
-			exchange,
-			routingKey,
-			false,
-			false,
-			amqp.Publishing{
-				ContentType:  "application/json",
-				Body:         body,
-				DeliveryMode: amqp.Persistent,
-				Timestamp:    time.Now(),
-			},
-		)
-	})
+	return q.publishWithRedial(ctx, exchange, routingKey, body, "application/json")
 }
 
 // Consume opens a dedicated channel for the consumer and enters a loop that
@@ -331,6 +425,16 @@ func (q *RabbitMQ) reconnectConsumer(ctx context.Context, queueName string) (ch 
 }
 
 func (q *RabbitMQ) redial() error {
+	q.pubMu.Lock()
+	defer q.pubMu.Unlock()
+	return q.redialLocked()
+}
+
+// redialLocked dials a fresh connection, swaps it (and the cached publisher
+// channel) in, re-registers connection NotifyClose for the watcher, clears
+// the dead flag, and nudges the watcher to follow the new connection.
+// Caller holds pubMu.
+func (q *RabbitMQ) redialLocked() error {
 	conn, err := q.dial(q.url)
 	if err != nil {
 		return err
@@ -340,7 +444,6 @@ func (q *RabbitMQ) redial() error {
 		_ = conn.Close()
 		return err
 	}
-	q.pubMu.Lock()
 	// Best-effort close of the previous publisher channel.
 	if q.pubCh != nil {
 		_ = q.pubCh.Close()
@@ -350,7 +453,12 @@ func (q *RabbitMQ) redial() error {
 	}
 	q.conn = conn
 	q.pubCh = pubCh
-	q.pubMu.Unlock()
+	q.pubDead = false
+	q.connCloseCh = conn.NotifyClose(make(chan *amqp.Error, 1))
+	select {
+	case q.wakeup <- struct{}{}:
+	default:
+	}
 	return nil
 }
 
@@ -445,6 +553,7 @@ func (q *RabbitMQ) Close() error {
 		return nil
 	}
 	q.closed = true
+	close(q.watchStop)
 	var firstErr error
 	if q.pubCh != nil {
 		if err := q.pubCh.Close(); err != nil {
