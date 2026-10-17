@@ -5,8 +5,10 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"testing"
 
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -150,6 +152,75 @@ func TestAuditCleanupHandler_Handle_InvalidPayload(t *testing.T) {
 	err := h.Handle(context.Background(), job)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to unmarshal audit cleanup payload")
+}
+
+// fakeBatchDeleter replays per-Exec deleted-row counts in order; once the
+// script is exhausted it reports 0 (table drained).
+type fakeBatchDeleter struct {
+	reports []int64
+	calls   int
+	err     error
+	limits  []int
+}
+
+func (f *fakeBatchDeleter) Exec(_ context.Context, _ string, args ...any) (pgconn.CommandTag, error) {
+	f.calls++
+	if f.err != nil {
+		return pgconn.CommandTag{}, f.err
+	}
+	var n int64
+	if len(f.reports) > 0 {
+		n = f.reports[0]
+		f.reports = f.reports[1:]
+	}
+	if len(args) >= 2 {
+		if limit, ok := args[1].(int); ok {
+			f.limits = append(f.limits, limit)
+		}
+	}
+	return pgconn.NewCommandTag(fmt.Sprintf("DELETE %d", n)), nil
+}
+
+func TestAuditCleanupHandler_Handle_BatchLoop(t *testing.T) {
+	t.Run("drains_then_stops_on_empty_batch", func(t *testing.T) {
+		db := &fakeBatchDeleter{reports: []int64{1000, 500, 0}}
+		h := NewAuditCleanupHandler(db, newTestLogger())
+		job := makeJob(t, worker.JobTypeAuditCleanup, AuditCleanupPayload{RetentionDays: 30})
+
+		err := h.Handle(context.Background(), job)
+		require.NoError(t, err)
+		assert.Equal(t, 3, db.calls)
+		require.Len(t, db.limits, 3)
+		for _, limit := range db.limits {
+			assert.Equal(t, 1000, limit)
+		}
+	})
+
+	t.Run("stops_at_batch_cap", func(t *testing.T) {
+		// An inexhaustible table: every batch reports full. The run must
+		// stop at the cap instead of looping to the handler timeout.
+		db := &fakeBatchDeleter{reports: make([]int64, 2*auditCleanupMaxBatches)}
+		for i := range db.reports {
+			db.reports[i] = 1000
+		}
+		h := NewAuditCleanupHandler(db, newTestLogger())
+		job := makeJob(t, worker.JobTypeAuditCleanup, AuditCleanupPayload{RetentionDays: 30})
+
+		err := h.Handle(context.Background(), job)
+		require.NoError(t, err)
+		assert.Equal(t, auditCleanupMaxBatches, db.calls)
+	})
+
+	t.Run("exec_error_aborts", func(t *testing.T) {
+		db := &fakeBatchDeleter{err: errors.New("connection refused")}
+		h := NewAuditCleanupHandler(db, newTestLogger())
+		job := makeJob(t, worker.JobTypeAuditCleanup, AuditCleanupPayload{RetentionDays: 30})
+
+		err := h.Handle(context.Background(), job)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "failed to delete old audit logs")
+		assert.Equal(t, 1, db.calls)
+	})
 }
 
 // --- NotificationHandler Tests ---

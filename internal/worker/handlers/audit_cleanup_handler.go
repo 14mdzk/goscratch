@@ -5,11 +5,26 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/14mdzk/goscratch/internal/worker"
 	"github.com/14mdzk/goscratch/pkg/logger"
 )
+
+const (
+	auditCleanupBatchSize = 1000
+	// auditCleanupMaxBatches caps progress per run (60k rows at the batch
+	// size above). Cleanup runs on operator cron, so a larger backlog drains
+	// over successive runs; the 5-minute handler timeout stays the backstop
+	// for a stuck batch.
+	auditCleanupMaxBatches = 60
+)
+
+// batchDeleter is the subset of *pgxpool.Pool the cleanup handler needs.
+// *pgxpool.Pool satisfies it; tests substitute a fake.
+type batchDeleter interface {
+	Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error)
+}
 
 // AuditCleanupPayload represents the data for audit log cleanup
 type AuditCleanupPayload struct {
@@ -18,12 +33,12 @@ type AuditCleanupPayload struct {
 
 // AuditCleanupHandler handles audit log cleanup jobs
 type AuditCleanupHandler struct {
-	db     *pgxpool.Pool
+	db     batchDeleter
 	logger *logger.Logger
 }
 
 // NewAuditCleanupHandler creates a new audit cleanup handler
-func NewAuditCleanupHandler(db *pgxpool.Pool, log *logger.Logger) *AuditCleanupHandler {
+func NewAuditCleanupHandler(db batchDeleter, log *logger.Logger) *AuditCleanupHandler {
 	return &AuditCleanupHandler{
 		db:     db,
 		logger: log,
@@ -55,22 +70,26 @@ func (h *AuditCleanupHandler) Handle(ctx context.Context, job *worker.Job) error
 
 	// Calculate cutoff date
 	cutoff := time.Now().AddDate(0, 0, -retentionDays)
+	start := time.Now()
 
-	// Delete old audit logs in batches to prevent memory issues
-	batchSize := 1000
+	// Delete old audit logs in batches to prevent memory issues. The
+	// per-run batch cap bounds the loop; the remainder drains on the next
+	// scheduled run. Partial progress is fine — the job is idempotent.
 	totalDeleted := int64(0)
+	batches := 0
+	capped := false
 
 	for {
 		result, err := h.db.Exec(ctx,
-			`DELETE FROM audit_logs 
+			`DELETE FROM audit_logs
 			WHERE id IN (
-				SELECT id 
-				FROM audit_logs 
-				WHERE created_at < $1 
+				SELECT id
+				FROM audit_logs
+				WHERE created_at < $1
 				LIMIT $2
 			)`,
 			cutoff,
-			batchSize,
+			auditCleanupBatchSize,
 		)
 		if err != nil {
 			return fmt.Errorf("failed to delete old audit logs: %w", err)
@@ -78,6 +97,7 @@ func (h *AuditCleanupHandler) Handle(ctx context.Context, job *worker.Job) error
 
 		deletedInBatch := result.RowsAffected()
 		totalDeleted += deletedInBatch
+		batches++
 
 		if deletedInBatch == 0 {
 			break // No more rows to delete
@@ -89,12 +109,24 @@ func (h *AuditCleanupHandler) Handle(ctx context.Context, job *worker.Job) error
 			"cutoff_date", cutoff.Format(time.RFC3339),
 			"job_id", job.ID,
 		)
+
+		if batches >= auditCleanupMaxBatches {
+			capped = true
+			h.logger.Warn("Audit cleanup batch cap reached; remainder continues on next scheduled run",
+				"rows_deleted", totalDeleted,
+				"batches", batches,
+				"cutoff_date", cutoff.Format(time.RFC3339),
+				"job_id", job.ID,
+			)
+			break
+		}
 	}
 
-	rowsDeleted := totalDeleted
-
 	h.logger.Info("Audit log cleanup completed",
-		"rows_deleted", rowsDeleted,
+		"rows_deleted", totalDeleted,
+		"batches", batches,
+		"capped", capped,
+		"duration_ms", time.Since(start).Milliseconds(),
 		"cutoff_date", cutoff.Format(time.RFC3339),
 		"job_id", job.ID,
 	)

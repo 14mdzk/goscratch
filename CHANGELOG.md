@@ -22,6 +22,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Fixed
 
 - Job dispatch ID mismatch (#96): `Dispatch` constructed the queued job and the response ID separately, so audit `resource_id` could not be joined to the queued message's `id` or worker `job_id` logs. The job is now constructed once and published via `PublishRaw`; response ID, audit `resource_id`, and queued message ID are the same value. Covered by a regression test asserting response ID == encoded message ID.
+- Audit cleanup progress cap (#98): `audit.cleanup` deleted in 1000-row batches in an unbounded loop (bounded only by the 5-minute handler timeout). Each run now stops after 60 batches (60k rows); the remainder drains on the next scheduled run. The completion log carries `batches`, `capped`, and `duration_ms`. No config change; the handler's DB dependency is now a narrow `Exec` interface (`*pgxpool.Pool` still satisfies it).
 
 ## [1.2.0] - 2026-07-08
 

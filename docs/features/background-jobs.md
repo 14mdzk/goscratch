@@ -67,6 +67,15 @@ Background job processing over a queue tier (`goroutine` by default, `rabbitmq` 
 | `audit.cleanup` | Clean up old audit log entries |
 | `notification.send` | Send a notification to a user |
 
+### `audit.cleanup` progress bound
+
+Each run deletes in 1000-row batches and stops after 60 batches (60k rows),
+leaving the remainder for the next scheduled run — the job is idempotent, so
+partial progress is safe. A `capped=true` completion log (with `rows_deleted`,
+`batches`, `duration_ms`) marks a capped run. The 5-minute handler timeout
+stays the backstop for a stuck batch: on timeout the job fails and retries,
+resuming where it left off.
+
 ## Worker Processing
 
 The worker runs as a separate binary (`cmd/worker/main.go`) that:
