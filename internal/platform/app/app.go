@@ -32,6 +32,7 @@ import (
 	"github.com/14mdzk/goscratch/internal/platform/observability"
 	"github.com/14mdzk/goscratch/internal/port"
 	"github.com/14mdzk/goscratch/internal/worker"
+	"github.com/14mdzk/goscratch/internal/worker/handlers"
 	"github.com/14mdzk/goscratch/pkg/logger"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -54,6 +55,9 @@ type App struct {
 	metricsServer   *nethttp.Server
 	tracerShutdown  func(context.Context) error
 	rateLimitCloser io.Closer
+	// inProcessWorker runs job consumption inside the API process. Non-nil
+	// only when queue.backend=goroutine with worker.in_process=true.
+	inProcessWorker *worker.Worker
 }
 
 // New creates a new App instance with all dependencies
@@ -124,21 +128,33 @@ func New(ctx context.Context, cfg *config.Config) (*App, error) {
 		cacheAdapter = cache.NewNoOpCache()
 	}
 
-	// Initialize queue (RabbitMQ or NoOp)
+	// Initialize queue by resolved backend. Durable tiers fail boot when
+	// unreachable: silently dropping jobs behind a fallback is worse than
+	// not starting (fail fast). The NoOp adapter remains for tests and the
+	// health checker's self-skip, but it is never selected here.
+	backend, err := cfg.ResolveQueueBackend()
+	if err != nil {
+		return nil, err
+	}
+	if err := cfg.ValidateQueueWorker(backend); err != nil {
+		return nil, err
+	}
 	var queueAdapter port.Queue
-	if cfg.RabbitMQ.Enabled {
-		log.Info("Connecting to RabbitMQ...")
+	switch backend {
+	case config.QueueBackendRabbitMQ:
+		log.Info("Connecting to RabbitMQ...", "backend", backend)
 		queueAdapter, err = queue.NewRabbitMQWithOptions(cfg.RabbitMQ.URL, queue.Options{
 			PrefetchCount: cfg.RabbitMQ.PrefetchCount,
 		})
 		if err != nil {
-			log.Warn("Failed to connect to RabbitMQ, using no-op queue", "error", err)
-			queueAdapter = queue.NewNoOpQueue()
-		} else {
-			log.Info("RabbitMQ connected successfully")
+			return nil, fmt.Errorf("rabbitmq backend unreachable: %w", err)
 		}
-	} else {
-		queueAdapter = queue.NewNoOpQueue()
+		log.Info("RabbitMQ connected successfully")
+	case config.QueueBackendGoroutine:
+		log.Info("Using in-memory goroutine queue: zero infrastructure, jobs die with the process", "backend", backend)
+		queueAdapter = queue.NewGoroutineQueue()
+	default:
+		return nil, fmt.Errorf("queue.backend %q is not implemented", backend)
 	}
 
 	// Initialize storage
@@ -346,6 +362,25 @@ func New(ctx context.Context, cfg *config.Config) (*App, error) {
 
 	server.RegisterModules(docsModule, healthModule, userModule, authModule, roleModule, storageModule, sseModule, jobModule)
 
+	// Start the in-process worker's dependencies: with the goroutine
+	// backend, consumption lives in this process. Handlers mirror
+	// cmd/worker so both paths execute the same job types.
+	var inProcessWorker *worker.Worker
+	if backend == config.QueueBackendGoroutine {
+		concurrency := cfg.Worker.Concurrency
+		if concurrency <= 0 {
+			concurrency = 2
+		}
+		inProcessWorker = worker.New(queueAdapter, log, worker.Config{
+			QueueName:   cfg.Worker.QueueName,
+			Exchange:    cfg.Worker.Exchange,
+			Concurrency: concurrency,
+		})
+		inProcessWorker.RegisterHandler(handlers.NewEmailHandler(log, emailSender))
+		inProcessWorker.RegisterHandler(handlers.NewNotificationHandler(log, notificationSender))
+		inProcessWorker.RegisterHandler(handlers.NewAuditCleanupHandler(pool, log))
+	}
+
 	// Start the authorizer lifecycle (backstop reload tick + watcher subscription).
 	// Failure here is fatal: a half-initialised authorizer would silently drop
 	// policy updates from peer pods.
@@ -369,11 +404,19 @@ func New(ctx context.Context, cfg *config.Config) (*App, error) {
 		metricsServer:   metricsServer,
 		tracerShutdown:  tracerShutdown,
 		rateLimitCloser: rateLimitCloser,
+		inProcessWorker: inProcessWorker,
 	}, nil
 }
 
-// Start starts the application
+// Start starts the application. With the goroutine backend the in-process
+// worker starts before the HTTP listener so no request can publish a job
+// nothing consumes; a worker start failure aborts boot.
 func (a *App) Start() error {
+	if a.inProcessWorker != nil {
+		if err := a.inProcessWorker.Start(); err != nil {
+			return fmt.Errorf("in-process worker start: %w", err)
+		}
+	}
 	a.Logger.Info("Starting application", "port", a.Config.Server.Port)
 	return a.Server.Start()
 }
@@ -419,14 +462,24 @@ func (a *App) Shutdown(ctx context.Context) error {
 
 	// 1. HTTP server — drain in-flight requests. Gets the largest slice
 	//    because clients may be mid-stream.
-	runPhase("http_server", 0.40, func(ctx context.Context) error {
+	runPhase("http_server", 0.30, func(ctx context.Context) error {
 		if a.Server == nil {
 			return nil
 		}
 		return a.Server.Shutdown(ctx)
 	})
 
-	// 2. Metrics listener — internal, fast.
+	// 2. In-process worker — drain queued jobs after the listener stops
+	//    taking new requests (no-op unless the goroutine backend runs
+	//    in-process).
+	runPhase("worker", 0.15, func(ctx context.Context) error {
+		if a.inProcessWorker == nil {
+			return nil
+		}
+		return a.inProcessWorker.Shutdown(ctx)
+	})
+
+	// 3. Metrics listener — internal, fast.
 	runPhase("metrics", 0.05, func(ctx context.Context) error {
 		if a.metricsServer == nil {
 			return nil
@@ -455,7 +508,7 @@ func (a *App) Shutdown(ctx context.Context) error {
 
 	// 5. Bulk adapters. None of these accept a ctx; we run them under the
 	//    phase budget so a hung Close cannot stall the rest.
-	runPhase("adapters", 0.15, func(_ context.Context) error {
+	runPhase("adapters", 0.10, func(_ context.Context) error {
 		if a.rateLimitCloser != nil {
 			if err := a.rateLimitCloser.Close(); err != nil {
 				a.Logger.Error("rate limit backend close", "error", err)

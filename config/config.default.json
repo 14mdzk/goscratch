@@ -71,10 +71,10 @@
     "enabled": true
   },
   "worker": {
-    "enabled": true,
     "concurrency": 2,
     "queue_name": "jobs",
-    "exchange": ""
+    "exchange": "",
+    "in_process": true
   },
   "email": {
     "enabled": false,
@@ -102,5 +102,8 @@
       "enabled": false,
       "endpoint": "http://localhost:4317"
     }
+  },
+  "queue": {
+    "backend": ""
   }
 }

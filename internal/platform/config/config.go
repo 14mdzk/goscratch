@@ -21,6 +21,7 @@ type Config struct {
 	CORS          CORSConfig          `json:"cors"`
 	Redis         RedisConfig         `json:"redis"`
 	RabbitMQ      RabbitMQConfig      `json:"rabbitmq"`
+	Queue         QueueConfig         `json:"queue"`
 	Storage       StorageConfig       `json:"storage"`
 	SSE           SSEConfig           `json:"sse"`
 	Audit         AuditConfig         `json:"audit"`
@@ -107,6 +108,9 @@ func (c RedisConfig) Addr() string {
 }
 
 type RabbitMQConfig struct {
+	// Enabled is a deprecated alias: when queue.backend is unset, true
+	// selects the rabbitmq backend and false selects goroutine. Prefer
+	// setting queue.backend explicitly.
 	Enabled       bool   `json:"enabled" env:"RABBITMQ_ENABLED"`
 	URL           string `json:"url" env:"RABBITMQ_URL"`
 	PrefetchCount int    `json:"prefetch_count" env:"RABBITMQ_PREFETCH_COUNT"`
@@ -143,7 +147,10 @@ type AuthorizationConfig struct {
 }
 
 type WorkerConfig struct {
-	Enabled     bool   `json:"enabled" env:"WORKER_ENABLED"`
+	// InProcess runs job consumption inside the API process. Required with
+	// the goroutine backend, forbidden with the rabbitmq backend (see
+	// ValidateQueueWorker); the old worker.enabled key is deleted.
+	InProcess   bool   `json:"in_process" env:"WORKER_IN_PROCESS"`
 	Concurrency int    `json:"concurrency" env:"WORKER_CONCURRENCY"`
 	QueueName   string `json:"queue_name" env:"WORKER_QUEUE_NAME"`
 	Exchange    string `json:"exchange" env:"WORKER_EXCHANGE"`

@@ -147,7 +147,7 @@ Goscratch uses a **3-layer configuration system** (each layer overrides the prev
 | Database host | `localhost` | `DB_HOST` |
 | JWT secret | *(insecure)* | `JWT_SECRET` |
 | Redis | disabled | `REDIS_ENABLED=true` |
-| RabbitMQ | disabled | `RABBITMQ_ENABLED=true` |
+| Queue tier | `goroutine` (zero-infra) | `QUEUE_BACKEND=rabbitmq` + `RABBITMQ_ENABLED=true` |
 | Email | disabled | `EMAIL_ENABLED=true` |
 | Notification | disabled | `NOTIFICATION_ENABLED=true` |
 

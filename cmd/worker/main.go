@@ -55,9 +55,16 @@ func run() error {
 
 	ctx := context.Background()
 
-	// Validate queue configuration before creating connections
-	if !cfg.RabbitMQ.Enabled {
-		return fmt.Errorf("RabbitMQ must be enabled to run the worker. Set rabbitmq.enabled=true in config")
+	// Validate queue configuration before creating connections.
+	// cmd/worker is the external consumer: it only runs the rabbitmq
+	// backend. The goroutine tier is consumed in-process by the API
+	// (worker.in_process=true); redis is reserved.
+	backend, err := cfg.ResolveQueueBackend()
+	if err != nil {
+		return err
+	}
+	if backend != config.QueueBackendRabbitMQ {
+		return fmt.Errorf("cmd/worker only runs the rabbitmq backend (resolved queue.backend=%q): use worker.in_process=true with the goroutine backend, or set queue.backend=rabbitmq with a reachable broker", backend)
 	}
 
 	// Validate notification configuration before accepting jobs
