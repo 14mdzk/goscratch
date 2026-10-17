@@ -21,7 +21,7 @@ func newCachedTestAdapter(t *testing.T, cacheSize int) *Adapter {
 	t.Helper()
 	m, err := model.NewModelFromString(defaultModel)
 	require.NoError(t, err)
-	enforcer, err := casbinlib.NewEnforcer(m)
+	enforcer, err := casbinlib.NewSyncedEnforcer(m)
 	require.NoError(t, err)
 	return &Adapter{
 		enforcer: enforcer,

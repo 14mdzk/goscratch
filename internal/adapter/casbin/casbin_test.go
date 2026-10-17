@@ -112,7 +112,7 @@ func newTestAdapter(t *testing.T) *Adapter {
 	m, err := model.NewModelFromString(defaultModel)
 	require.NoError(t, err)
 
-	enforcer, err := casbinlib.NewEnforcer(m)
+	enforcer, err := casbinlib.NewSyncedEnforcer(m)
 	require.NoError(t, err)
 
 	return &Adapter{

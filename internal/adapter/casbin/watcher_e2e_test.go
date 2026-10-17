@@ -122,11 +122,11 @@ func (nw *notifyWatcher) waitForUpdate(t *testing.T) {
 }
 
 // newBareEnforcer creates a fresh Casbin Enforcer with no storage adapter.
-func newBareEnforcer(t *testing.T) *casbinlib.Enforcer {
+func newBareEnforcer(t *testing.T) *casbinlib.SyncedEnforcer {
 	t.Helper()
 	m, err := model.NewModelFromString(defaultModel)
 	require.NoError(t, err)
-	e, err := casbinlib.NewEnforcer(m)
+	e, err := casbinlib.NewSyncedEnforcer(m)
 	require.NoError(t, err)
 	return e
 }
@@ -149,7 +149,7 @@ func newPublisherAdapter(t *testing.T, w persist.Watcher) *Adapter {
 // so it can access the unexported watcherOp type and stringsToIfaces helper.
 // Unlike makeUpdateCallback, applyOp does NOT call enforcer.SetWatcher, so the
 // enforcer never re-publishes when the callback fires.
-func applyOp(enforcer *casbinlib.Enforcer, msg string) {
+func applyOp(enforcer *casbinlib.SyncedEnforcer, msg string) {
 	var op watcherOp
 	if err := json.Unmarshal([]byte(msg), &op); err != nil {
 		_ = enforcer.LoadPolicy()
