@@ -25,6 +25,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - `pkg/geoutil` Haversine helper (v1.3, Tier C4): `Haversine(a, b geo.Point) geo.Distance` on the IUGG mean radius with the atan2 formulation (stable for coincident/antipodal points). `(BoundingBox).Contains` already exists as a `geo` method since C1 and is not duplicated. Stdlib only.
 
+- Retired duplicate OpenAPI spec (v1.3, Tier B execution): `docs/openapi.yaml` (unreferenced by code) is deleted after folding its health content into the canonical `internal/module/docs/openapi.yaml` — full `/healthz/ready` description plus the previously missing `503` response, richer `/healthz/live` prose, and a corrected `HealthCheckResponse.status` enum (`[ready, alive, degraded]`; the old enum omitted the real 503 value).
+
 ### Changed
 
 - Queue config: `rabbitmq.enabled` is now a deprecated alias (applies only when `queue.backend` is unset); the dead `worker.enabled` key is deleted and `worker.in_process` is required with the `goroutine` backend. Operator action: set `queue.backend` explicitly and ensure `worker.in_process` matches the backend matrix (`goroutine`+in-process, `rabbitmq`+external `cmd/worker`); unreachable RabbitMQ brokers now fail boot instead of silently falling back to NoOp.
