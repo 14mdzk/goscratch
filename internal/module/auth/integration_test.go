@@ -10,12 +10,13 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/14mdzk/goscratch/internal/platform/testutil"
 	"github.com/gofiber/fiber/v2"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/crypto/bcrypt"
+
+	"github.com/14mdzk/goscratch/internal/platform/testutil"
 )
 
 // seedTestUser inserts a user directly into the database for auth tests.

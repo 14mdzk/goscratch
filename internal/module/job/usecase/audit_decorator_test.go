@@ -5,10 +5,11 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/14mdzk/goscratch/internal/module/job/dto"
-	"github.com/14mdzk/goscratch/internal/port"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
+
+	"github.com/14mdzk/goscratch/internal/module/job/dto"
+	"github.com/14mdzk/goscratch/internal/port"
 )
 
 // mockJobUseCase is a testify mock satisfying the UseCase interface.

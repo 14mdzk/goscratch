@@ -11,17 +11,20 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/14mdzk/goscratch/internal/platform/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/crypto/bcrypt"
+
+	"github.com/14mdzk/goscratch/internal/platform/testutil"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 // userTestEnv holds shared test infrastructure for user integration tests.
 type userTestEnv struct {
-	app          interface{ Test(*http.Request, ...int) (*http.Response, error) }
+	app interface {
+		Test(*http.Request, ...int) (*http.Response, error)
+	}
 	pgConn       string
 	accessToken  string
 	cleanupFuncs []func()

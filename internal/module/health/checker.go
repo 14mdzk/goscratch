@@ -4,11 +4,12 @@ import (
 	"context"
 	"errors"
 
+	"github.com/jackc/pgx/v5/pgxpool"
+
 	"github.com/14mdzk/goscratch/internal/adapter/cache"
 	casbinadapter "github.com/14mdzk/goscratch/internal/adapter/casbin"
 	"github.com/14mdzk/goscratch/internal/adapter/queue"
 	"github.com/14mdzk/goscratch/internal/port"
-	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 // HealthChecker is the contract for a single dependency health check.

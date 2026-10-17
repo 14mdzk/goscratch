@@ -7,11 +7,12 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/go-playground/validator/v10"
+	"github.com/gofiber/fiber/v2"
+
 	"github.com/14mdzk/goscratch/internal/platform/sanitizer"
 	"github.com/14mdzk/goscratch/pkg/apperr"
 	"github.com/14mdzk/goscratch/pkg/response"
-	"github.com/go-playground/validator/v10"
-	"github.com/gofiber/fiber/v2"
 )
 
 var (

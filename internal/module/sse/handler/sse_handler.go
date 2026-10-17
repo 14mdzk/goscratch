@@ -5,12 +5,13 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/gofiber/fiber/v2"
+	"github.com/google/uuid"
+
 	"github.com/14mdzk/goscratch/internal/platform/http/middleware"
 	"github.com/14mdzk/goscratch/internal/port"
 	"github.com/14mdzk/goscratch/pkg/apperr"
 	"github.com/14mdzk/goscratch/pkg/response"
-	"github.com/gofiber/fiber/v2"
-	"github.com/google/uuid"
 )
 
 // Handler handles SSE HTTP requests

@@ -6,14 +6,15 @@ import (
 	"testing"
 	"time"
 
-	userdomain "github.com/14mdzk/goscratch/internal/module/user/domain"
-	"github.com/14mdzk/goscratch/internal/module/user/dto"
-	"github.com/14mdzk/goscratch/internal/port"
-	"github.com/14mdzk/goscratch/pkg/apperr"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"golang.org/x/crypto/bcrypt"
+
+	userdomain "github.com/14mdzk/goscratch/internal/module/user/domain"
+	"github.com/14mdzk/goscratch/internal/module/user/dto"
+	"github.com/14mdzk/goscratch/internal/port"
+	"github.com/14mdzk/goscratch/pkg/apperr"
 )
 
 // MockRepository is a mock implementation of the repository

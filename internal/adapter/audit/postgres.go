@@ -6,9 +6,10 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/14mdzk/goscratch/internal/port"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/14mdzk/goscratch/internal/port"
 )
 
 // PostgresAuditor implements port.Auditor using PostgreSQL

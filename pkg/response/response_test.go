@@ -8,10 +8,11 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/14mdzk/goscratch/pkg/apperr"
 	"github.com/gofiber/fiber/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/14mdzk/goscratch/pkg/apperr"
 )
 
 func setupApp(handler fiber.Handler) *fiber.App {

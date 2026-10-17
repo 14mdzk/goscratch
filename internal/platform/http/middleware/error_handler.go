@@ -1,10 +1,11 @@
 package middleware
 
 import (
+	"github.com/gofiber/fiber/v2"
+
 	"github.com/14mdzk/goscratch/pkg/apperr"
 	"github.com/14mdzk/goscratch/pkg/logger"
 	"github.com/14mdzk/goscratch/pkg/response"
-	"github.com/gofiber/fiber/v2"
 )
 
 // ErrorHandler returns a centralized error handling middleware

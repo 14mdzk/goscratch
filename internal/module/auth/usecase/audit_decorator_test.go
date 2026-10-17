@@ -5,11 +5,12 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
+
 	"github.com/14mdzk/goscratch/internal/module/auth/dto"
 	"github.com/14mdzk/goscratch/internal/port"
 	"github.com/14mdzk/goscratch/pkg/apperr"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/mock"
 )
 
 // mockAuthUseCase is a testify mock that satisfies the UseCase interface.

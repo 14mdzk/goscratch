@@ -11,11 +11,12 @@ import (
 	"net/textproto"
 	"testing"
 
-	storageadapter "github.com/14mdzk/goscratch/internal/adapter/storage"
-	"github.com/14mdzk/goscratch/internal/module/storage/usecase"
 	"github.com/gofiber/fiber/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	storageadapter "github.com/14mdzk/goscratch/internal/adapter/storage"
+	"github.com/14mdzk/goscratch/internal/module/storage/usecase"
 )
 
 func TestUploadHandler(t *testing.T) {

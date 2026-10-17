@@ -12,11 +12,12 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
+
 	"github.com/14mdzk/goscratch/internal/module/storage/domain"
 	"github.com/14mdzk/goscratch/internal/module/storage/dto"
 	"github.com/14mdzk/goscratch/internal/port"
 	"github.com/14mdzk/goscratch/pkg/apperr"
-	"github.com/google/uuid"
 )
 
 // sniffSize is the number of leading bytes inspected by http.DetectContentType.

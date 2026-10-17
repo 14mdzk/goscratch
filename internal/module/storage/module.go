@@ -1,11 +1,12 @@
 package storage
 
 import (
+	"github.com/gofiber/fiber/v2"
+
 	"github.com/14mdzk/goscratch/internal/module/storage/handler"
 	"github.com/14mdzk/goscratch/internal/module/storage/usecase"
 	"github.com/14mdzk/goscratch/internal/platform/http/middleware"
 	"github.com/14mdzk/goscratch/internal/port"
-	"github.com/gofiber/fiber/v2"
 )
 
 // Module represents the storage module

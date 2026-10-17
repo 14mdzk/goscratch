@@ -6,10 +6,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/14mdzk/goscratch/internal/port"
 	"github.com/alicebob/miniredis/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/14mdzk/goscratch/internal/port"
 )
 
 // =============================================================================

@@ -8,9 +8,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/14mdzk/goscratch/pkg/logger"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/14mdzk/goscratch/pkg/logger"
 )
 
 // testHandler is a mock JobHandler for testing

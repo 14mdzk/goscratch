@@ -1,12 +1,13 @@
 package job
 
 import (
+	"github.com/gofiber/fiber/v2"
+
 	"github.com/14mdzk/goscratch/internal/module/job/handler"
 	"github.com/14mdzk/goscratch/internal/module/job/usecase"
 	"github.com/14mdzk/goscratch/internal/platform/http/middleware"
 	"github.com/14mdzk/goscratch/internal/port"
 	"github.com/14mdzk/goscratch/internal/worker"
-	"github.com/gofiber/fiber/v2"
 )
 
 // Module represents the job module

@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"time"
 
+	"golang.org/x/crypto/bcrypt"
+
 	userdomain "github.com/14mdzk/goscratch/internal/module/user/domain"
 	"github.com/14mdzk/goscratch/internal/module/user/dto"
 	"github.com/14mdzk/goscratch/internal/module/user/repository"
@@ -12,7 +14,6 @@ import (
 	"github.com/14mdzk/goscratch/internal/port"
 	shareddomain "github.com/14mdzk/goscratch/internal/shared/domain"
 	"github.com/14mdzk/goscratch/pkg/apperr"
-	"golang.org/x/crypto/bcrypt"
 )
 
 // userRepo is the narrow repository interface that userUseCase depends on.

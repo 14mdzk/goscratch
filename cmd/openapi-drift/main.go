@@ -19,6 +19,9 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/gofiber/fiber/v2"
+	"gopkg.in/yaml.v3"
+
 	authmod "github.com/14mdzk/goscratch/internal/module/auth"
 	authusecase "github.com/14mdzk/goscratch/internal/module/auth/usecase"
 	"github.com/14mdzk/goscratch/internal/module/docs"
@@ -29,8 +32,6 @@ import (
 	storagemod "github.com/14mdzk/goscratch/internal/module/storage"
 	usermod "github.com/14mdzk/goscratch/internal/module/user"
 	"github.com/14mdzk/goscratch/internal/platform/config"
-	"github.com/gofiber/fiber/v2"
-	"gopkg.in/yaml.v3"
 )
 
 // defaultSpecPath is the path to the OpenAPI spec relative to the repository

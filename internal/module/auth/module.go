@@ -3,12 +3,13 @@ package auth
 import (
 	"time"
 
+	"github.com/gofiber/fiber/v2"
+
 	"github.com/14mdzk/goscratch/internal/module/auth/handler"
 	"github.com/14mdzk/goscratch/internal/module/auth/usecase"
 	"github.com/14mdzk/goscratch/internal/platform/config"
 	"github.com/14mdzk/goscratch/internal/platform/http/middleware"
 	"github.com/14mdzk/goscratch/internal/port"
-	"github.com/gofiber/fiber/v2"
 )
 
 // Module represents the auth module

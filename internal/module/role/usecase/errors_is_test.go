@@ -4,8 +4,9 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/14mdzk/goscratch/pkg/apperr"
 	"github.com/stretchr/testify/assert"
+
+	"github.com/14mdzk/goscratch/pkg/apperr"
 )
 
 // TestRoleUseCase_ErrorsIsWrappedInternal verifies that errors returned by the

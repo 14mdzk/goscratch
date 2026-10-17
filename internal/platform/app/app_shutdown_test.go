@@ -7,10 +7,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/14mdzk/goscratch/internal/port"
-	"github.com/14mdzk/goscratch/pkg/logger"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/14mdzk/goscratch/internal/port"
+	"github.com/14mdzk/goscratch/pkg/logger"
 )
 
 // fakeAuthorizer counts Close invocations and satisfies the bare subset of

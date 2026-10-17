@@ -9,12 +9,13 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	roledto "github.com/14mdzk/goscratch/internal/module/role/dto"
-	"github.com/14mdzk/goscratch/internal/module/role/usecase"
-	"github.com/14mdzk/goscratch/internal/port"
 	"github.com/gofiber/fiber/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
+
+	roledto "github.com/14mdzk/goscratch/internal/module/role/dto"
+	"github.com/14mdzk/goscratch/internal/module/role/usecase"
+	"github.com/14mdzk/goscratch/internal/port"
 )
 
 // MockAuthorizer is a mock implementation of port.Authorizer

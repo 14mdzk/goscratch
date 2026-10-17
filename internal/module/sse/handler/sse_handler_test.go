@@ -8,11 +8,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/14mdzk/goscratch/internal/adapter/sse"
-	"github.com/14mdzk/goscratch/internal/port"
 	"github.com/gofiber/fiber/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/14mdzk/goscratch/internal/adapter/sse"
+	"github.com/14mdzk/goscratch/internal/port"
 )
 
 func setupTestApp(broker port.SSEBroker) (*fiber.App, *Handler) {

@@ -6,12 +6,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/14mdzk/goscratch/internal/module/user/dto"
-	"github.com/14mdzk/goscratch/internal/port"
-	shareddomain "github.com/14mdzk/goscratch/internal/shared/domain"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
+
+	"github.com/14mdzk/goscratch/internal/module/user/dto"
+	"github.com/14mdzk/goscratch/internal/port"
+	shareddomain "github.com/14mdzk/goscratch/internal/shared/domain"
 )
 
 // mockUseCase is a testify mock that satisfies the UseCase interface.

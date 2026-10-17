@@ -8,12 +8,13 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/14mdzk/goscratch/internal/module/auth/dto"
-	"github.com/14mdzk/goscratch/internal/module/auth/usecase"
 	"github.com/gofiber/fiber/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/crypto/bcrypt"
+
+	"github.com/14mdzk/goscratch/internal/module/auth/dto"
+	"github.com/14mdzk/goscratch/internal/module/auth/usecase"
 )
 
 // parseResponse reads and parses JSON response body

@@ -4,11 +4,12 @@ import (
 	"context"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
+
 	"github.com/14mdzk/goscratch/internal/port"
 	"github.com/14mdzk/goscratch/internal/worker"
 	"github.com/14mdzk/goscratch/pkg/apperr"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/mock"
 )
 
 // MockQueue implements port.Queue for testing
