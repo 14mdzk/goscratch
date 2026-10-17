@@ -6,6 +6,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/propagation"
 )
 
 // Job represents a background job to be processed
@@ -16,6 +18,29 @@ type Job struct {
 	Attempts  int             `json:"attempts"`
 	MaxRetry  int             `json:"max_retry"`
 	CreatedAt time.Time       `json:"created_at"`
+	// TraceParent carries the W3C traceparent of the dispatching span, if
+	// the dispatcher ran inside one. Empty when dispatched outside a trace.
+	TraceParent string `json:"traceparent,omitempty"`
+}
+
+// InjectTraceContext records the current span's W3C traceparent on the job so
+// the worker can continue the trace on dequeue. No-op when ctx holds no span.
+func (j *Job) InjectTraceContext(ctx context.Context) {
+	carrier := propagation.MapCarrier{}
+	otel.GetTextMapPropagator().Inject(ctx, carrier)
+	j.TraceParent = carrier.Get("traceparent")
+}
+
+// ExtractTraceContext returns a context carrying the dispatched span context,
+// or ctx unchanged when the job holds no traceparent. A malformed value
+// yields an invalid remote context, so the worker span starts a new trace
+// instead of linking — never an error.
+func (j *Job) ExtractTraceContext(ctx context.Context) context.Context {
+	if j.TraceParent == "" {
+		return ctx
+	}
+	carrier := propagation.MapCarrier{"traceparent": j.TraceParent}
+	return otel.GetTextMapPropagator().Extract(ctx, carrier)
 }
 
 // NewJob creates a new job with the given type and payload

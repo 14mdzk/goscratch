@@ -11,6 +11,9 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/14mdzk/goscratch/pkg/logger"
 )
@@ -113,6 +116,77 @@ func TestHandleMessage_DispatchesToCorrectHandler(t *testing.T) {
 	err = w.handleMessage(0, data)
 	assert.NoError(t, err)
 	assert.Equal(t, job.ID, receivedJobID)
+}
+
+func TestHandleMessage_CreatesLinkedSpan(t *testing.T) {
+	sr := useTestPropagator(t)
+	ctx := context.Background()
+
+	// Parent span simulates the HTTP dispatch side.
+	dispatchCtx, dispatchSpan := otel.Tracer("test").Start(ctx, "dispatch")
+	dispatchSC := trace.SpanContextFromContext(dispatchCtx)
+
+	q := &mockQueue{}
+	w := New(q, newTestLogger(), Config{})
+	w.RegisterHandler(&testHandler{jobType: "email.send"})
+
+	job, err := NewJob("email.send", map[string]string{"to": "test@example.com"})
+	require.NoError(t, err)
+	job.InjectTraceContext(dispatchCtx)
+
+	data, err := job.Encode()
+	require.NoError(t, err)
+	require.NoError(t, w.handleMessage(0, data))
+	dispatchSpan.End()
+
+	// The worker span must be a child of the dispatch span.
+	var found bool
+	for _, s := range sr.Ended() {
+		if s.Name() != "job email.send" {
+			continue
+		}
+		found = true
+		assert.Equal(t, dispatchSC.TraceID(), s.SpanContext().TraceID())
+		assert.Equal(t, dispatchSC.SpanID(), s.Parent().SpanID())
+		assert.Equal(t, job.ID, attrValue(s, "job_id"))
+		assert.Equal(t, "email.send", attrValue(s, "job_type"))
+	}
+	assert.True(t, found, "expected a worker span named 'job email.send'")
+}
+
+func TestHandleMessage_WithoutTraceparentStartsRootSpan(t *testing.T) {
+	sr := useTestPropagator(t)
+
+	q := &mockQueue{}
+	w := New(q, newTestLogger(), Config{})
+	w.RegisterHandler(&testHandler{jobType: "email.send"})
+
+	job, err := NewJob("email.send", map[string]string{"to": "test@example.com"})
+	require.NoError(t, err)
+	assert.Empty(t, job.TraceParent)
+
+	data, err := job.Encode()
+	require.NoError(t, err)
+	require.NoError(t, w.handleMessage(0, data))
+
+	var found bool
+	for _, s := range sr.Ended() {
+		if s.Name() == "job email.send" {
+			found = true
+			assert.False(t, s.Parent().IsValid(), "span without traceparent must be a root")
+		}
+	}
+	assert.True(t, found, "expected a worker span even without a traceparent")
+}
+
+// attrValue returns the string form of a span attribute.
+func attrValue(s sdktrace.ReadOnlySpan, key string) string {
+	for _, a := range s.Attributes() {
+		if string(a.Key) == key {
+			return a.Value.AsString()
+		}
+	}
+	return ""
 }
 
 func TestHandleMessage_UnknownJobType_Parks(t *testing.T) {

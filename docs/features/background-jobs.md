@@ -67,6 +67,10 @@ Background job processing over a queue tier (`goroutine` by default, `rabbitmq` 
 | `audit.cleanup` | Clean up old audit log entries |
 | `notification.send` | Send a notification to a user |
 
+### Trace propagation
+
+When the dispatching request runs inside a trace (the API's tracing middleware starts one per request), `Dispatch` records the W3C `traceparent` on the job. The worker extracts it and runs each handler inside a `job <type>` span (attributes `job_id`, `job_type`, `attempt`; handler errors are recorded on the span), so worker-side work links to the dispatch trace. Jobs dispatched outside a trace start a new root span on the worker. The external `cmd/worker` initializes the same OTLP tracer as the API when `observability.tracing` is enabled; DLQ replays keep the original `traceparent`.
+
 ### `audit.cleanup` progress bound
 
 Each run deletes in 1000-row batches and stops after 60 batches (60k rows),

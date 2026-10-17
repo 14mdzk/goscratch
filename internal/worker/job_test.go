@@ -1,11 +1,17 @@
 package worker
 
 import (
+	"context"
 	"encoding/json"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/propagation"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
+	"go.opentelemetry.io/otel/trace"
 )
 
 type testPayload struct {
@@ -159,4 +165,62 @@ func TestJobConstants(t *testing.T) {
 	assert.Equal(t, "email.send", JobTypeEmailSend)
 	assert.Equal(t, "audit.cleanup", JobTypeAuditCleanup)
 	assert.Equal(t, "notification.send", JobTypeNotification)
+}
+
+// useTestPropagator swaps in an SDK provider with a span recorder and the
+// W3C propagator, restoring the globals on cleanup. It returns the recorder.
+func useTestPropagator(t *testing.T) *tracetest.SpanRecorder {
+	t.Helper()
+
+	sr := tracetest.NewSpanRecorder()
+	tp := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(sr))
+	otel.SetTracerProvider(tp)
+	t.Cleanup(func() { _ = tp.Shutdown(context.Background()) })
+
+	prevProp := otel.GetTextMapPropagator()
+	otel.SetTextMapPropagator(propagation.TraceContext{})
+	t.Cleanup(func() { otel.SetTextMapPropagator(prevProp) })
+
+	return sr
+}
+
+func TestJob_TraceContextRoundTrip(t *testing.T) {
+	useTestPropagator(t)
+	ctx := context.Background()
+
+	// A span must exist for injection to record anything.
+	dispatchCtx, dispatchSpan := otel.Tracer("test").Start(ctx, "dispatch")
+	defer dispatchSpan.End()
+
+	job, err := NewJob("email.send", map[string]string{"to": "a@b.com"})
+	require.NoError(t, err)
+	job.InjectTraceContext(dispatchCtx)
+	require.NotEmpty(t, job.TraceParent, "inject must record the dispatch span")
+
+	// Encode/decode like the queue round-trip, then extract.
+	data, err := job.Encode()
+	require.NoError(t, err)
+	decoded, err := DecodeJob(data)
+	require.NoError(t, err)
+
+	extracted := decoded.ExtractTraceContext(ctx)
+	got := trace.SpanContextFromContext(extracted)
+	want := trace.SpanContextFromContext(dispatchCtx)
+	require.True(t, got.IsValid(), "extracted context must hold a valid span")
+	assert.Equal(t, want.TraceID(), got.TraceID())
+	assert.Equal(t, want.SpanID(), got.SpanID())
+	assert.True(t, got.IsRemote(), "extracted context must be remote")
+}
+
+func TestJob_InjectWithoutSpanLeavesEmpty(t *testing.T) {
+	useTestPropagator(t)
+
+	job, err := NewJob("email.send", map[string]string{"to": "a@b.com"})
+	require.NoError(t, err)
+	job.InjectTraceContext(context.Background())
+	assert.Empty(t, job.TraceParent)
+
+	// Extraction without a traceparent returns the input context unchanged.
+	out := job.ExtractTraceContext(context.Background())
+	assert.False(t, trace.SpanContextFromContext(out).IsValid())
 }

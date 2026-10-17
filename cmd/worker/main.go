@@ -14,6 +14,7 @@ import (
 	"github.com/14mdzk/goscratch/internal/adapter/queue"
 	"github.com/14mdzk/goscratch/internal/platform/config"
 	"github.com/14mdzk/goscratch/internal/platform/database"
+	"github.com/14mdzk/goscratch/internal/platform/observability"
 	"github.com/14mdzk/goscratch/internal/port"
 	"github.com/14mdzk/goscratch/internal/worker"
 	"github.com/14mdzk/goscratch/internal/worker/handlers"
@@ -54,6 +55,32 @@ func run() error {
 	)
 
 	ctx := context.Background()
+
+	// Initialize tracing so worker-side job spans export. When disabled the
+	// global provider stays a no-op and handleMessage spans are dropped.
+	if cfg.Observability.Tracing.Enabled {
+		appLogger.Info("Initializing OpenTelemetry tracing...",
+			"endpoint", cfg.Observability.Tracing.Endpoint)
+		shutdown, err := observability.InitTracer(ctx, observability.TracerConfig{
+			ServiceName:    cfg.App.Name,
+			ServiceVersion: "1.0.0",
+			Environment:    cfg.App.Env,
+			Endpoint:       cfg.Observability.Tracing.Endpoint,
+			Enabled:        true,
+		})
+		if err != nil {
+			appLogger.Warn("Failed to initialize tracing", "error", err)
+		} else {
+			defer func() {
+				shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				defer cancel()
+				if err := shutdown(shutdownCtx); err != nil {
+					appLogger.Warn("Tracing shutdown error", "error", err)
+				}
+			}()
+			appLogger.Info("Tracing initialized successfully")
+		}
+	}
 
 	// Validate queue configuration before creating connections.
 	// cmd/worker is the external consumer: it only runs the rabbitmq
