@@ -21,6 +21,7 @@ import (
 	"github.com/14mdzk/goscratch/internal/adapter/queue"
 	"github.com/14mdzk/goscratch/internal/adapter/sse"
 	"github.com/14mdzk/goscratch/internal/adapter/storage"
+	auditmodule "github.com/14mdzk/goscratch/internal/module/audit"
 	"github.com/14mdzk/goscratch/internal/module/auth"
 	"github.com/14mdzk/goscratch/internal/module/docs"
 	"github.com/14mdzk/goscratch/internal/module/health"
@@ -392,8 +393,9 @@ func New(ctx context.Context, cfg *config.Config) (*App, error) {
 	storageModule := storagemodule.NewModule(storageAdapter, auditor, cfg.JWT.Secret, cfg.JWT.PreviousSecret)
 	sseModule := ssemodule.NewModule(sseBroker, authorizer, cfg.JWT.Secret, cfg.JWT.PreviousSecret)
 	jobModule := job.NewModule(publisher, auditor, authorizer, cfg.JWT.Secret, cfg.JWT.PreviousSecret)
+	auditModule := auditmodule.NewModule(auditor, authorizer, cfg.JWT.Secret, cfg.JWT.PreviousSecret)
 
-	server.RegisterModules(docsModule, healthModule, userModule, authModule, roleModule, storageModule, sseModule, jobModule)
+	server.RegisterModules(docsModule, healthModule, userModule, authModule, roleModule, storageModule, sseModule, jobModule, auditModule)
 
 	// Start the in-process worker's dependencies: with the goroutine
 	// backend, consumption lives in this process. Handlers mirror

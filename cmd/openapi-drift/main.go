@@ -22,6 +22,7 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"gopkg.in/yaml.v3"
 
+	auditmod "github.com/14mdzk/goscratch/internal/module/audit"
 	authmod "github.com/14mdzk/goscratch/internal/module/auth"
 	authusecase "github.com/14mdzk/goscratch/internal/module/auth/usecase"
 	"github.com/14mdzk/goscratch/internal/module/docs"
@@ -133,6 +134,9 @@ func collectFiberRoutes() (map[routeKey]struct{}, error) {
 
 	// Job: nil publisher, auditor, authorizer; empty secret.
 	jobmod.NewModule(nil, nil, nil, "", "").RegisterRoutes(app)
+
+	// Audit: nil auditor, authorizer; empty secrets.
+	auditmod.NewModule(nil, nil, "", "").RegisterRoutes(app)
 
 	// Docs: /docs/* routes — excluded by the path filter below.
 	docs.NewModule().RegisterRoutes(app)

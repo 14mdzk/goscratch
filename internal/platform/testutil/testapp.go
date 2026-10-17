@@ -17,6 +17,7 @@ import (
 	"github.com/14mdzk/goscratch/internal/adapter/queue"
 	"github.com/14mdzk/goscratch/internal/adapter/sse"
 	"github.com/14mdzk/goscratch/internal/adapter/storage"
+	auditmodule "github.com/14mdzk/goscratch/internal/module/audit"
 	"github.com/14mdzk/goscratch/internal/module/auth"
 	"github.com/14mdzk/goscratch/internal/module/health"
 	"github.com/14mdzk/goscratch/internal/module/job"
@@ -131,8 +132,9 @@ func NewTestApp(ctx context.Context, pgConnStr, redisAddr string) (*fiber.App, f
 	storageModule := storagemodule.NewModule(storageAdapter, auditor, jwtCfg.Secret, jwtCfg.PreviousSecret)
 	sseModule := ssemodule.NewModule(sseBroker, authorizer, jwtCfg.Secret, jwtCfg.PreviousSecret)
 	jobModule := job.NewModule(publisher, auditor, authorizer, jwtCfg.Secret, jwtCfg.PreviousSecret)
+	auditModule := auditmodule.NewModule(auditor, authorizer, jwtCfg.Secret, jwtCfg.PreviousSecret)
 
-	server.RegisterModules(healthModule, userModule, authModule, roleModule, storageModule, sseModule, jobModule)
+	server.RegisterModules(healthModule, userModule, authModule, roleModule, storageModule, sseModule, jobModule, auditModule)
 
 	cleanup := func() {
 		_ = app.Shutdown()
