@@ -21,6 +21,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - k6 load baseline harness (v1.3, Tier F2): `k6/baseline.js` + `make k6-baseline` — login once in `setup()`, then a 4-VU upload → download → delete loop paced at ~72 req/min under the default 100 req/min sliding-window limiter (self-cleaning, no residue). Local-dev floor: p99 ≈ 7 ms at ~1 req/s, 0% failed. Runbook + numbers in `k6/README.md`; not a CI gate (needs a live seeded stack).
 
+- GeoJSON marshaling for spatial primitives (v1.3, Tier C3): `geo.Point` / `geo.Polygon` gain RFC 7946 `MarshalJSON` / `UnmarshalJSON` (Lon-first, no altitude). Decode validates through the existing constructors, so range/closure violations return the specific sentinels; `ErrInvalidGeoJSON` covers wrong-type/malformed shapes (syntactically-invalid JSON still surfaces as `*json.SyntaxError` from encoding/json, which never reaches the method).
+
+- `pkg/geoutil` Haversine helper (v1.3, Tier C4): `Haversine(a, b geo.Point) geo.Distance` on the IUGG mean radius with the atan2 formulation (stable for coincident/antipodal points). `(BoundingBox).Contains` already exists as a `geo` method since C1 and is not duplicated. Stdlib only.
+
 ### Changed
 
 - Queue config: `rabbitmq.enabled` is now a deprecated alias (applies only when `queue.backend` is unset); the dead `worker.enabled` key is deleted and `worker.in_process` is required with the `goroutine` backend. Operator action: set `queue.backend` explicitly and ensure `worker.in_process` matches the backend matrix (`goroutine`+in-process, `rabbitmq`+external `cmd/worker`); unreachable RabbitMQ brokers now fail boot instead of silently falling back to NoOp.

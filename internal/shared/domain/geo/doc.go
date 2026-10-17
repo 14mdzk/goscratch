@@ -15,11 +15,12 @@
 //
 // The following are intentionally deferred to later waves and separate packages:
 //
-//   - pgx Scan / Value round-trip (WKB encode/decode) — wave 2, depends on the
-//     PostGIS testcontainer image bump (F2).
-//   - GeoJSON MarshalJSON / UnmarshalJSON — wave 2 (C3).
-//   - Haversine, ST_DWithin, point-in-polygon, and other spatial computations —
-//     wave 2 (C4, pkg/geoutil).
+//   - pgx Scan / Value round-trip (WKB encode/decode) — shipped in wave 2
+//     (point_pgx.go, Tier C2).
+//   - GeoJSON MarshalJSON / UnmarshalJSON — shipped in wave 2
+//     (point_geojson.go, polygon_geojson.go, Tier C3).
+//   - Haversine — shipped in wave 2 (pkg/geoutil, Tier C4).
+//     ST_DWithin wrappers and point-in-polygon stay deferred: no consumer yet.
 //   - Any concrete domain module (location, points_of_interest, etc.) — the first
 //     consumer defines its own table. This package ships types only.
 //

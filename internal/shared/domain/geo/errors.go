@@ -35,3 +35,9 @@ var ErrNaNOrInf = errors.New("geo: point coordinates must be finite (NaN/Inf not
 // ErrInvalidWKB is returned when a byte slice cannot be decoded as a valid
 // EWKB-encoded Point geometry.
 var ErrInvalidWKB = errors.New("geo: invalid EWKB bytes for Point")
+
+// ErrInvalidGeoJSON is returned when input cannot be decoded as the expected
+// GeoJSON geometry (wrong type member, malformed coordinates). Range and ring
+// violations surface as the specific ErrInvalidLongitude / ErrInvalidLatitude /
+// ErrPolygonNotClosed / ErrPolygonTooFewPoints errors instead.
+var ErrInvalidGeoJSON = errors.New("geo: invalid GeoJSON geometry")
