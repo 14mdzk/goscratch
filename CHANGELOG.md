@@ -27,6 +27,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - Retired duplicate OpenAPI spec (v1.3, Tier B execution): `docs/openapi.yaml` (unreferenced by code) is deleted after folding its health content into the canonical `internal/module/docs/openapi.yaml` — full `/healthz/ready` description plus the previously missing `503` response, richer `/healthz/live` prose, and a corrected `HealthCheckResponse.status` enum (`[ready, alive, degraded]`; the old enum omitted the real 503 value).
 
+- Schema-aware OpenAPI drift gate (v1.3, Tier B execution): `cmd/openapi-drift` now also validates the spec document via kin-openapi v0.149.0 (valid OpenAPI 3.0.x, all `$ref`s resolve, operations complete) under the same exit-1 gate. Tooling-only dependency; no server runtime change. govulncheck clean.
+
 ### Changed
 
 - Queue config: `rabbitmq.enabled` is now a deprecated alias (applies only when `queue.backend` is unset); the dead `worker.enabled` key is deleted and `worker.in_process` is required with the `goroutine` backend. Operator action: set `queue.backend` explicitly and ensure `worker.in_process` matches the backend matrix (`goroutine`+in-process, `rabbitmq`+external `cmd/worker`); unreachable RabbitMQ brokers now fail boot instead of silently falling back to NoOp.

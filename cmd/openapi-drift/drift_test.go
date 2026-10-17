@@ -1,6 +1,7 @@
 package main
 
 import (
+	"os"
 	"strings"
 	"testing"
 )
@@ -291,6 +292,56 @@ func TestDefaultSpecPath(t *testing.T) {
 func TestCollectSpecRoutes_NonexistentPath(t *testing.T) {
 	_, err := collectSpecRoutes("/nonexistent/path/openapi.yaml")
 	if err == nil {
+		t.Error("expected error for nonexistent spec path, got nil")
+	}
+}
+
+// --- validateSpecDocument tests ---
+
+func TestValidateSpecDocument_RealSpec(t *testing.T) {
+	if err := validateSpecDocument("../../internal/module/docs/openapi.yaml"); err != nil {
+		t.Errorf("canonical spec failed validation: %v", err)
+	}
+}
+
+func TestValidateSpecDocument_Invalid(t *testing.T) {
+	const validHead = "openapi: 3.0.3\ninfo:\n  title: t\n  version: \"1\"\npaths:\n"
+	tests := []struct {
+		name string
+		body string
+	}{
+		{
+			name: "dangling ref",
+			body: validHead + "  /x:\n    get:\n      responses:\n        '200':\n          description: ok\n          content:\n            application/json:\n              schema:\n                $ref: '#/components/schemas/Nope'\n",
+		},
+		{
+			name: "missing version",
+			body: "openapi: 3.0.3\ninfo:\n  title: t\npaths: {}\n",
+		},
+		{
+			name: "not openapi",
+			body: "foo: bar\n",
+		},
+		{
+			name: "operation without responses",
+			body: validHead + "  /x:\n    get:\n      summary: no responses\n",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			path := t.TempDir() + "/openapi.yaml"
+			if err := os.WriteFile(path, []byte(tt.body), 0o600); err != nil {
+				t.Fatalf("fixture write: %v", err)
+			}
+			if err := validateSpecDocument(path); err == nil {
+				t.Errorf("validateSpecDocument(%s) expected error, got nil", tt.name)
+			}
+		})
+	}
+}
+
+func TestValidateSpecDocument_NonexistentPath(t *testing.T) {
+	if err := validateSpecDocument("/nonexistent/path/openapi.yaml"); err == nil {
 		t.Error("expected error for nonexistent spec path, got nil")
 	}
 }
