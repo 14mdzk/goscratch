@@ -29,6 +29,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - Schema-aware OpenAPI drift gate (v1.3, Tier B execution): `cmd/openapi-drift` now also validates the spec document via kin-openapi v0.149.0 (valid OpenAPI 3.0.x, all `$ref`s resolve, operations complete) under the same exit-1 gate. Tooling-only dependency; no server runtime change. govulncheck clean.
 
+- OpenAPI auth/storage reconciliation (v1.3, Tier B execution): `POST /auth/login` and `/auth/refresh` document their `429` + fail-closed `503` and `X-RateLimit-*` response headers; `POST /auth/logout` documents its `bearerAuth` + `401`; `POST /files/upload` documents its `415`; new shared `ServiceUnavailable` / `UnsupportedMediaType` responses and `X-RateLimit-*` header definitions; `TooManyRequests` example corrected to `RATE_LIMIT_EXCEEDED`; global-limiter paragraph in the info description.
+
 ### Changed
 
 - Removed the deprecated `GET /health` liveness alias (v1.3, Tier D1; deprecated since v1.2). Use `GET /healthz/live`. Operator action: update container healthchecks, reverse-proxy locations, and monitoring probes — `deploy/docker/docker-compose.prod.yml` and `deploy/nginx/nginx.conf` already track the new path.

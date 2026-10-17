@@ -96,6 +96,11 @@ const (
 	CodeInternalError       = "INTERNAL_ERROR"
 	CodeServiceUnavailable  = "SERVICE_UNAVAILABLE"
 	CodeValidation          = "VALIDATION_ERROR"
+	// Rate-limiter codes. The middleware previously emitted these as raw
+	// strings; they are registered here so the code set stays exhaustive
+	// (the OpenAPI ErrorResponse.code enum mirrors this block).
+	CodeRateLimitExceeded = "RATE_LIMIT_EXCEEDED"
+	CodeRateLimitError    = "RATE_LIMIT_ERROR"
 )
 
 // Predefined errors

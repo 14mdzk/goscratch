@@ -61,7 +61,7 @@ func RateLimit(cfg RateLimitConfig, cache port.Cache) (fiber.Handler, io.Closer)
 			slog.Error("rate limit backend error", "path", c.Path(), "key", key, "error", err)
 			if cfg.FailClosed {
 				// Reject rather than allow — critical for auth endpoints.
-				return response.Fail(c, apperr.New("RATE_LIMIT_ERROR", "Service temporarily unavailable, please try again later", fiber.StatusServiceUnavailable))
+				return response.Fail(c, apperr.New(apperr.CodeRateLimitError, "Service temporarily unavailable, please try again later", fiber.StatusServiceUnavailable))
 			}
 			// Non-auth paths: fail open (legacy behaviour preserved)
 			return c.Next()
@@ -73,7 +73,7 @@ func RateLimit(cfg RateLimitConfig, cache port.Cache) (fiber.Handler, io.Closer)
 		c.Set("X-RateLimit-Reset", strconv.FormatInt(resetAt.Unix(), 10))
 
 		if !allowed {
-			return response.Fail(c, apperr.New("RATE_LIMIT_EXCEEDED", "Too many requests, please try again later", fiber.StatusTooManyRequests))
+			return response.Fail(c, apperr.New(apperr.CodeRateLimitExceeded, "Too many requests, please try again later", fiber.StatusTooManyRequests))
 		}
 
 		return c.Next()
