@@ -4,6 +4,12 @@ info:
   description: |
     Goscratch is a Go backend starterkit providing authentication, user management,
     role-based access control, file storage, server-sent events, and background job processing.
+
+    Rate limiting: responses may carry `X-RateLimit-Limit/Remaining/Reset`
+    headers. A global sliding-window limiter (default 100 requests/minute)
+    applies to every route and answers 429 when exhausted; the auth
+    endpoints additionally carry a tighter dedicated budget (20 requests
+    per 5 minutes per IP, fail-closed with 503 when its backend is down).
   version: "0.5.0"
   contact:
     name: Goscratch
@@ -99,7 +105,7 @@ paths:
       operationId: login
       tags: [Auth]
       summary: Login
-      description: Authenticates a user with email and password, returning JWT tokens.
+      description: Authenticates a user with email and password, returning JWT tokens. Carries a dedicated rate budget (20 requests per 5 minutes per IP) under the global limiter.
       requestBody:
         required: true
         content:
@@ -109,6 +115,13 @@ paths:
       responses:
         "200":
           description: Login successful
+          headers:
+            X-RateLimit-Limit:
+              $ref: "#/components/headers/X-RateLimit-Limit"
+            X-RateLimit-Remaining:
+              $ref: "#/components/headers/X-RateLimit-Remaining"
+            X-RateLimit-Reset:
+              $ref: "#/components/headers/X-RateLimit-Reset"
           content:
             application/json:
               schema:
@@ -122,6 +135,10 @@ paths:
           $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
         "500":
           $ref: "#/components/responses/InternalError"
 
@@ -130,7 +147,7 @@ paths:
       operationId: refreshToken
       tags: [Auth]
       summary: Refresh access token
-      description: Exchanges a valid refresh token for a new pair of access and refresh tokens.
+      description: Exchanges a valid refresh token for a new pair of access and refresh tokens. Shares login's dedicated rate budget (20 requests per 5 minutes per IP).
       requestBody:
         required: true
         content:
@@ -140,6 +157,13 @@ paths:
       responses:
         "200":
           description: Token refreshed
+          headers:
+            X-RateLimit-Limit:
+              $ref: "#/components/headers/X-RateLimit-Limit"
+            X-RateLimit-Remaining:
+              $ref: "#/components/headers/X-RateLimit-Remaining"
+            X-RateLimit-Reset:
+              $ref: "#/components/headers/X-RateLimit-Reset"
           content:
             application/json:
               schema:
@@ -153,6 +177,10 @@ paths:
           $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
         "500":
           $ref: "#/components/responses/InternalError"
 
@@ -161,7 +189,9 @@ paths:
       operationId: logout
       tags: [Auth]
       summary: Logout
-      description: Invalidates the given refresh token.
+      description: Invalidates the given refresh token. Requires a valid JWT access token; the caller ID comes from its claims. Unknown or foreign tokens return success silently (no existence oracle).
+      security:
+        - bearerAuth: []
       requestBody:
         required: true
         content:
@@ -177,6 +207,8 @@ paths:
                 $ref: "#/components/schemas/MessageResponse"
         "400":
           $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
         "500":
           $ref: "#/components/responses/InternalError"
 
@@ -888,7 +920,7 @@ paths:
       operationId: uploadFile
       tags: [Storage]
       summary: Upload file
-      description: Uploads a file via multipart/form-data. Requires authentication.
+      description: Uploads a file via multipart/form-data. Requires authentication. Content is allowlisted by sniffed media type (images and PDF, max 10 MB); anything else is rejected.
       security:
         - bearerAuth: []
       requestBody:
@@ -923,6 +955,8 @@ paths:
           $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
         "500":
           $ref: "#/components/responses/InternalError"
 
@@ -1285,6 +1319,21 @@ components:
         maximum: 100
         default: 20
 
+  headers:
+    X-RateLimit-Limit:
+      description: Request budget for the current rate-limit window
+      schema:
+        type: integer
+    X-RateLimit-Remaining:
+      description: Requests remaining in the current window
+      schema:
+        type: integer
+    X-RateLimit-Reset:
+      description: Unix timestamp when the current window resets
+      schema:
+        type: integer
+        format: int64
+
   responses:
     BadRequest:
       description: Bad request or validation error
@@ -1352,8 +1401,30 @@ components:
           example:
             success: false
             error:
-              code: BAD_REQUEST
-              message: Rate limit exceeded
+              code: RATE_LIMIT_EXCEEDED
+              message: Too many requests, please try again later
+    ServiceUnavailable:
+      description: Service temporarily unavailable (rate-limit backend error under a fail-closed limiter)
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          example:
+            success: false
+            error:
+              code: RATE_LIMIT_ERROR
+              message: Service temporarily unavailable, please try again later
+    UnsupportedMediaType:
+      description: Uploaded content type is not allowlisted
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          example:
+            success: false
+            error:
+              code: UNSUPPORTED_MEDIA_TYPE
+              message: content type "text/plain" is not allowed
     InternalError:
       description: Internal server error
       content:
@@ -1402,7 +1473,7 @@ components:
           properties:
             code:
               type: string
-              description: Machine-readable error code
+              description: Machine-readable error code (mirrors the apperr code registry)
               enum:
                 - BAD_REQUEST
                 - UNAUTHORIZED
@@ -1410,9 +1481,12 @@ components:
                 - NOT_FOUND
                 - CONFLICT
                 - UNPROCESSABLE_ENTITY
+                - UNSUPPORTED_MEDIA_TYPE
                 - INTERNAL_ERROR
                 - SERVICE_UNAVAILABLE
                 - VALIDATION_ERROR
+                - RATE_LIMIT_EXCEEDED
+                - RATE_LIMIT_ERROR
             message:
               type: string
               description: Human-readable error message
