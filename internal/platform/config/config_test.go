@@ -249,6 +249,40 @@ func TestValidate_AcceptsLongUniqueJWTSecret(t *testing.T) {
 	require.NoError(t, cfg.Validate())
 }
 
+func TestValidate_RejectsPlaceholderPreviousSecret(t *testing.T) {
+	cfg := &Config{JWT: JWTConfig{
+		Secret:         "a-32-byte-real-secret-xxxxxxxxxx",
+		PreviousSecret: PlaceholderJWTSecret,
+		Issuer:         "goscratch",
+		Audience:       "goscratch-api",
+	}}
+	err := cfg.Validate()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "JWT_SECRET_PREVIOUS")
+}
+
+func TestValidate_RejectsShortPreviousSecret(t *testing.T) {
+	cfg := &Config{JWT: JWTConfig{
+		Secret:         "a-32-byte-real-secret-xxxxxxxxxx",
+		PreviousSecret: "too-short",
+		Issuer:         "goscratch",
+		Audience:       "goscratch-api",
+	}}
+	err := cfg.Validate()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "JWT_SECRET_PREVIOUS")
+}
+
+func TestValidate_AcceptsValidPreviousSecret(t *testing.T) {
+	cfg := &Config{JWT: JWTConfig{
+		Secret:         "a-32-byte-real-secret-xxxxxxxxxx",
+		PreviousSecret: "a-32-byte-old-secret-yyyyyyyyyyy",
+		Issuer:         "goscratch",
+		Audience:       "goscratch-api",
+	}}
+	require.NoError(t, cfg.Validate())
+}
+
 func TestValidate_RejectsEnabledNotificationWithoutWebhookURL(t *testing.T) {
 	cfg := &Config{
 		JWT: JWTConfig{

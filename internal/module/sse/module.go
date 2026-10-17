@@ -10,25 +10,27 @@ import (
 
 // Module represents the SSE module
 type Module struct {
-	handler    *handler.Handler
-	authorizer port.Authorizer
-	jwtSecret  string
+	handler           *handler.Handler
+	authorizer        port.Authorizer
+	jwtSecret         string
+	jwtPreviousSecret string
 }
 
 // NewModule creates a new SSE module
-func NewModule(broker port.SSEBroker, authorizer port.Authorizer, jwtSecret string) *Module {
+func NewModule(broker port.SSEBroker, authorizer port.Authorizer, jwtSecret, jwtPreviousSecret string) *Module {
 	h := handler.NewHandler(broker)
 
 	return &Module{
-		handler:    h,
-		authorizer: authorizer,
-		jwtSecret:  jwtSecret,
+		handler:           h,
+		authorizer:        authorizer,
+		jwtSecret:         jwtSecret,
+		jwtPreviousSecret: jwtPreviousSecret,
 	}
 }
 
 // RegisterRoutes registers SSE module routes
 func (m *Module) RegisterRoutes(router fiber.Router) {
-	authMiddleware := middleware.Auth(middleware.DefaultAuthConfig(m.jwtSecret))
+	authMiddleware := middleware.Auth(middleware.DefaultAuthConfig(m.jwtSecret, m.jwtPreviousSecret))
 
 	sseGroup := router.Group("/sse")
 

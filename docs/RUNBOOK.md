@@ -30,30 +30,39 @@ Conventions:
 
 - Generate a new 32+ byte secret (`openssl rand -base64 48 | head -c 64`).
 - Update the secret store (Kubernetes `Secret`, AWS Secrets Manager, etc.). Do **not** commit it.
-- Notify users via the established channel: "all sessions will be terminated; please re-login".
+- With the overlap procedure below, sessions survive the rotation — no re-login notice needed. (For a flag-day rotation that terminates all sessions instead, skip step 1 and accept 401s until every pod runs the new secret.)
 
-### Commands
+### Commands (overlap rotation — zero session loss)
 
 ```bash
-# 1. Update the secret in your secret store, then roll the deployment.
-#    Kubernetes example:
-kubectl set env deployment/goscratch-api JWT_SECRET="$NEW_SECRET"  # via SealedSecret / external-secrets
+# 1. Demote the current secret to the overlap window and install the new one.
+#    Kubernetes example (via SealedSecret / external-secrets):
+kubectl set env deployment/goscratch-api \
+    JWT_SECRET_PREVIOUS="$OLD_SECRET" \
+    JWT_SECRET="$NEW_SECRET"
 
-# 2. Watch the rollout. Pods refuse to start if JWT_SECRET is missing,
+# 2. Watch the rollout. Pods refuse to start if either secret is missing,
 #    equals the committed placeholder, or is shorter than 32 bytes
-#    (see internal/platform/config/config.go:288-294).
+#    (see internal/platform/config/config.go). An empty
+#    JWT_SECRET_PREVIOUS disables the window.
+kubectl rollout status deployment/goscratch-api --timeout=5m
+
+# 3. After every pod runs the new pair (and old access tokens have expired
+#    out — access TTL is 15 min by default), close the window:
+kubectl set env deployment/goscratch-api JWT_SECRET_PREVIOUS=""
 kubectl rollout status deployment/goscratch-api --timeout=5m
 ```
+
+During the window the middleware accepts tokens signed by either secret and always signs with the current one, so refreshes migrate sessions onto the new key automatically.
 
 ### Verify
 
 ```bash
-# Every previously-issued access token is now invalid; an authenticated
-# request with an old token returns 401.
+# During the window, an old-signed token still validates (expect 200);
+# after step 3 it returns 401.
 curl -s -o /dev/null -w "%{http_code}\n" \
     -H "Authorization: Bearer $OLD_TOKEN" \
     "$API/api/users/me"
-# Expect: 401
 
 # A fresh login with the new secret works end to end.
 curl -s "$API/api/auth/login" \
@@ -62,12 +71,11 @@ curl -s "$API/api/auth/login" \
     | jq -r .access_token
 ```
 
-Old refresh tokens **also** stop working because every refresh re-signs an access token using the current secret. If you also want to invalidate refresh-token storage explicitly, follow §2.
+Old refresh tokens keep working through the rotation because every refresh re-signs an access token using the current secret. If you also want to invalidate refresh-token storage explicitly, follow §2.
 
 ### Rollback
 
-- Re-deploy with the old `JWT_SECRET` value (kept in the secret store's previous version).
-- Existing access tokens minted under the old secret will validate again until they expire normally.
+- Re-deploy with the old `JWT_SECRET` value (kept in the secret store's previous version); while the window is still open, old-signed tokens validate immediately with no action at all.
 
 ### Communication template
 

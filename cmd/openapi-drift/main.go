@@ -120,19 +120,19 @@ func collectFiberRoutes() (map[routeKey]struct{}, error) {
 	authmod.NewModule(userRepo, nil, nil, config.JWTConfig{}).RegisterRoutes(app)
 
 	// User: nil pool, transactor, auditor, authorizer, cache; empty secret.
-	usermod.NewModule(nil, nil, nil, nil, nil, "", nil).RegisterRoutes(app)
+	usermod.NewModule(nil, nil, nil, nil, nil, "", "", nil).RegisterRoutes(app)
 
 	// Role: nil authorizer; empty secret.
-	rolemod.NewModule(nil, "").RegisterRoutes(app)
+	rolemod.NewModule(nil, "", "").RegisterRoutes(app)
 
 	// Storage: nil storage, auditor; empty secret.
-	storagemod.NewModule(nil, nil, "").RegisterRoutes(app)
+	storagemod.NewModule(nil, nil, "", "").RegisterRoutes(app)
 
 	// SSE: nil broker, authorizer; empty secret.
-	ssemod.NewModule(nil, nil, "").RegisterRoutes(app)
+	ssemod.NewModule(nil, nil, "", "").RegisterRoutes(app)
 
 	// Job: nil publisher, auditor, authorizer; empty secret.
-	jobmod.NewModule(nil, nil, nil, "").RegisterRoutes(app)
+	jobmod.NewModule(nil, nil, nil, "", "").RegisterRoutes(app)
 
 	// Docs: /docs/* routes — excluded by the path filter below.
 	docs.NewModule().RegisterRoutes(app)

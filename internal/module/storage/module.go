@@ -11,12 +11,13 @@ import (
 
 // Module represents the storage module
 type Module struct {
-	handler   *handler.Handler
-	jwtSecret string
+	handler           *handler.Handler
+	jwtSecret         string
+	jwtPreviousSecret string
 }
 
 // NewModule creates a new storage module
-func NewModule(storage port.Storage, auditor port.Auditor, jwtSecret string) *Module {
+func NewModule(storage port.Storage, auditor port.Auditor, jwtSecret, jwtPreviousSecret string) *Module {
 	uc := usecase.NewUseCase(storage, nil)
 	var ucIface usecase.UseCase = uc
 	if auditor != nil {
@@ -25,14 +26,15 @@ func NewModule(storage port.Storage, auditor port.Auditor, jwtSecret string) *Mo
 	h := handler.NewHandler(ucIface)
 
 	return &Module{
-		handler:   h,
-		jwtSecret: jwtSecret,
+		handler:           h,
+		jwtSecret:         jwtSecret,
+		jwtPreviousSecret: jwtPreviousSecret,
 	}
 }
 
 // RegisterRoutes registers storage module routes
 func (m *Module) RegisterRoutes(router fiber.Router) {
-	authMiddleware := middleware.Auth(middleware.DefaultAuthConfig(m.jwtSecret))
+	authMiddleware := middleware.Auth(middleware.DefaultAuthConfig(m.jwtSecret, m.jwtPreviousSecret))
 
 	files := router.Group("/files")
 

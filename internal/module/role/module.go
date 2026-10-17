@@ -11,26 +11,28 @@ import (
 
 // Module represents the role management module
 type Module struct {
-	handler    *handler.Handler
-	authorizer port.Authorizer
-	jwtSecret  string
+	handler           *handler.Handler
+	authorizer        port.Authorizer
+	jwtSecret         string
+	jwtPreviousSecret string
 }
 
 // NewModule creates a new role module
-func NewModule(authorizer port.Authorizer, jwtSecret string) *Module {
+func NewModule(authorizer port.Authorizer, jwtSecret, jwtPreviousSecret string) *Module {
 	uc := usecase.NewUseCase(authorizer)
 	h := handler.NewHandler(uc)
 
 	return &Module{
-		handler:    h,
-		authorizer: authorizer,
-		jwtSecret:  jwtSecret,
+		handler:           h,
+		authorizer:        authorizer,
+		jwtSecret:         jwtSecret,
+		jwtPreviousSecret: jwtPreviousSecret,
 	}
 }
 
 // RegisterRoutes registers role module routes
 func (m *Module) RegisterRoutes(router fiber.Router) {
-	authMiddleware := middleware.Auth(middleware.DefaultAuthConfig(m.jwtSecret))
+	authMiddleware := middleware.Auth(middleware.DefaultAuthConfig(m.jwtSecret, m.jwtPreviousSecret))
 	requireRead := middleware.RequirePermission(m.authorizer, "roles", "read")
 	requireManage := middleware.RequirePermission(m.authorizer, "roles", "manage")
 

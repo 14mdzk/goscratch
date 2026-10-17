@@ -28,7 +28,8 @@
     "access_token_ttl": 15,
     "refresh_token_ttl": 10080,
     "issuer": "goscratch",
-    "audience": "goscratch-api"
+    "audience": "goscratch-api",
+    "previous_secret": ""
   },
   "cors": {
     "allow_origins": "*",

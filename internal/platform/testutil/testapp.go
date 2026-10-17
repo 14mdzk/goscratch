@@ -126,11 +126,11 @@ func NewTestApp(ctx context.Context, pgConnStr, redisAddr string) (*fiber.App, f
 	)
 	sharedUserRepo := userrepo.NewRepository(pool)
 	authModule := auth.NewModule(sharedUserRepo, cacheAdapter, auditor, jwtCfg)
-	userModule := user.NewModule(pool, transactor, auditor, authorizer, cacheAdapter, jwtCfg.Secret, authModule.Revoker())
-	roleModule := role.NewModule(authorizer, jwtCfg.Secret)
-	storageModule := storagemodule.NewModule(storageAdapter, auditor, jwtCfg.Secret)
-	sseModule := ssemodule.NewModule(sseBroker, authorizer, jwtCfg.Secret)
-	jobModule := job.NewModule(publisher, auditor, authorizer, jwtCfg.Secret)
+	userModule := user.NewModule(pool, transactor, auditor, authorizer, cacheAdapter, jwtCfg.Secret, jwtCfg.PreviousSecret, authModule.Revoker())
+	roleModule := role.NewModule(authorizer, jwtCfg.Secret, jwtCfg.PreviousSecret)
+	storageModule := storagemodule.NewModule(storageAdapter, auditor, jwtCfg.Secret, jwtCfg.PreviousSecret)
+	sseModule := ssemodule.NewModule(sseBroker, authorizer, jwtCfg.Secret, jwtCfg.PreviousSecret)
+	jobModule := job.NewModule(publisher, auditor, authorizer, jwtCfg.Secret, jwtCfg.PreviousSecret)
 
 	server.RegisterModules(healthModule, userModule, authModule, roleModule, storageModule, sseModule, jobModule)
 

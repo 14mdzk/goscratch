@@ -43,7 +43,7 @@ func validClaims() Claims {
 
 func TestAuth_ValidJWTInHeader(t *testing.T) {
 	app := fiber.New()
-	cfg := DefaultAuthConfig(testJWTSecret)
+	cfg := DefaultAuthConfig(testJWTSecret, "")
 
 	var capturedUserID string
 	var capturedClaims *authdomain.Claims
@@ -110,7 +110,7 @@ func TestAuth_ValidJWTInCookie(t *testing.T) {
 
 func TestAuth_MissingToken(t *testing.T) {
 	app := fiber.New()
-	cfg := DefaultAuthConfig(testJWTSecret)
+	cfg := DefaultAuthConfig(testJWTSecret, "")
 
 	app.Use(Auth(cfg))
 	app.Get("/test", func(c *fiber.Ctx) error {
@@ -125,7 +125,7 @@ func TestAuth_MissingToken(t *testing.T) {
 
 func TestAuth_MalformedAuthorizationHeader(t *testing.T) {
 	app := fiber.New()
-	cfg := DefaultAuthConfig(testJWTSecret)
+	cfg := DefaultAuthConfig(testJWTSecret, "")
 
 	app.Use(Auth(cfg))
 	app.Get("/test", func(c *fiber.Ctx) error {
@@ -144,7 +144,7 @@ func TestAuth_MalformedAuthorizationHeader(t *testing.T) {
 
 func TestAuth_ExpiredJWT(t *testing.T) {
 	app := fiber.New()
-	cfg := DefaultAuthConfig(testJWTSecret)
+	cfg := DefaultAuthConfig(testJWTSecret, "")
 
 	app.Use(Auth(cfg))
 	app.Get("/test", func(c *fiber.Ctx) error {
@@ -175,7 +175,7 @@ func TestAuth_ExpiredJWT(t *testing.T) {
 
 func TestAuth_InvalidSignature(t *testing.T) {
 	app := fiber.New()
-	cfg := DefaultAuthConfig(testJWTSecret)
+	cfg := DefaultAuthConfig(testJWTSecret, "")
 
 	app.Use(Auth(cfg))
 	app.Get("/test", func(c *fiber.Ctx) error {
@@ -195,7 +195,7 @@ func TestAuth_InvalidSignature(t *testing.T) {
 
 func TestOptionalAuth_ValidJWT(t *testing.T) {
 	app := fiber.New()
-	cfg := DefaultAuthConfig(testJWTSecret)
+	cfg := DefaultAuthConfig(testJWTSecret, "")
 
 	var capturedClaims *authdomain.Claims
 
@@ -218,7 +218,7 @@ func TestOptionalAuth_ValidJWT(t *testing.T) {
 
 func TestOptionalAuth_MissingToken(t *testing.T) {
 	app := fiber.New()
-	cfg := DefaultAuthConfig(testJWTSecret)
+	cfg := DefaultAuthConfig(testJWTSecret, "")
 
 	var capturedClaims *authdomain.Claims
 	handlerCalled := false
@@ -240,7 +240,7 @@ func TestOptionalAuth_MissingToken(t *testing.T) {
 
 func TestOptionalAuth_InvalidToken(t *testing.T) {
 	app := fiber.New()
-	cfg := DefaultAuthConfig(testJWTSecret)
+	cfg := DefaultAuthConfig(testJWTSecret, "")
 
 	var capturedClaims *authdomain.Claims
 	handlerCalled := false
@@ -301,22 +301,22 @@ func TestParseToken_StrictIssAud(t *testing.T) {
 	validToken := generateTestToken(t, testJWTSecret, validClaims())
 
 	t.Run("empty issuer in config rejects token", func(t *testing.T) {
-		_, err := parseToken(validToken, testJWTSecret, "", "goscratch-api")
+		_, err := parseToken(validToken, testJWTSecret, "", "", "goscratch-api")
 		assert.Error(t, err)
 	})
 
 	t.Run("empty audience in config rejects token", func(t *testing.T) {
-		_, err := parseToken(validToken, testJWTSecret, "goscratch", "")
+		_, err := parseToken(validToken, testJWTSecret, "", "goscratch", "")
 		assert.Error(t, err)
 	})
 
 	t.Run("both empty rejects token", func(t *testing.T) {
-		_, err := parseToken(validToken, testJWTSecret, "", "")
+		_, err := parseToken(validToken, testJWTSecret, "", "", "")
 		assert.Error(t, err)
 	})
 
 	t.Run("correct issuer and audience accepts token", func(t *testing.T) {
-		claims, err := parseToken(validToken, testJWTSecret, "goscratch", "goscratch-api")
+		claims, err := parseToken(validToken, testJWTSecret, "", "goscratch", "goscratch-api")
 		assert.NoError(t, err)
 		assert.Equal(t, "user-123", claims.UserID)
 	})
@@ -363,4 +363,64 @@ func TestAuth_RejectsWhenIssuerOrAudienceEmpty(t *testing.T) {
 	resp, err := app.Test(req)
 	require.NoError(t, err)
 	assert.Equal(t, fiber.StatusUnauthorized, resp.StatusCode)
+}
+
+const testJWTPreviousSecret = "previous-secret-key-for-rotation"
+
+func expiredClaims() Claims {
+	c := validClaims()
+	c.ExpiresAt = jwt.NewNumericDate(time.Now().Add(-1 * time.Hour))
+	return c
+}
+
+func TestParseToken_PreviousSecretAccepted(t *testing.T) {
+	token := generateTestToken(t, testJWTPreviousSecret, validClaims())
+
+	claims, err := parseToken(token, testJWTSecret, testJWTPreviousSecret, "goscratch", "goscratch-api")
+	require.NoError(t, err)
+	assert.Equal(t, "user-123", claims.UserID)
+}
+
+func TestParseToken_UnknownSecretRejected(t *testing.T) {
+	token := generateTestToken(t, "some-third-secret", validClaims())
+
+	_, err := parseToken(token, testJWTSecret, testJWTPreviousSecret, "goscratch", "goscratch-api")
+	require.Error(t, err)
+}
+
+func TestParseToken_ExpiredUnderCurrentStaysExpired(t *testing.T) {
+	// An expired current-signed token must report expiry (not "invalid"),
+	// even with a previous secret configured: the current-secret error wins.
+	token := generateTestToken(t, testJWTSecret, expiredClaims())
+
+	_, err := parseToken(token, testJWTSecret, testJWTPreviousSecret, "goscratch", "goscratch-api")
+	require.ErrorIs(t, err, jwt.ErrTokenExpired)
+}
+
+func TestParseToken_ExpiredPreviousSignedRejected(t *testing.T) {
+	token := generateTestToken(t, testJWTPreviousSecret, expiredClaims())
+
+	_, err := parseToken(token, testJWTSecret, testJWTPreviousSecret, "goscratch", "goscratch-api")
+	require.Error(t, err)
+}
+
+func TestAuth_PreviousSignedTokenAccepted(t *testing.T) {
+	app := fiber.New()
+	cfg := DefaultAuthConfig(testJWTSecret, testJWTPreviousSecret)
+
+	var capturedUserID string
+	app.Use(Auth(cfg))
+	app.Get("/test", func(c *fiber.Ctx) error {
+		capturedUserID = GetUserID(c)
+		return c.SendStatus(fiber.StatusOK)
+	})
+
+	token := generateTestToken(t, testJWTPreviousSecret, validClaims())
+	req := httptest.NewRequest(http.MethodGet, "/test", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+
+	resp, err := app.Test(req)
+	require.NoError(t, err)
+	assert.Equal(t, fiber.StatusOK, resp.StatusCode)
+	assert.Equal(t, "user-123", capturedUserID)
 }
