@@ -63,11 +63,12 @@ const validConfigJSON = `{
 	"audit": {"enabled": false},
 	"authorization": {"enabled": false},
 	"worker": {
-		"enabled": false,
+		"in_process": true,
 		"concurrency": 5,
 		"queue_name": "tasks",
 		"exchange": "goscratch"
 	},
+	"queue": {"backend": ""},
 	"observability": {
 		"metrics": {"enabled": false, "port": 9090},
 		"tracing": {"enabled": false, "endpoint": ""}
@@ -105,6 +106,8 @@ func TestLoad_ValidJSON(t *testing.T) {
 	assert.Equal(t, 6379, cfg.Redis.Port)
 	assert.False(t, cfg.RabbitMQ.Enabled)
 	assert.Equal(t, 5, cfg.Worker.Concurrency)
+	assert.True(t, cfg.Worker.InProcess)
+	assert.Equal(t, "", cfg.Queue.Backend)
 }
 
 func TestLoad_MissingFile(t *testing.T) {
@@ -155,6 +158,21 @@ func TestApplyEnvOverrides_BoolNumeric(t *testing.T) {
 	cfg, err := Load(path)
 	require.NoError(t, err)
 	assert.True(t, cfg.RabbitMQ.Enabled)
+}
+
+func TestApplyEnvOverrides_QueueBackend(t *testing.T) {
+	path := writeTempConfig(t, validConfigJSON)
+	t.Setenv("QUEUE_BACKEND", "rabbitmq")
+	t.Setenv("WORKER_IN_PROCESS", "false")
+
+	cfg, err := Load(path)
+	require.NoError(t, err)
+	assert.Equal(t, "rabbitmq", cfg.Queue.Backend)
+	assert.False(t, cfg.Worker.InProcess)
+
+	backend, err := cfg.ResolveQueueBackend()
+	require.NoError(t, err)
+	assert.Equal(t, QueueBackendRabbitMQ, backend)
 }
 
 func TestEnvVarsTakePrecedence(t *testing.T) {

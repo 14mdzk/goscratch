@@ -100,13 +100,42 @@ The worker runs as a separate binary (`cmd/worker/main.go`) that:
 
 | Key | Env | Default | Description |
 |-----|-----|---------|-------------|
-| `worker.enabled` | `WORKER_ENABLED` | `false` | Enable the worker process |
-| `worker.concurrency` | `WORKER_CONCURRENCY` | `1` | Number of consumer goroutines |
-| `worker.queue_name` | `WORKER_QUEUE_NAME` | `jobs` | RabbitMQ queue name |
-| `worker.exchange` | `WORKER_EXCHANGE` | `""` | RabbitMQ exchange name |
-| `rabbitmq.enabled` | `RABBITMQ_ENABLED` | `false` | Enable RabbitMQ connection |
+| `queue.backend` | `QUEUE_BACKEND` | `""` (unset) | Queue tier: `goroutine`, `rabbitmq`, or `redis` (reserved) |
+| `worker.in_process` | `WORKER_IN_PROCESS` | `true` | Consume jobs inside the API process (required with `goroutine`, forbidden with `rabbitmq`) |
+| `worker.concurrency` | `WORKER_CONCURRENCY` | `2` | Number of consumer goroutines |
+| `worker.queue_name` | `WORKER_QUEUE_NAME` | `jobs` | Queue name |
+| `worker.exchange` | `WORKER_EXCHANGE` | `""` | Exchange name (RabbitMQ tier) |
+| `rabbitmq.enabled` | `RABBITMQ_ENABLED` | `false` | Deprecated alias: when `queue.backend` is unset, `true` selects `rabbitmq` |
 | `rabbitmq.url` | `RABBITMQ_URL` | (none) | RabbitMQ connection URL |
 | `rabbitmq.prefetch_count` | `RABBITMQ_PREFETCH_COUNT` | `10` | Per-consumer unacknowledged message limit |
+
+## Backend Spectrum
+
+Three tiers behind `port.Queue` (see ADR-010):
+
+- `goroutine` (default): zero infrastructure. Jobs live in process memory
+  and die with the process — best-effort durability. Always consumed
+  in-process: the API starts its worker before the HTTP listener, and boot
+  fails if the worker cannot start. Nothing to operate.
+- `rabbitmq`: durable tier. The broker must be reachable or boot fails (fail
+  fast — no silent fallback). Consumed by the external `cmd/worker`
+  process; the API never joins consumption as a competing consumer.
+- `redis`: reserved enum value. Resolves to a boot error until implemented.
+
+When `queue.backend` is unset, the deprecated `rabbitmq.enabled` alias
+applies (`true` → `rabbitmq`, `false` → `goroutine`). Unknown values fail
+boot. The old `worker.enabled` key is deleted; unknown JSON keys are
+otherwise ignored.
+
+### Operator upgrade notes
+
+- At rest, `rabbitmq.enabled=false` now resolves to `goroutine`: jobs are
+  consumed in-process instead of silently dropped. Ensure
+  `worker.in_process=true` (the shipped default) or boot fails with the
+  corrective setting named.
+- `rabbitmq.enabled=true` resolves to `rabbitmq` unchanged.
+- Recommended: set `queue.backend` explicitly and drop `worker.enabled` /
+  `RABBITMQ_ENABLED` from your config.
 
 ## Channel & Reconnect Behavior
 

@@ -8,7 +8,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- Queue backend spectrum (v1.3, #84/#90): `queue.backend` (`goroutine` | `rabbitmq` | `redis`-reserved) with a `GoroutineQueue` in-memory tier (zero infrastructure, best-effort durability) and an in-process worker that starts before the HTTP listener with its own shutdown drain phase. ADR-010; spec: `docs/features/background-jobs.md`.
 - Notification system (v1.3 Phase 2, #72): pluggable `port.NotificationSender` with webhook and NoOp backends (`internal/adapter/notification/`), a `notification.send` worker handler (`internal/worker/handlers/notification_handler.go`), and `notification.enabled` / `notification.webhook_url` config keys (`NOTIFICATION_ENABLED`, `NOTIFICATION_WEBHOOK_URL`). Jobs dispatch through the existing `/api/jobs/dispatch` API; `notification.send` is re-added to the job-type registry. Spec: `docs/features/notifications.md`.
+
+### Changed
+
+- Queue config: `rabbitmq.enabled` is now a deprecated alias (applies only when `queue.backend` is unset); the dead `worker.enabled` key is deleted and `worker.in_process` is required with the `goroutine` backend. Operator action: set `queue.backend` explicitly and ensure `worker.in_process` matches the backend matrix (`goroutine`+in-process, `rabbitmq`+external `cmd/worker`); unreachable RabbitMQ brokers now fail boot instead of silently falling back to NoOp.
 
 ## [1.2.0] - 2026-07-08
 

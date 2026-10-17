@@ -111,6 +111,7 @@ Then set the feature flags in `.env`:
 cp .env.example .env
 # Edit .env:
 # REDIS_ENABLED=true
+# QUEUE_BACKEND=rabbitmq  # durable tier (needs a broker)
 # RABBITMQ_ENABLED=true
 ```
 
