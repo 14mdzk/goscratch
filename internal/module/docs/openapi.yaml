@@ -57,10 +57,29 @@ paths:
       operationId: readinessCheck
       tags: [Health]
       summary: Readiness check
-      description: Checks if the application is ready to serve traffic (database, cache, etc.).
+      description: |
+        Runs all dependency sub-checks (database, cache, queue, authz) in
+        parallel under a shared deadline (default 2 s, configurable via
+        `HEALTH_READINESS_TIMEOUT_SEC`). Returns 200 with status `ready`
+        when every check passes, 503 with status `degraded` when any check
+        fails; the body maps each check name to `ok` or a short sanitised
+        reason. Disabled dependencies report `<name>(noop)` and always pass
+        so they do not cause spurious 503s. Use as a Kubernetes readiness
+        probe target.
       responses:
         "200":
-          description: Service is ready
+          description: All dependency checks passed
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/SuccessResponse"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/HealthCheckResponse"
+        "503":
+          description: One or more dependency checks failed
           content:
             application/json:
               schema:
@@ -76,7 +95,10 @@ paths:
       operationId: livenessCheck
       tags: [Health]
       summary: Liveness check
-      description: Checks if the application process is alive.
+      description: |
+        Checks if the application process is alive. Always returns 200 — it
+        does not probe any dependency. Use as a Kubernetes liveness probe
+        target.
       responses:
         "200":
           description: Service is alive
@@ -1452,7 +1474,10 @@ components:
       properties:
         status:
           type: string
-          enum: [ok, ready, alive]
+          # Top-level status only: ready (all checks pass), degraded (503,
+          # at least one check failed), alive (liveness). Per-check results
+          # live in `checks` as "ok" or a reason string.
+          enum: [ready, alive, degraded]
         timestamp:
           type: string
           format: date-time
