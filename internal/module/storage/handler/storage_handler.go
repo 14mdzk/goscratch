@@ -5,10 +5,11 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/gofiber/fiber/v2"
+
 	"github.com/14mdzk/goscratch/internal/module/storage/usecase"
 	"github.com/14mdzk/goscratch/pkg/apperr"
 	"github.com/14mdzk/goscratch/pkg/response"
-	"github.com/gofiber/fiber/v2"
 )
 
 // Handler handles storage HTTP requests

@@ -8,10 +8,11 @@ import (
 	"sync"
 	"time"
 
+	"github.com/gofiber/fiber/v2"
+
 	"github.com/14mdzk/goscratch/internal/port"
 	"github.com/14mdzk/goscratch/pkg/apperr"
 	"github.com/14mdzk/goscratch/pkg/response"
-	"github.com/gofiber/fiber/v2"
 )
 
 // RateLimitConfig holds rate limiting configuration

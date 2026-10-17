@@ -1,11 +1,12 @@
 package role
 
 import (
+	"github.com/gofiber/fiber/v2"
+
 	"github.com/14mdzk/goscratch/internal/module/role/handler"
 	"github.com/14mdzk/goscratch/internal/module/role/usecase"
 	"github.com/14mdzk/goscratch/internal/platform/http/middleware"
 	"github.com/14mdzk/goscratch/internal/port"
-	"github.com/gofiber/fiber/v2"
 )
 
 // Module represents the role management module

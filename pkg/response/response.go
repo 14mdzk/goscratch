@@ -1,8 +1,9 @@
 package response
 
 import (
-	"github.com/14mdzk/goscratch/pkg/apperr"
 	"github.com/gofiber/fiber/v2"
+
+	"github.com/14mdzk/goscratch/pkg/apperr"
 )
 
 // Response represents a standard API response

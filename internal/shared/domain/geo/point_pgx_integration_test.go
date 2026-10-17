@@ -7,11 +7,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/14mdzk/goscratch/internal/shared/domain/geo"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/modules/postgres"
 	"github.com/testcontainers/testcontainers-go/wait"
+
+	"github.com/14mdzk/goscratch/internal/shared/domain/geo"
 )
 
 // startPostGIS spins up a postgis/postgis:18-master container with PostGIS
@@ -98,7 +99,7 @@ func TestPointRoundTripPostGIS(t *testing.T) {
 		{"antipode", geo.MustPoint(-179.9999, -89.9999)},
 		{"max", geo.MustPoint(180, 90)},
 		{"min", geo.MustPoint(-180, -90)},
-		{"prime meridian", geo.MustPoint(0, 51.4779)},  // Greenwich
+		{"prime meridian", geo.MustPoint(0, 51.4779)}, // Greenwich
 		{"new york", geo.MustPoint(-74.006, 40.7128)},
 	}
 

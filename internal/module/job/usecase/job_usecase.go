@@ -4,10 +4,11 @@ import (
 	"context"
 	"time"
 
+	"github.com/google/uuid"
+
 	"github.com/14mdzk/goscratch/internal/module/job/dto"
 	"github.com/14mdzk/goscratch/internal/worker"
 	"github.com/14mdzk/goscratch/pkg/apperr"
-	"github.com/google/uuid"
 )
 
 // validJobTypes maps job type identifiers to their descriptions

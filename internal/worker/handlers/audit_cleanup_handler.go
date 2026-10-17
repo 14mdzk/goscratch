@@ -5,9 +5,10 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
+
 	"github.com/14mdzk/goscratch/internal/worker"
 	"github.com/14mdzk/goscratch/pkg/logger"
-	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 // AuditCleanupPayload represents the data for audit log cleanup

@@ -78,6 +78,9 @@ formatters:
   enable:
     - gofmt
     - goimports
+  settings:
+    goimports:
+      local-prefixes: github.com/14mdzk/goscratch
 
 issues:
   max-issues-per-linter: 50

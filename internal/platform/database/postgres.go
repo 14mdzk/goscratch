@@ -5,10 +5,11 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/14mdzk/goscratch/internal/platform/config"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/14mdzk/goscratch/internal/platform/config"
 )
 
 // DBTX is the interface satisfied by both *pgxpool.Pool and pgx.Tx.

@@ -6,9 +6,10 @@ import (
 	"log"
 	"os"
 
+	"golang.org/x/crypto/bcrypt"
+
 	"github.com/14mdzk/goscratch/internal/platform/config"
 	"github.com/14mdzk/goscratch/internal/platform/database"
-	"golang.org/x/crypto/bcrypt"
 )
 
 // Default role permissions (p_type = 'p', v0 = role, v1 = object, v2 = action)

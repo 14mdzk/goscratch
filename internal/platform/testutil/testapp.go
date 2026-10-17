@@ -7,6 +7,10 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/gofiber/fiber/v2"
+	"github.com/golang-jwt/jwt/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
+
 	"github.com/14mdzk/goscratch/internal/adapter/audit"
 	"github.com/14mdzk/goscratch/internal/adapter/cache"
 	casbinadapter "github.com/14mdzk/goscratch/internal/adapter/casbin"
@@ -15,21 +19,18 @@ import (
 	"github.com/14mdzk/goscratch/internal/adapter/storage"
 	"github.com/14mdzk/goscratch/internal/module/auth"
 	"github.com/14mdzk/goscratch/internal/module/health"
-	userrepo "github.com/14mdzk/goscratch/internal/module/user/repository"
 	"github.com/14mdzk/goscratch/internal/module/job"
 	"github.com/14mdzk/goscratch/internal/module/role"
 	ssemodule "github.com/14mdzk/goscratch/internal/module/sse"
 	storagemodule "github.com/14mdzk/goscratch/internal/module/storage"
 	"github.com/14mdzk/goscratch/internal/module/user"
+	userrepo "github.com/14mdzk/goscratch/internal/module/user/repository"
 	"github.com/14mdzk/goscratch/internal/platform/config"
 	"github.com/14mdzk/goscratch/internal/platform/database"
 	httpserver "github.com/14mdzk/goscratch/internal/platform/http"
 	"github.com/14mdzk/goscratch/internal/port"
 	"github.com/14mdzk/goscratch/internal/worker"
 	"github.com/14mdzk/goscratch/pkg/logger"
-	"github.com/gofiber/fiber/v2"
-	"github.com/golang-jwt/jwt/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 const testJWTSecret = "integration-test-secret-key-minimum-length"
@@ -176,4 +177,3 @@ func GenerateAccessToken(userID, email, name string) (string, error) {
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	return token.SignedString([]byte(testJWTSecret))
 }
-

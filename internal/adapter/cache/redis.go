@@ -7,8 +7,9 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/14mdzk/goscratch/internal/port"
 	"github.com/redis/go-redis/v9"
+
+	"github.com/14mdzk/goscratch/internal/port"
 )
 
 // RedisCache implements port.Cache using Redis

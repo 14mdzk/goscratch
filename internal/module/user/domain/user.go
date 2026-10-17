@@ -3,8 +3,9 @@ package domain
 import (
 	"time"
 
-	"github.com/14mdzk/goscratch/pkg/types"
 	"github.com/google/uuid"
+
+	"github.com/14mdzk/goscratch/pkg/types"
 )
 
 // User represents a user entity

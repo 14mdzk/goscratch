@@ -1,12 +1,13 @@
 package handler
 
 import (
+	"github.com/gofiber/fiber/v2"
+
 	"github.com/14mdzk/goscratch/internal/module/auth/dto"
 	"github.com/14mdzk/goscratch/internal/module/auth/usecase"
 	"github.com/14mdzk/goscratch/internal/platform/http/middleware"
 	"github.com/14mdzk/goscratch/internal/platform/validator"
 	"github.com/14mdzk/goscratch/pkg/response"
-	"github.com/gofiber/fiber/v2"
 )
 
 // Handler handles auth HTTP requests

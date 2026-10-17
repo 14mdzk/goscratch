@@ -14,13 +14,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/14mdzk/goscratch/internal/platform/testutil"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/crypto/bcrypt"
+
+	"github.com/14mdzk/goscratch/internal/platform/testutil"
 )
 
 // tokenHash mirrors the key-derivation logic in auth_usecase.go without

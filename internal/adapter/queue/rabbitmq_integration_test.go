@@ -7,10 +7,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/14mdzk/goscratch/internal/adapter/queue"
-	"github.com/14mdzk/goscratch/internal/platform/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/14mdzk/goscratch/internal/adapter/queue"
+	"github.com/14mdzk/goscratch/internal/platform/testutil"
 )
 
 func TestRabbitMQ_LiveBroker_PublishConsume(t *testing.T) {

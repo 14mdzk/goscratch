@@ -4,9 +4,10 @@ import (
 	"context"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+
 	"github.com/14mdzk/goscratch/internal/port"
 	"github.com/14mdzk/goscratch/pkg/logger"
-	"github.com/stretchr/testify/assert"
 )
 
 func TestExtractAuditContext_TypedKeys(t *testing.T) {

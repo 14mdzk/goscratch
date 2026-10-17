@@ -8,11 +8,12 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/14mdzk/goscratch/internal/module/user/dto"
-	"github.com/14mdzk/goscratch/internal/module/user/usecase"
 	"github.com/gofiber/fiber/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/14mdzk/goscratch/internal/module/user/dto"
+	"github.com/14mdzk/goscratch/internal/module/user/usecase"
 )
 
 // parseResponse reads and parses JSON response body

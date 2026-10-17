@@ -10,10 +10,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/14mdzk/goscratch/internal/module/storage/dto"
-	"github.com/14mdzk/goscratch/internal/port"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
+
+	"github.com/14mdzk/goscratch/internal/module/storage/dto"
+	"github.com/14mdzk/goscratch/internal/port"
 )
 
 // mockStorageUseCase is a testify mock satisfying the UseCase interface.

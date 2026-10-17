@@ -3,8 +3,9 @@ package middleware
 import (
 	"time"
 
-	"github.com/14mdzk/goscratch/pkg/logger"
 	"github.com/gofiber/fiber/v2"
+
+	"github.com/14mdzk/goscratch/pkg/logger"
 )
 
 // Logger returns a middleware that logs HTTP requests

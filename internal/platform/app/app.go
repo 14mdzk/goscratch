@@ -8,6 +8,11 @@ import (
 	nethttp "net/http"
 	"time"
 
+	"github.com/casbin/casbin/v3/persist"
+	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"github.com/redis/go-redis/v9"
+
 	"github.com/14mdzk/goscratch/internal/adapter/audit"
 	"github.com/14mdzk/goscratch/internal/adapter/cache"
 	casbinadapter "github.com/14mdzk/goscratch/internal/adapter/casbin"
@@ -34,10 +39,6 @@ import (
 	"github.com/14mdzk/goscratch/internal/worker"
 	"github.com/14mdzk/goscratch/internal/worker/handlers"
 	"github.com/14mdzk/goscratch/pkg/logger"
-	"github.com/casbin/casbin/v3/persist"
-	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
-	"github.com/redis/go-redis/v9"
 )
 
 // App holds all application dependencies

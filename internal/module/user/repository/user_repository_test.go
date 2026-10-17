@@ -6,10 +6,11 @@ import (
 	"context"
 	"testing"
 
-	"github.com/14mdzk/goscratch/internal/module/user/domain"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/14mdzk/goscratch/internal/module/user/domain"
 )
 
 // TestRepository runs integration tests against the database

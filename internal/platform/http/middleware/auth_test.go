@@ -8,12 +8,13 @@ import (
 	"testing"
 	"time"
 
-	authdomain "github.com/14mdzk/goscratch/internal/module/auth/domain"
-	"github.com/14mdzk/goscratch/pkg/logger"
 	"github.com/gofiber/fiber/v2"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	authdomain "github.com/14mdzk/goscratch/internal/module/auth/domain"
+	"github.com/14mdzk/goscratch/pkg/logger"
 )
 
 const testJWTSecret = "test-secret-key-for-unit-tests"
