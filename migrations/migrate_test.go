@@ -67,7 +67,7 @@ func TestMigrations_UpDownRoundTrip(t *testing.T) {
 	version, dirty, err := m.Version()
 	require.NoError(t, err)
 	assert.False(t, dirty, "migration left a dirty version")
-	assert.Equal(t, uint(4), version, "expected all 4 migrations applied")
+	assert.Equal(t, uint(5), version, "expected all 5 migrations applied")
 
 	// Sanity: the migrated objects exist.
 	pool, err := pgxpool.New(ctx, connStr)

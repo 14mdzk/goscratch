@@ -28,6 +28,8 @@ tags:
     description: Server-Sent Events endpoints
   - name: Jobs
     description: Background job endpoints
+  - name: Audit
+    description: Audit log query endpoints
 
 paths:
   # ── Health ──────────────────────────────────────────────────────────────
@@ -1176,6 +1178,66 @@ paths:
         "500":
           $ref: "#/components/responses/InternalError"
 
+  /audit/logs:
+    get:
+      operationId: listAuditLogs
+      tags: [Audit]
+      summary: List audit log entries
+      description: Returns a cursor-paginated list of audit log entries with optional filters. Requires `audit:read` permission.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+        - name: action
+          in: query
+          description: Filter by action name (exact match)
+          schema:
+            type: string
+        - name: user_id
+          in: query
+          description: Filter by user UUID (exact match)
+          schema:
+            type: string
+            format: uuid
+        - name: resource
+          in: query
+          description: Filter by resource type (exact match)
+          schema:
+            type: string
+        - name: resource_id
+          in: query
+          description: Filter by resource ID (exact match)
+          schema:
+            type: string
+        - name: start_time
+          in: query
+          description: Filter entries at or after this time (RFC3339)
+          schema:
+            type: string
+            format: date-time
+        - name: end_time
+          in: query
+          description: Filter entries at or before this time (RFC3339)
+          schema:
+            type: string
+            format: date-time
+      responses:
+        "200":
+          description: Paginated audit log entries
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaginatedAuditLogResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
 # ══════════════════════════════════════════════════════════════════════════
 # Components
 # ══════════════════════════════════════════════════════════════════════════
@@ -1768,3 +1830,52 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/JobTypeInfo"
+
+    # ── Audit ─────────────────────────────────────────────────────────────
+    AuditLogResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        user_id:
+          type: string
+          format: uuid
+        action:
+          type: string
+        resource:
+          type: string
+        resource_id:
+          type: string
+        metadata:
+          type: object
+          additionalProperties: true
+        ip_address:
+          type: string
+        user_agent:
+          type: string
+        timestamp:
+          type: string
+          format: date-time
+      required:
+        - id
+        - action
+        - resource
+        - timestamp
+
+    PaginatedAuditLogResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/AuditLogResponse"
+        pagination:
+          $ref: "#/components/schemas/PaginationMeta"
+      required:
+        - success
+        - data
+        - pagination

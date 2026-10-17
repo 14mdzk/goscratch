@@ -2,7 +2,13 @@ package port
 
 import (
 	"context"
+	"encoding/base64"
+	"errors"
+	"fmt"
+	"strings"
 	"time"
+
+	"github.com/google/uuid"
 
 	"github.com/14mdzk/goscratch/pkg/logger"
 )
@@ -55,7 +61,41 @@ type AuditFilter struct {
 	StartTime  *time.Time
 	EndTime    *time.Time
 	Limit      int
-	Cursor     string
+	// Cursor is an opaque keyset token minted by EncodeAuditCursor: rows
+	// strictly older than the cursor position are returned. Empty = first page.
+	Cursor string
+}
+
+// EncodeAuditCursor mints an opaque keyset cursor for (createdAt, id).
+// The pair orders audit rows deterministically under ORDER BY
+// created_at DESC, id DESC.
+func EncodeAuditCursor(createdAt time.Time, id string) string {
+	raw := createdAt.UTC().Format(time.RFC3339Nano) + "|" + id
+	return base64.URLEncoding.EncodeToString([]byte(raw))
+}
+
+// ErrInvalidAuditCursor marks cursor-decode failures. The adapter surfaces
+// them unchanged so callers can map them to 400 with errors.Is.
+var ErrInvalidAuditCursor = errors.New("invalid audit cursor")
+
+// DecodeAuditCursor parses a cursor minted by EncodeAuditCursor.
+func DecodeAuditCursor(cursor string) (time.Time, string, error) {
+	raw, err := base64.URLEncoding.DecodeString(cursor)
+	if err != nil {
+		return time.Time{}, "", fmt.Errorf("%w: %w", ErrInvalidAuditCursor, err)
+	}
+	ts, id, ok := strings.Cut(string(raw), "|")
+	if !ok || id == "" {
+		return time.Time{}, "", fmt.Errorf("%w: malformed payload", ErrInvalidAuditCursor)
+	}
+	if _, err := uuid.Parse(id); err != nil {
+		return time.Time{}, "", fmt.Errorf("%w: %w", ErrInvalidAuditCursor, err)
+	}
+	createdAt, err := time.Parse(time.RFC3339Nano, ts)
+	if err != nil {
+		return time.Time{}, "", fmt.Errorf("%w: %w", ErrInvalidAuditCursor, err)
+	}
+	return createdAt, id, nil
 }
 
 // AuditContext extracts audit-relevant information from context

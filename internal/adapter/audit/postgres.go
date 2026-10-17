@@ -114,7 +114,22 @@ func (a *PostgresAuditor) Query(ctx context.Context, filter port.AuditFilter) ([
 		argIndex++
 	}
 
-	query += " ORDER BY created_at DESC"
+	// Keyset cursor: rows strictly older than the cursor position under the
+	// page order below. An invalid cursor fails the query (fail-closed; the
+	// handler maps it to 400).
+	if filter.Cursor != "" {
+		cursorTime, cursorID, err := port.DecodeAuditCursor(filter.Cursor)
+		if err != nil {
+			return nil, err
+		}
+		query += fmt.Sprintf(" AND (created_at, id) < ($%d, $%d::uuid)", argIndex, argIndex+1)
+		args = append(args, cursorTime, cursorID)
+		argIndex += 2
+	}
+
+	// id tiebreak makes the order deterministic for equal timestamps, which
+	// the keyset cursor requires.
+	query += " ORDER BY created_at DESC, id DESC"
 
 	limit := filter.Limit
 	if limit <= 0 {
