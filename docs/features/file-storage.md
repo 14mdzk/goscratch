@@ -137,7 +137,7 @@ File paths are sanitized in two layers:
 - `internal/module/storage/` - Handler, usecase, DTO, domain
 - `internal/adapter/storage/` - Local and S3 adapters implementing `port.Storage`
 - Uploaded files get a UUID-based unique name preserving the original extension
-- If S3 initialization fails, falls back to local storage automatically
+- When `storage.mode` is `"s3"`, startup fails fast if S3 initialization fails (including a missing `storage.s3.bucket`) rather than silently falling back to pod-local disk; unsupported `storage.mode` values are rejected at boot
 
 ## Audit Logging
 

@@ -3,8 +3,11 @@ package app
 import (
 	"bytes"
 	"context"
+	"net"
+	"strconv"
 	"testing"
 
+	"github.com/alicebob/miniredis/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -13,6 +16,7 @@ import (
 	notificationadapter "github.com/14mdzk/goscratch/internal/adapter/notification"
 	"github.com/14mdzk/goscratch/internal/adapter/queue"
 	"github.com/14mdzk/goscratch/internal/adapter/sse"
+	"github.com/14mdzk/goscratch/internal/adapter/storage"
 	"github.com/14mdzk/goscratch/internal/platform/config"
 	"github.com/14mdzk/goscratch/internal/worker"
 	"github.com/14mdzk/goscratch/pkg/logger"
@@ -64,7 +68,9 @@ func TestInitAdapters_DisabledUseNoOp(t *testing.T) {
 		},
 	}
 
-	assert.IsType(t, &cache.NoOpCache{}, initCache(cfg, log))
+	cacheAdapter, err := initCache(cfg, log)
+	require.NoError(t, err)
+	assert.IsType(t, &cache.NoOpCache{}, cacheAdapter)
 	assert.IsType(t, &sse.NoOpBroker{}, initSSE(cfg))
 	assert.IsType(t, &emailadapter.NoOpSender{}, initEmail(cfg, log))
 	assert.IsType(t, &notificationadapter.NoOpSender{}, initNotification(cfg, log))
@@ -78,6 +84,103 @@ func TestInitAdapters_DisabledUseNoOp(t *testing.T) {
 	require.NoError(t, err)
 	assert.NotNil(t, st)
 	_ = st.Close()
+}
+
+func TestInitCache_FailFastWhenEnabledAndUnreachable(t *testing.T) {
+	log := newWiringTestLogger()
+
+	// Bind and immediately close an ephemeral TCP port so dialing fails fast
+	// with connection refused rather than waiting for a timeout.
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	host, portStr, err := net.SplitHostPort(ln.Addr().String())
+	require.NoError(t, err)
+	require.NoError(t, ln.Close())
+	portNum, err := strconv.Atoi(portStr)
+	require.NoError(t, err)
+
+	cfg := &config.Config{
+		Redis: config.RedisConfig{
+			Enabled: true,
+			Host:    host,
+			Port:    portNum,
+		},
+	}
+
+	got, err := initCache(cfg, log)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "redis enabled but unreachable")
+	assert.Nil(t, got)
+}
+
+func TestInitCache_EnabledConnects(t *testing.T) {
+	log := newWiringTestLogger()
+	mr := miniredis.RunT(t)
+
+	host, portStr, err := net.SplitHostPort(mr.Addr())
+	require.NoError(t, err)
+	portNum, err := strconv.Atoi(portStr)
+	require.NoError(t, err)
+
+	cfg := &config.Config{
+		Redis: config.RedisConfig{
+			Enabled: true,
+			Host:    host,
+			Port:    portNum,
+		},
+	}
+
+	got, err := initCache(cfg, log)
+	require.NoError(t, err)
+	assert.IsType(t, &cache.RedisCache{}, got)
+	require.NoError(t, got.Close())
+}
+
+func TestInitStorage_FailFast(t *testing.T) {
+	log := newWiringTestLogger()
+
+	t.Run("s3_init_failure_does_not_fallback_to_local", func(t *testing.T) {
+		cfg := &config.Config{
+			Storage: config.StorageConfig{
+				Mode:  "s3",
+				Local: config.LocalStorage{BasePath: t.TempDir()},
+				S3:    config.S3Storage{Region: "us-east-1"}, // missing bucket
+			},
+		}
+
+		got, err := initStorage(context.Background(), cfg, log)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "s3 storage enabled but init failed")
+		assert.Nil(t, got)
+	})
+
+	t.Run("unsupported_mode_fails_fast", func(t *testing.T) {
+		cfg := &config.Config{
+			Storage: config.StorageConfig{
+				Mode:  "gcs",
+				Local: config.LocalStorage{BasePath: t.TempDir()},
+			},
+		}
+
+		got, err := initStorage(context.Background(), cfg, log)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "unsupported storage.mode")
+		assert.Nil(t, got)
+	})
+
+	t.Run("empty_mode_uses_local_storage", func(t *testing.T) {
+		cfg := &config.Config{
+			Storage: config.StorageConfig{
+				Mode:  "",
+				Local: config.LocalStorage{BasePath: t.TempDir()},
+			},
+		}
+
+		got, err := initStorage(context.Background(), cfg, log)
+		require.NoError(t, err)
+		assert.IsType(t, &storage.LocalStorage{}, got)
+		require.NoError(t, got.Close())
+	})
 }
 
 func TestInitQueue_Goroutine(t *testing.T) {

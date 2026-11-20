@@ -50,15 +50,24 @@ func initInfra(ctx context.Context, cfg *config.Config, log *logger.Logger) (*in
 	}
 	log.Info("Database connected successfully")
 
-	cacheAdapter := initCache(cfg, log)
+	cacheAdapter, err := initCache(cfg, log)
+	if err != nil {
+		pool.Close()
+		return nil, err
+	}
 
 	queueAdapter, queueBackend, err := initQueue(cfg, log)
 	if err != nil {
+		_ = cacheAdapter.Close()
+		pool.Close()
 		return nil, err
 	}
 
 	storageAdapter, err := initStorage(ctx, cfg, log)
 	if err != nil {
+		_ = queueAdapter.Close()
+		_ = cacheAdapter.Close()
+		pool.Close()
 		return nil, err
 	}
 
@@ -67,6 +76,10 @@ func initInfra(ctx context.Context, cfg *config.Config, log *logger.Logger) (*in
 
 	authorizer, watcherRedisClient, err := initAuthorizer(ctx, cfg, log)
 	if err != nil {
+		_ = storageAdapter.Close()
+		_ = queueAdapter.Close()
+		_ = cacheAdapter.Close()
+		pool.Close()
 		return nil, err
 	}
 
@@ -109,28 +122,22 @@ func initTracer(ctx context.Context, cfg *config.Config, log *logger.Logger) fun
 	return shutdown
 }
 
-// initCache initializes Redis or falls back to NoOpCache.
-// WARNING: NoOpCache is a no-op that cannot store or revoke refresh tokens.
-// Running with NoOpCache means:
-//   - Login will be rejected (fail-closed refresh-token gating).
-//   - ChangePassword session revocation will not function.
-//
-// Enable Redis (redis.enabled=true) for any environment that issues JWTs.
-func initCache(cfg *config.Config, log *logger.Logger) port.Cache {
+// initCache initializes Redis when enabled, or returns NoOpCache when explicitly
+// disabled. When redis.enabled=true and Redis is unreachable, boot fails fast
+// rather than silently starting with broken login and session revocation.
+func initCache(cfg *config.Config, log *logger.Logger) (port.Cache, error) {
 	if !cfg.Redis.Enabled {
 		log.Warn("SECURITY WARNING: Redis is disabled (redis.enabled=false); login will be rejected and refresh-token revocation will not function")
-		return cache.NewNoOpCache()
+		return cache.NewNoOpCache(), nil
 	}
 
 	log.Info("Connecting to Redis...")
 	cacheAdapter, err := cache.NewRedisCache(cfg.Redis.Addr(), cfg.Redis.Password, cfg.Redis.DB)
 	if err != nil {
-		log.Warn("Failed to connect to Redis, using no-op cache", "error", err)
-		log.Warn("SECURITY WARNING: cache is unavailable; login will be rejected and refresh-token revocation will not function")
-		return cache.NewNoOpCache()
+		return nil, fmt.Errorf("redis enabled but unreachable: %w", err)
 	}
 	log.Info("Redis connected successfully")
-	return cacheAdapter
+	return cacheAdapter, nil
 }
 
 // initQueue initializes the queue adapter by resolved backend. Durable tiers
@@ -165,11 +172,13 @@ func initQueue(cfg *config.Config, log *logger.Logger) (port.Queue, config.Queue
 	}
 }
 
+// initStorage initializes the configured storage backend. When storage.mode is
+// "s3", initialization errors fail boot rather than silently falling back to
+// pod-local disk. Unknown modes are rejected.
 func initStorage(ctx context.Context, cfg *config.Config, log *logger.Logger) (port.Storage, error) {
 	switch cfg.Storage.Mode {
 	case "s3":
 		log.Info("Initializing S3 storage...")
-		var storageAdapter port.Storage
 		storageAdapter, err := storage.NewS3Storage(ctx, storage.S3Config{
 			Endpoint:  cfg.Storage.S3.Endpoint,
 			Bucket:    cfg.Storage.S3.Bucket,
@@ -178,13 +187,14 @@ func initStorage(ctx context.Context, cfg *config.Config, log *logger.Logger) (p
 			SecretKey: cfg.Storage.S3.SecretKey,
 		})
 		if err != nil {
-			log.Warn("Failed to initialize S3 storage, falling back to local", "error", err)
-			storageAdapter, _ = storage.NewLocalStorage(cfg.Storage.Local.BasePath, "")
+			return nil, fmt.Errorf("s3 storage enabled but init failed: %w", err)
 		}
 		return storageAdapter, nil
-	default:
+	case "", "local":
 		log.Info("Initializing local storage...")
 		return storage.NewLocalStorage(cfg.Storage.Local.BasePath, "")
+	default:
+		return nil, fmt.Errorf("unsupported storage.mode %q: must be \"local\" or \"s3\"", cfg.Storage.Mode)
 	}
 }
 

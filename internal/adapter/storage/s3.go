@@ -33,6 +33,10 @@ type S3Config struct {
 
 // NewS3Storage creates a new S3 storage instance
 func NewS3Storage(ctx context.Context, cfg S3Config) (*S3Storage, error) {
+	if cfg.Bucket == "" {
+		return nil, fmt.Errorf("s3 storage requires a non-empty bucket")
+	}
+
 	// Create custom credentials provider
 	creds := credentials.NewStaticCredentialsProvider(cfg.AccessKey, cfg.SecretKey, "")
 
