@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- Auth middleware injection: build the JWT `middleware.Auth` handler once in `internal/platform/app/modules.go` via `middleware.AuthConfigFromJWT(cfg.JWT)` and inject it into all 7 protected modules (`auth`, `user`, `role`, `storage`, `sse`, `job`, `audit`), removing repeated `jwtSecret`/`jwtPreviousSecret` constructor plumbing and fixing a bug where custom `JWT_ISSUER` / `JWT_AUDIENCE` values were ignored by module middleware.
 - App wiring refactor: split `internal/platform/app/app.go` into cohesive `infra.go`, `http.go`, and `modules.go` files; deduplicated worker handler registration via `handlers.RegisterDefault`; replaced hardcoded tracing `ServiceVersion` (`"1.0.0"`) with build-time `internal/platform/version.Version` wired via `ldflags` in `Makefile` and `Dockerfile`.
 - Repo hygiene: track `AGENTS.md` for team/agent workflow consistency and ignore ephemeral AI tooling directories and local worktrees (`.claude/worktrees/`, `.claude/scheduled_tasks.lock`, `.claude/settings.local.json`, `.codex/`, `.commandcode/`, `.muse/`, `.worktrees/`).
 

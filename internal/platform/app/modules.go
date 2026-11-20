@@ -14,6 +14,7 @@ import (
 	"github.com/14mdzk/goscratch/internal/platform/config"
 	"github.com/14mdzk/goscratch/internal/platform/database"
 	"github.com/14mdzk/goscratch/internal/platform/http"
+	"github.com/14mdzk/goscratch/internal/platform/http/middleware"
 	"github.com/14mdzk/goscratch/internal/worker"
 	"github.com/14mdzk/goscratch/internal/worker/handlers"
 	"github.com/14mdzk/goscratch/pkg/logger"
@@ -43,15 +44,20 @@ func initModules(cfg *config.Config, log *logger.Logger, infra *infraDeps, serve
 	// own userrepo.Repository).
 	sharedUserRepo := userrepo.NewRepository(infra.db)
 
+	// Build the JWT auth middleware once from cfg.JWT (including configured
+	// issuer, audience, and overlap-rotation secret) and inject it into every
+	// module that mounts protected routes.
+	authMiddleware := middleware.Auth(middleware.AuthConfigFromJWT(cfg.JWT))
+
 	// Auth module is constructed first so its Revoker can be injected into the
 	// user module (ChangePassword must revoke auth sessions cross-module).
-	authModule := auth.NewModule(sharedUserRepo, infra.cache, infra.auditor, cfg.JWT)
-	userModule := user.NewModule(infra.db, transactor, infra.auditor, infra.authorizer, infra.cache, cfg.JWT.Secret, cfg.JWT.PreviousSecret, authModule.Revoker())
-	roleModule := role.NewModule(infra.authorizer, cfg.JWT.Secret, cfg.JWT.PreviousSecret)
-	storageModule := storagemodule.NewModule(infra.storage, infra.auditor, cfg.JWT.Secret, cfg.JWT.PreviousSecret)
-	sseModule := ssemodule.NewModule(infra.sse, infra.authorizer, cfg.JWT.Secret, cfg.JWT.PreviousSecret)
-	jobModule := job.NewModule(publisher, infra.auditor, infra.authorizer, cfg.JWT.Secret, cfg.JWT.PreviousSecret)
-	auditModule := auditmodule.NewModule(infra.auditor, infra.authorizer, cfg.JWT.Secret, cfg.JWT.PreviousSecret)
+	authModule := auth.NewModule(sharedUserRepo, infra.cache, infra.auditor, cfg.JWT, authMiddleware)
+	userModule := user.NewModule(infra.db, transactor, infra.auditor, infra.authorizer, infra.cache, authMiddleware, authModule.Revoker())
+	roleModule := role.NewModule(infra.authorizer, authMiddleware)
+	storageModule := storagemodule.NewModule(infra.storage, infra.auditor, authMiddleware)
+	sseModule := ssemodule.NewModule(infra.sse, infra.authorizer, authMiddleware)
+	jobModule := job.NewModule(publisher, infra.auditor, infra.authorizer, authMiddleware)
+	auditModule := auditmodule.NewModule(infra.auditor, infra.authorizer, authMiddleware)
 
 	server.RegisterModules(
 		docsModule,

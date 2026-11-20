@@ -11,28 +11,25 @@ import (
 
 // Module represents the audit module
 type Module struct {
-	handler           *handler.Handler
-	authorizer        port.Authorizer
-	jwtSecret         string
-	jwtPreviousSecret string
+	handler        *handler.Handler
+	authorizer     port.Authorizer
+	authMiddleware fiber.Handler
 }
 
 // NewModule creates a new audit module
-func NewModule(auditor port.Auditor, authorizer port.Authorizer, jwtSecret, jwtPreviousSecret string) *Module {
+func NewModule(auditor port.Auditor, authorizer port.Authorizer, authMiddleware fiber.Handler) *Module {
 	uc := usecase.NewUseCase(auditor)
 	h := handler.NewHandler(uc)
 
 	return &Module{
-		handler:           h,
-		authorizer:        authorizer,
-		jwtSecret:         jwtSecret,
-		jwtPreviousSecret: jwtPreviousSecret,
+		handler:        h,
+		authorizer:     authorizer,
+		authMiddleware: authMiddleware,
 	}
 }
 
 // RegisterRoutes registers audit module routes
 func (m *Module) RegisterRoutes(router fiber.Router) {
-	authMiddleware := middleware.Auth(middleware.DefaultAuthConfig(m.jwtSecret, m.jwtPreviousSecret))
-	audit := router.Group("/audit", authMiddleware)
+	audit := router.Group("/audit", m.authMiddleware)
 	audit.Get("/logs", middleware.RequirePermission(m.authorizer, "audit", "read"), m.handler.List)
 }

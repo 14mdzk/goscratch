@@ -12,14 +12,13 @@ import (
 
 // Module represents the job module
 type Module struct {
-	handler           *handler.Handler
-	authorizer        port.Authorizer
-	jwtSecret         string
-	jwtPreviousSecret string
+	handler        *handler.Handler
+	authorizer     port.Authorizer
+	authMiddleware fiber.Handler
 }
 
 // NewModule creates a new job module
-func NewModule(publisher *worker.Publisher, auditor port.Auditor, authorizer port.Authorizer, jwtSecret, jwtPreviousSecret string) *Module {
+func NewModule(publisher *worker.Publisher, auditor port.Auditor, authorizer port.Authorizer, authMiddleware fiber.Handler) *Module {
 	uc := usecase.NewUseCase(publisher)
 	var ucIface usecase.UseCase = uc
 	if auditor != nil {
@@ -28,21 +27,18 @@ func NewModule(publisher *worker.Publisher, auditor port.Auditor, authorizer por
 	h := handler.NewHandler(ucIface)
 
 	return &Module{
-		handler:           h,
-		authorizer:        authorizer,
-		jwtSecret:         jwtSecret,
-		jwtPreviousSecret: jwtPreviousSecret,
+		handler:        h,
+		authorizer:     authorizer,
+		authMiddleware: authMiddleware,
 	}
 }
 
 // RegisterRoutes registers job module routes
 func (m *Module) RegisterRoutes(router fiber.Router) {
-	authMiddleware := middleware.Auth(middleware.DefaultAuthConfig(m.jwtSecret, m.jwtPreviousSecret))
-
 	jobs := router.Group("/jobs")
 
 	// All job routes require authentication + admin role
-	jobs.Use(authMiddleware)
+	jobs.Use(m.authMiddleware)
 	jobs.Use(middleware.RequireRole(m.authorizer, "admin"))
 
 	jobs.Post("/dispatch", m.handler.Dispatch)

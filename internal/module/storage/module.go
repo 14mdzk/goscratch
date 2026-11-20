@@ -5,19 +5,17 @@ import (
 
 	"github.com/14mdzk/goscratch/internal/module/storage/handler"
 	"github.com/14mdzk/goscratch/internal/module/storage/usecase"
-	"github.com/14mdzk/goscratch/internal/platform/http/middleware"
 	"github.com/14mdzk/goscratch/internal/port"
 )
 
 // Module represents the storage module
 type Module struct {
-	handler           *handler.Handler
-	jwtSecret         string
-	jwtPreviousSecret string
+	handler        *handler.Handler
+	authMiddleware fiber.Handler
 }
 
 // NewModule creates a new storage module
-func NewModule(storage port.Storage, auditor port.Auditor, jwtSecret, jwtPreviousSecret string) *Module {
+func NewModule(storage port.Storage, auditor port.Auditor, authMiddleware fiber.Handler) *Module {
 	uc := usecase.NewUseCase(storage, nil)
 	var ucIface usecase.UseCase = uc
 	if auditor != nil {
@@ -26,20 +24,17 @@ func NewModule(storage port.Storage, auditor port.Auditor, jwtSecret, jwtPreviou
 	h := handler.NewHandler(ucIface)
 
 	return &Module{
-		handler:           h,
-		jwtSecret:         jwtSecret,
-		jwtPreviousSecret: jwtPreviousSecret,
+		handler:        h,
+		authMiddleware: authMiddleware,
 	}
 }
 
 // RegisterRoutes registers storage module routes
 func (m *Module) RegisterRoutes(router fiber.Router) {
-	authMiddleware := middleware.Auth(middleware.DefaultAuthConfig(m.jwtSecret, m.jwtPreviousSecret))
-
 	files := router.Group("/files")
 
 	// All routes require authentication
-	files.Use(authMiddleware)
+	files.Use(m.authMiddleware)
 
 	files.Post("/upload", m.handler.Upload)
 	files.Get("/", m.handler.List)

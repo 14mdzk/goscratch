@@ -14,6 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	authdomain "github.com/14mdzk/goscratch/internal/module/auth/domain"
+	"github.com/14mdzk/goscratch/internal/platform/config"
 	"github.com/14mdzk/goscratch/pkg/logger"
 )
 
@@ -423,4 +424,57 @@ func TestAuth_PreviousSignedTokenAccepted(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, fiber.StatusOK, resp.StatusCode)
 	assert.Equal(t, "user-123", capturedUserID)
+}
+
+func TestAuthConfigFromJWT_Defaults(t *testing.T) {
+	cfg := AuthConfigFromJWT(config.JWTConfig{
+		Secret:         testJWTSecret,
+		PreviousSecret: testJWTPreviousSecret,
+	})
+	assert.Equal(t, testJWTSecret, cfg.JWTSecret)
+	assert.Equal(t, testJWTPreviousSecret, cfg.JWTPreviousSecret)
+	assert.Equal(t, "goscratch", cfg.JWTIssuer)
+	assert.Equal(t, "goscratch-api", cfg.JWTAudience)
+}
+
+func TestAuthConfigFromJWT_CustomIssuerAndAudience(t *testing.T) {
+	app := fiber.New()
+	cfg := AuthConfigFromJWT(config.JWTConfig{
+		Secret:   testJWTSecret,
+		Issuer:   "custom-issuer",
+		Audience: "custom-audience",
+	})
+
+	var capturedUserID string
+	app.Use(Auth(cfg))
+	app.Get("/test", func(c *fiber.Ctx) error {
+		capturedUserID = GetUserID(c)
+		return c.SendStatus(fiber.StatusOK)
+	})
+
+	t.Run("accepts token matching custom issuer and audience", func(t *testing.T) {
+		claims := validClaims()
+		claims.Issuer = "custom-issuer"
+		claims.Audience = jwt.ClaimStrings{"custom-audience"}
+		token := generateTestToken(t, testJWTSecret, claims)
+
+		req := httptest.NewRequest(http.MethodGet, "/test", nil)
+		req.Header.Set("Authorization", "Bearer "+token)
+
+		resp, err := app.Test(req)
+		require.NoError(t, err)
+		assert.Equal(t, fiber.StatusOK, resp.StatusCode)
+		assert.Equal(t, "user-123", capturedUserID)
+	})
+
+	t.Run("rejects token with default issuer and audience", func(t *testing.T) {
+		token := generateTestToken(t, testJWTSecret, validClaims())
+
+		req := httptest.NewRequest(http.MethodGet, "/test", nil)
+		req.Header.Set("Authorization", "Bearer "+token)
+
+		resp, err := app.Test(req)
+		require.NoError(t, err)
+		assert.Equal(t, fiber.StatusUnauthorized, resp.StatusCode)
+	})
 }

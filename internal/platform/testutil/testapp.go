@@ -29,6 +29,7 @@ import (
 	"github.com/14mdzk/goscratch/internal/platform/config"
 	"github.com/14mdzk/goscratch/internal/platform/database"
 	httpserver "github.com/14mdzk/goscratch/internal/platform/http"
+	"github.com/14mdzk/goscratch/internal/platform/http/middleware"
 	"github.com/14mdzk/goscratch/internal/port"
 	"github.com/14mdzk/goscratch/internal/worker"
 	"github.com/14mdzk/goscratch/pkg/logger"
@@ -126,13 +127,14 @@ func NewTestApp(ctx context.Context, pgConnStr, redisAddr string) (*fiber.App, f
 		health.NewAuthzChecker(authorizer),
 	)
 	sharedUserRepo := userrepo.NewRepository(pool)
-	authModule := auth.NewModule(sharedUserRepo, cacheAdapter, auditor, jwtCfg)
-	userModule := user.NewModule(pool, transactor, auditor, authorizer, cacheAdapter, jwtCfg.Secret, jwtCfg.PreviousSecret, authModule.Revoker())
-	roleModule := role.NewModule(authorizer, jwtCfg.Secret, jwtCfg.PreviousSecret)
-	storageModule := storagemodule.NewModule(storageAdapter, auditor, jwtCfg.Secret, jwtCfg.PreviousSecret)
-	sseModule := ssemodule.NewModule(sseBroker, authorizer, jwtCfg.Secret, jwtCfg.PreviousSecret)
-	jobModule := job.NewModule(publisher, auditor, authorizer, jwtCfg.Secret, jwtCfg.PreviousSecret)
-	auditModule := auditmodule.NewModule(auditor, authorizer, jwtCfg.Secret, jwtCfg.PreviousSecret)
+	authMiddleware := middleware.Auth(middleware.AuthConfigFromJWT(jwtCfg))
+	authModule := auth.NewModule(sharedUserRepo, cacheAdapter, auditor, jwtCfg, authMiddleware)
+	userModule := user.NewModule(pool, transactor, auditor, authorizer, cacheAdapter, authMiddleware, authModule.Revoker())
+	roleModule := role.NewModule(authorizer, authMiddleware)
+	storageModule := storagemodule.NewModule(storageAdapter, auditor, authMiddleware)
+	sseModule := ssemodule.NewModule(sseBroker, authorizer, authMiddleware)
+	jobModule := job.NewModule(publisher, auditor, authorizer, authMiddleware)
+	auditModule := auditmodule.NewModule(auditor, authorizer, authMiddleware)
 
 	server.RegisterModules(healthModule, userModule, authModule, roleModule, storageModule, sseModule, jobModule, auditModule)
 

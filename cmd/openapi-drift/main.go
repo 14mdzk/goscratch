@@ -124,29 +124,31 @@ func collectFiberRoutes() (map[routeKey]struct{}, error) {
 
 	healthmod.NewModule(0).RegisterRoutes(app)
 
+	noopAuth := func(c *fiber.Ctx) error { return c.Next() }
+
 	// Auth: typed-nil UserRepo satisfies the interface without a real repo.
 	// nil cache causes RateLimit to fall back to the in-memory backend (safe).
 	// Zero JWTConfig is fine — Auth middleware only runs on actual requests.
 	var userRepo authusecase.UserRepo // typed-nil interface value
-	authmod.NewModule(userRepo, nil, nil, config.JWTConfig{}).RegisterRoutes(app)
+	authmod.NewModule(userRepo, nil, nil, config.JWTConfig{}, noopAuth).RegisterRoutes(app)
 
-	// User: nil pool, transactor, auditor, authorizer, cache; empty secret.
-	usermod.NewModule(nil, nil, nil, nil, nil, "", "", nil).RegisterRoutes(app)
+	// User: nil pool, transactor, auditor, authorizer, cache.
+	usermod.NewModule(nil, nil, nil, nil, nil, noopAuth, nil).RegisterRoutes(app)
 
-	// Role: nil authorizer; empty secret.
-	rolemod.NewModule(nil, "", "").RegisterRoutes(app)
+	// Role: nil authorizer.
+	rolemod.NewModule(nil, noopAuth).RegisterRoutes(app)
 
-	// Storage: nil storage, auditor; empty secret.
-	storagemod.NewModule(nil, nil, "", "").RegisterRoutes(app)
+	// Storage: nil storage, auditor.
+	storagemod.NewModule(nil, nil, noopAuth).RegisterRoutes(app)
 
-	// SSE: nil broker, authorizer; empty secret.
-	ssemod.NewModule(nil, nil, "", "").RegisterRoutes(app)
+	// SSE: nil broker, authorizer.
+	ssemod.NewModule(nil, nil, noopAuth).RegisterRoutes(app)
 
-	// Job: nil publisher, auditor, authorizer; empty secret.
-	jobmod.NewModule(nil, nil, nil, "", "").RegisterRoutes(app)
+	// Job: nil publisher, auditor, authorizer.
+	jobmod.NewModule(nil, nil, nil, noopAuth).RegisterRoutes(app)
 
-	// Audit: nil auditor, authorizer; empty secrets.
-	auditmod.NewModule(nil, nil, "", "").RegisterRoutes(app)
+	// Audit: nil auditor, authorizer.
+	auditmod.NewModule(nil, nil, noopAuth).RegisterRoutes(app)
 
 	// Docs: /docs/* routes — excluded by the path filter below.
 	docs.NewModule().RegisterRoutes(app)

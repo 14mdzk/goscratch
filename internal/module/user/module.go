@@ -14,38 +14,34 @@ import (
 
 // Module represents the user module
 type Module struct {
-	handler           *handler.Handler
-	authorizer        port.Authorizer
-	jwtSecret         string
-	jwtPreviousSecret string
+	handler        *handler.Handler
+	authorizer     port.Authorizer
+	authMiddleware fiber.Handler
 }
 
 // NewModule creates a new user module.
 // authRevoker is the auth module's session-revocation interface, injected so
 // ChangePassword can terminate all active refresh tokens for the user without
 // importing the auth package (avoiding a circular dependency).
-func NewModule(pool *pgxpool.Pool, transactor *database.Transactor, auditor port.Auditor, authorizer port.Authorizer, cache port.Cache, jwtSecret, jwtPreviousSecret string, authRevoker usecase.AuthRevoker) *Module {
+func NewModule(pool *pgxpool.Pool, transactor *database.Transactor, auditor port.Auditor, authorizer port.Authorizer, cache port.Cache, authMiddleware fiber.Handler, authRevoker usecase.AuthRevoker) *Module {
 	repo := repository.NewRepository(pool)
 	uc := usecase.NewUseCase(repo, transactor, cache, authRevoker)
 	audited := usecase.NewAuditedUseCase(uc, auditor)
 	h := handler.NewHandler(audited)
 
 	return &Module{
-		handler:           h,
-		authorizer:        authorizer,
-		jwtSecret:         jwtSecret,
-		jwtPreviousSecret: jwtPreviousSecret,
+		handler:        h,
+		authorizer:     authorizer,
+		authMiddleware: authMiddleware,
 	}
 }
 
 // RegisterRoutes registers user module routes
 func (m *Module) RegisterRoutes(router fiber.Router) {
-	authMiddleware := middleware.Auth(middleware.DefaultAuthConfig(m.jwtSecret, m.jwtPreviousSecret))
-
 	users := router.Group("/users")
 
 	// Protected routes - require authentication
-	users.Use(authMiddleware)
+	users.Use(m.authMiddleware)
 
 	// User self-management (no permission required beyond auth)
 	users.Get("/me", m.handler.GetMe)
