@@ -43,7 +43,7 @@ This document describes how `App.New` brings dependencies online and how `App.Sh
 | 7 | `database`   |     0.10 | `DB.Close()`                                               | Last database-using thing closed.                                                                  |
 | 8 | `tracer`     |     0.15 | `tracerShutdown(ctx)`                                      | **Last.** Spans emitted by every prior phase still flush through it.                               |
 
-Each phase logs `phase`, `duration_ms`, and `budget_ms`. Failure in one phase is logged but does not abort subsequent phases — best-effort cleanup is the goal.
+Each phase runs inside a goroutine bounded by `select { case <-done: ... case <-phaseCtx.Done(): ... }` so even phases whose `Close()` methods do not accept a `context.Context` (`sse`, `authorizer`, `adapters`, `database`) cannot stall downstream phases (such as the final `tracer` flush). Each phase logs `phase`, `duration_ms`, and `budget_ms`. Failure or timeout in one phase is logged (`shutdown phase failed` / `shutdown phase timed out`) but does not abort subsequent phases — best-effort cleanup is the goal.
 
 ### Why tracer last
 
