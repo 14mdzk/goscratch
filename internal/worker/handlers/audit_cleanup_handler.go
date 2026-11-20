@@ -20,9 +20,9 @@ const (
 	auditCleanupMaxBatches = 60
 )
 
-// batchDeleter is the subset of *pgxpool.Pool the cleanup handler needs.
+// BatchDeleter is the subset of *pgxpool.Pool the cleanup handler needs.
 // *pgxpool.Pool satisfies it; tests substitute a fake.
-type batchDeleter interface {
+type BatchDeleter interface {
 	Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error)
 }
 
@@ -33,12 +33,12 @@ type AuditCleanupPayload struct {
 
 // AuditCleanupHandler handles audit log cleanup jobs
 type AuditCleanupHandler struct {
-	db     batchDeleter
+	db     BatchDeleter
 	logger *logger.Logger
 }
 
 // NewAuditCleanupHandler creates a new audit cleanup handler
-func NewAuditCleanupHandler(db batchDeleter, log *logger.Logger) *AuditCleanupHandler {
+func NewAuditCleanupHandler(db BatchDeleter, log *logger.Logger) *AuditCleanupHandler {
 	return &AuditCleanupHandler{
 		db:     db,
 		logger: log,

@@ -29,6 +29,8 @@ APP_NAME := goscratch
 BINARY := ./bin/$(APP_NAME)
 MAIN_PATH := ./cmd/api
 DATABASE_URL ?= postgres://postgres:postgres@localhost:5432/goscratch?sslmode=disable
+VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
+LDFLAGS := -w -s -X github.com/14mdzk/goscratch/internal/platform/version.Version=$(VERSION)
 
 # Development (with hot-reload)
 dev:
@@ -52,15 +54,15 @@ worker:
 worker-build:
 	@echo "Building worker..."
 	@mkdir -p bin
-	@go build -ldflags="-w -s" -o ./bin/worker ./cmd/worker
+	@go build -ldflags="$(LDFLAGS)" -o ./bin/worker ./cmd/worker
 	@echo "Worker binary built at ./bin/worker"
 
 # Build
 build:
 	@echo "Building $(APP_NAME)..."
 	@mkdir -p bin
-	@go build -ldflags="-w -s" -o $(BINARY) $(MAIN_PATH)
-	@go build -ldflags="-w -s" -o ./bin/worker ./cmd/worker
+	@go build -ldflags="$(LDFLAGS)" -o $(BINARY) $(MAIN_PATH)
+	@go build -ldflags="$(LDFLAGS)" -o ./bin/worker ./cmd/worker
 	@echo "Binaries built at bin/"
 
 # Test
