@@ -150,16 +150,9 @@ func testJWTConfig() config.JWTConfig {
 	}
 }
 
-// testUC builds a UseCase backed by mockRepo and cache with minimal JWT config.
-// It bypasses NewUseCase (which takes *userrepo.Repository) and constructs the
-// concrete authUseCase directly via the unexported field — we use the internal
-// test package so we have access to the struct.
-func testUC(mockRepo *MockUserRepository, cache port.Cache) UseCase {
-	return &authUseCase{
-		userRepo: mockRepo,
-		cache:    cache,
-		jwtCfg:   testJWTConfig(),
-	}
+// testUC builds an auth Service backed by mockRepo and cache with minimal JWT config.
+func testUC(mockRepo *MockUserRepository, cache port.Cache) Service {
+	return NewUseCase(mockRepo, cache, testJWTConfig())
 }
 
 // ---------------------------------------------------------------------------
@@ -405,9 +398,7 @@ func TestRefresh_RevokedByPasswordChange(t *testing.T) {
 	uc := testUC(mockRepo, cache)
 
 	// Simulate ChangePassword → RevokeAllForUser: deletes index keys by prefix.
-	// authUseCase implements both UseCase and Revoker; assert to Revoker here.
-	revoker := uc.(Revoker)
-	err := revoker.RevokeAllForUser(ctx, user.ID.String())
+	err := uc.RevokeAllForUser(ctx, user.ID.String())
 	assert.NoError(t, err)
 
 	// Index key must be gone; lookup key must still be present (orphan).

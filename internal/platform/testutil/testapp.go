@@ -129,7 +129,7 @@ func NewTestApp(ctx context.Context, pgConnStr, redisAddr string) (*fiber.App, f
 	sharedUserRepo := userrepo.NewRepository(pool)
 	authMiddleware := middleware.Auth(middleware.AuthConfigFromJWT(jwtCfg))
 	authModule := auth.NewModule(sharedUserRepo, cacheAdapter, auditor, jwtCfg, authMiddleware)
-	userModule := user.NewModule(pool, transactor, auditor, authorizer, cacheAdapter, authMiddleware, authModule.Revoker())
+	userModule := user.NewModule(sharedUserRepo, transactor, auditor, authorizer, cacheAdapter, authMiddleware, authModule.Revoker())
 	roleModule := role.NewModule(authorizer, authMiddleware)
 	storageModule := storagemodule.NewModule(storageAdapter, auditor, authMiddleware)
 	sseModule := ssemodule.NewModule(sseBroker, authorizer, authMiddleware)

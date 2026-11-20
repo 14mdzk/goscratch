@@ -776,7 +776,7 @@ func TestChangePassword_AuthRevokerCalled(t *testing.T) {
 		mockRevoker := new(MockAuthRevoker)
 		mockRevoker.On("RevokeAllForUser", ctx, testID.String()).Return(nil)
 
-		uc := newUseCase(mockRepo, nil, nil, mockRevoker)
+		uc := NewUseCase(mockRepo, nil, nil, mockRevoker)
 		err := uc.ChangePassword(ctx, testID.String(), dto.ChangePasswordRequest{
 			CurrentPassword: currentPassword,
 			NewPassword:     "newpassword123",
@@ -799,7 +799,7 @@ func TestChangePassword_AuthRevokerCalled(t *testing.T) {
 		mockRevoker := new(MockAuthRevoker)
 		mockRevoker.On("RevokeAllForUser", ctx, testID.String()).Return(port.ErrCacheUnavailable)
 
-		uc := newUseCase(mockRepo, nil, nil, mockRevoker)
+		uc := NewUseCase(mockRepo, nil, nil, mockRevoker)
 		err := uc.ChangePassword(ctx, testID.String(), dto.ChangePasswordRequest{
 			CurrentPassword: currentPassword,
 			NewPassword:     "newpassword123",
@@ -822,7 +822,7 @@ func TestChangePassword_AuthRevokerCalled(t *testing.T) {
 		}, nil)
 		mockRepo.On("UpdatePassword", ctx, testID.String(), mock.AnythingOfType("string")).Return(nil)
 
-		uc := newUseCase(mockRepo, nil, nil, nil)
+		uc := NewUseCase(mockRepo, nil, nil, nil)
 		err := uc.ChangePassword(ctx, testID.String(), dto.ChangePasswordRequest{
 			CurrentPassword: currentPassword,
 			NewPassword:     "newpassword123",
@@ -830,5 +830,69 @@ func TestChangePassword_AuthRevokerCalled(t *testing.T) {
 
 		assert.NoError(t, err)
 		mockRepo.AssertExpectations(t)
+	})
+}
+
+type fakeTransactor struct {
+	called int
+	err    error
+}
+
+func (f *fakeTransactor) WithTx(ctx context.Context, fn func(ctx context.Context) error) error {
+	f.called++
+	if f.err != nil {
+		return f.err
+	}
+	return fn(ctx)
+}
+
+func TestUserUseCase_Create_UsesPortTransactor(t *testing.T) {
+	ctx := context.Background()
+	testID := uuid.New()
+
+	t.Run("creates user inside transaction", func(t *testing.T) {
+		mockRepo := new(MockRepository)
+		tx := &fakeTransactor{}
+		mockRepo.On("ExistsByEmail", ctx, "new@example.com").Return(false, nil)
+		mockRepo.On("Create", ctx, "new@example.com", mock.AnythingOfType("string"), "New User").Return(&userdomain.User{
+			ID:       testID,
+			Email:    "new@example.com",
+			Name:     "New User",
+			IsActive: true,
+		}, nil)
+
+		uc := NewUseCase(mockRepo, tx, nil, nil)
+		resp, err := uc.Create(ctx, dto.CreateUserRequest{
+			Email:    "new@example.com",
+			Password: "password123",
+			Name:     "New User",
+		})
+
+		assert.NoError(t, err)
+		assert.NotNil(t, resp)
+		assert.Equal(t, 1, tx.called)
+		if resp != nil {
+			assert.Equal(t, testID.String(), resp.ID)
+			assert.Equal(t, "new@example.com", resp.Email)
+		}
+		mockRepo.AssertExpectations(t)
+	})
+
+	t.Run("conflict aborts create inside transaction", func(t *testing.T) {
+		mockRepo := new(MockRepository)
+		tx := &fakeTransactor{}
+		mockRepo.On("ExistsByEmail", ctx, "taken@example.com").Return(true, nil)
+
+		uc := NewUseCase(mockRepo, tx, nil, nil)
+		resp, err := uc.Create(ctx, dto.CreateUserRequest{
+			Email:    "taken@example.com",
+			Password: "password123",
+			Name:     "Dup User",
+		})
+
+		assert.Nil(t, resp)
+		assert.Error(t, err)
+		assert.Equal(t, 1, tx.called)
+		mockRepo.AssertNotCalled(t, "Create", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
 	})
 }

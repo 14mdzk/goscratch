@@ -70,14 +70,19 @@ may import `github.com/golang-jwt/jwt/v5`. All other code uses `authdomain.Claim
 
 ---
 
-## Shared Repo Injection
+## Shared Repo & Port Transactor Injection
 
 Auth and user modules share a single `*userrepo.Repository` instance created
-once in `internal/platform/app/modules.go`. `auth.NewModule` accepts a `usecase.UserRepo`
-interface (not `*pgxpool.Pool`) so the same underlying connection pool is reused.
+once in `internal/platform/app/modules.go`:
 
-**Why**: avoids a second repository being created for the same pool (audit finding
-auth/module.go:20).
+- `auth.NewModule` accepts `auth/usecase.UserRepo` (read-only lookup subset).
+- `user.NewModule` accepts `user/usecase.UserRepo` and `port.Transactor` (satisfied by `*database.Transactor`).
+
+**Why:** neither `module/user` nor `module/user/usecase` imports `pgxpool`, `internal/platform/database`, or `user/repository` directly — enforcing ADR-001's strict `handler -> usecase -> port -> adapter/repository` boundary and avoiding duplicate repository wrappers.
+
+## Compile-Time Service Composition (`auth/usecase.Service`)
+
+When a usecase satisfies a secondary cross-module port in addition to its handler `UseCase` (e.g., `auth/usecase` exposing `Revoker` to `module/user`), combine them into a named `Service` interface returned by `NewUseCase` (`type Service interface { UseCase; Revoker }`) rather than type-asserting at runtime in `module.go`.
 
 ---
 

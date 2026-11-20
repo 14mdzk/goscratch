@@ -132,7 +132,7 @@ func collectFiberRoutes() (map[routeKey]struct{}, error) {
 	var userRepo authusecase.UserRepo // typed-nil interface value
 	authmod.NewModule(userRepo, nil, nil, config.JWTConfig{}, noopAuth).RegisterRoutes(app)
 
-	// User: nil pool, transactor, auditor, authorizer, cache.
+	// User: nil repo, transactor, auditor, authorizer, cache.
 	usermod.NewModule(nil, nil, nil, nil, nil, noopAuth, nil).RegisterRoutes(app)
 
 	// Role: nil authorizer.

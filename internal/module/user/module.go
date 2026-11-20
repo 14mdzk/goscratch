@@ -2,12 +2,9 @@ package user
 
 import (
 	"github.com/gofiber/fiber/v2"
-	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/14mdzk/goscratch/internal/module/user/handler"
-	"github.com/14mdzk/goscratch/internal/module/user/repository"
 	"github.com/14mdzk/goscratch/internal/module/user/usecase"
-	"github.com/14mdzk/goscratch/internal/platform/database"
 	"github.com/14mdzk/goscratch/internal/platform/http/middleware"
 	"github.com/14mdzk/goscratch/internal/port"
 )
@@ -20,11 +17,13 @@ type Module struct {
 }
 
 // NewModule creates a new user module.
+// repo is injected (shared with auth in the composition root) and transactor is
+// passed via port.Transactor so neither the module nor its usecase imports
+// concrete database or repository packages.
 // authRevoker is the auth module's session-revocation interface, injected so
 // ChangePassword can terminate all active refresh tokens for the user without
 // importing the auth package (avoiding a circular dependency).
-func NewModule(pool *pgxpool.Pool, transactor *database.Transactor, auditor port.Auditor, authorizer port.Authorizer, cache port.Cache, authMiddleware fiber.Handler, authRevoker usecase.AuthRevoker) *Module {
-	repo := repository.NewRepository(pool)
+func NewModule(repo usecase.UserRepo, transactor port.Transactor, auditor port.Auditor, authorizer port.Authorizer, cache port.Cache, authMiddleware fiber.Handler, authRevoker usecase.AuthRevoker) *Module {
 	uc := usecase.NewUseCase(repo, transactor, cache, authRevoker)
 	audited := usecase.NewAuditedUseCase(uc, auditor)
 	h := handler.NewHandler(audited)

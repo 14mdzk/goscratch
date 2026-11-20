@@ -9,46 +9,25 @@ import (
 
 	userdomain "github.com/14mdzk/goscratch/internal/module/user/domain"
 	"github.com/14mdzk/goscratch/internal/module/user/dto"
-	"github.com/14mdzk/goscratch/internal/module/user/repository"
-	"github.com/14mdzk/goscratch/internal/platform/database"
 	"github.com/14mdzk/goscratch/internal/port"
 	shareddomain "github.com/14mdzk/goscratch/internal/shared/domain"
 	"github.com/14mdzk/goscratch/pkg/apperr"
 )
 
-// userRepo is the narrow repository interface that userUseCase depends on.
-// The concrete *repository.Repository satisfies it; tests use a mock.
-type userRepo interface {
-	GetByID(ctx context.Context, id string) (*userdomain.User, error)
-	GetByEmail(ctx context.Context, email string) (*userdomain.User, error)
-	List(ctx context.Context, filter userdomain.UserFilter) ([]userdomain.User, error)
-	Create(ctx context.Context, email, passwordHash, name string) (*userdomain.User, error)
-	Update(ctx context.Context, id, name, email string) (*userdomain.User, error)
-	UpdatePassword(ctx context.Context, id, passwordHash string) error
-	Delete(ctx context.Context, id string) error
-	ExistsByEmail(ctx context.Context, email string) (bool, error)
-	Activate(ctx context.Context, id string) error
-	Deactivate(ctx context.Context, id string) error
-}
-
 // userUseCase handles user business logic
 type userUseCase struct {
-	repo        userRepo
-	transactor  *database.Transactor
+	repo        UserRepo
+	transactor  port.Transactor
 	cache       port.Cache
 	authRevoker AuthRevoker
 }
 
+var _ UseCase = (*userUseCase)(nil)
+
 // NewUseCase creates a new user use case.
 // authRevoker is the auth module's session-revocation interface; it may be nil
 // in tests that do not exercise ChangePassword revocation.
-func NewUseCase(repo *repository.Repository, transactor *database.Transactor, cache port.Cache, authRevoker AuthRevoker) UseCase {
-	return newUseCase(repo, transactor, cache, authRevoker)
-}
-
-// newUseCase is the internal constructor that accepts the userRepo interface,
-// enabling unit tests (same package) to inject mock repositories.
-func newUseCase(repo userRepo, transactor *database.Transactor, cache port.Cache, authRevoker AuthRevoker) UseCase {
+func NewUseCase(repo UserRepo, transactor port.Transactor, cache port.Cache, authRevoker AuthRevoker) UseCase {
 	return &userUseCase{
 		repo:        repo,
 		transactor:  transactor,

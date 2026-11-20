@@ -10,6 +10,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/14mdzk/goscratch/internal/platform/config"
+	"github.com/14mdzk/goscratch/internal/port"
 )
 
 // DBTX is the interface satisfied by both *pgxpool.Pool and pgx.Tx.
@@ -76,8 +77,12 @@ func NewTransactor(pool *pgxpool.Pool) *Transactor {
 	return &Transactor{pool: pool}
 }
 
-// TxFunc is a function that runs within a transaction
-type TxFunc func(ctx context.Context) error
+// Ensure Transactor implements port.Transactor at compile time.
+var _ port.Transactor = (*Transactor)(nil)
+
+// TxFunc is a function that runs within a transaction.
+// Aliased so *Transactor satisfies port.Transactor directly.
+type TxFunc = func(ctx context.Context) error
 
 // WithTx executes a function within a database transaction
 func (t *Transactor) WithTx(ctx context.Context, fn TxFunc) error {
