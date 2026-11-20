@@ -56,3 +56,12 @@ wire_gen.go
 
 # SQLC generated (optional - you may want to commit these)
 # internal/module/*/repository/sqlc/
+
+# AI agent tooling & local worktrees
+.claude/settings.local.json
+.claude/scheduled_tasks.lock
+.claude/worktrees/
+.codex/
+.commandcode/
+.muse/
+.worktrees/
