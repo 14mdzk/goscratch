@@ -15,6 +15,7 @@ import (
 	"github.com/14mdzk/goscratch/internal/platform/config"
 	"github.com/14mdzk/goscratch/internal/platform/database"
 	"github.com/14mdzk/goscratch/internal/platform/observability"
+	"github.com/14mdzk/goscratch/internal/platform/version"
 	"github.com/14mdzk/goscratch/internal/port"
 	"github.com/14mdzk/goscratch/internal/worker"
 	"github.com/14mdzk/goscratch/internal/worker/handlers"
@@ -63,7 +64,7 @@ func run() error {
 			"endpoint", cfg.Observability.Tracing.Endpoint)
 		shutdown, err := observability.InitTracer(ctx, observability.TracerConfig{
 			ServiceName:    cfg.App.Name,
-			ServiceVersion: "1.0.0",
+			ServiceVersion: version.Version,
 			Environment:    cfg.App.Env,
 			Endpoint:       cfg.Observability.Tracing.Endpoint,
 			Enabled:        true,
@@ -165,9 +166,12 @@ func run() error {
 	defer notificationSender.Close()
 
 	// Register job handlers
-	w.RegisterHandler(handlers.NewEmailHandler(appLogger, emailSender))
-	w.RegisterHandler(handlers.NewNotificationHandler(appLogger, notificationSender))
-	w.RegisterHandler(handlers.NewAuditCleanupHandler(pool, appLogger))
+	handlers.RegisterDefault(w, handlers.Dependencies{
+		Logger:       appLogger,
+		DB:           pool,
+		Email:        emailSender,
+		Notification: notificationSender,
+	})
 
 	// Start worker
 	if err := w.Start(); err != nil {

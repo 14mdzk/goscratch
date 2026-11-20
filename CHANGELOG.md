@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- App wiring refactor: split `internal/platform/app/app.go` into cohesive `infra.go`, `http.go`, and `modules.go` files; deduplicated worker handler registration via `handlers.RegisterDefault`; replaced hardcoded tracing `ServiceVersion` (`"1.0.0"`) with build-time `internal/platform/version.Version` wired via `ldflags` in `Makefile` and `Dockerfile`.
 - Repo hygiene: track `AGENTS.md` for team/agent workflow consistency and ignore ephemeral AI tooling directories and local worktrees (`.claude/worktrees/`, `.claude/scheduled_tasks.lock`, `.claude/settings.local.json`, `.codex/`, `.commandcode/`, `.muse/`, `.worktrees/`).
 
 ## [1.3.0] - 2026-10-17 — Developer tooling, spec generation, spatial primitives

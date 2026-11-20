@@ -14,8 +14,9 @@ RUN go mod download
 COPY . .
 
 # Build binary
-RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-w -s" -o /app/api ./cmd/api
-RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-w -s" -o /app/worker ./cmd/worker
+ARG VERSION=dev
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-w -s -X github.com/14mdzk/goscratch/internal/platform/version.Version=${VERSION}" -o /app/api ./cmd/api
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-w -s -X github.com/14mdzk/goscratch/internal/platform/version.Version=${VERSION}" -o /app/worker ./cmd/worker
 
 # Runtime stage
 FROM alpine:3.24
