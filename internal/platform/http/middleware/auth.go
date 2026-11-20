@@ -8,6 +8,7 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 
 	authdomain "github.com/14mdzk/goscratch/internal/module/auth/domain"
+	"github.com/14mdzk/goscratch/internal/platform/config"
 	"github.com/14mdzk/goscratch/pkg/apperr"
 	"github.com/14mdzk/goscratch/pkg/logger"
 	"github.com/14mdzk/goscratch/pkg/response"
@@ -35,6 +36,21 @@ func DefaultAuthConfig(jwtSecret, previousSecret string) AuthConfig {
 		TokenLookup:       "header:Authorization",
 		ContextKey:        "user",
 	}
+}
+
+// AuthConfigFromJWT builds an AuthConfig from the application's JWTConfig.
+// Empty Issuer or Audience fall back to DefaultAuthConfig defaults so callers
+// with unset issuer/audience remain backward compatible while custom values
+// match the tokens minted by the auth usecase.
+func AuthConfigFromJWT(jwtCfg config.JWTConfig) AuthConfig {
+	cfg := DefaultAuthConfig(jwtCfg.Secret, jwtCfg.PreviousSecret)
+	if jwtCfg.Issuer != "" {
+		cfg.JWTIssuer = jwtCfg.Issuer
+	}
+	if jwtCfg.Audience != "" {
+		cfg.JWTAudience = jwtCfg.Audience
+	}
+	return cfg
 }
 
 // Claims is the JWT-library bound claims struct used only inside this

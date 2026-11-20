@@ -11,34 +11,31 @@ import (
 
 // Module represents the role management module
 type Module struct {
-	handler           *handler.Handler
-	authorizer        port.Authorizer
-	jwtSecret         string
-	jwtPreviousSecret string
+	handler        *handler.Handler
+	authorizer     port.Authorizer
+	authMiddleware fiber.Handler
 }
 
 // NewModule creates a new role module
-func NewModule(authorizer port.Authorizer, jwtSecret, jwtPreviousSecret string) *Module {
+func NewModule(authorizer port.Authorizer, authMiddleware fiber.Handler) *Module {
 	uc := usecase.NewUseCase(authorizer)
 	h := handler.NewHandler(uc)
 
 	return &Module{
-		handler:           h,
-		authorizer:        authorizer,
-		jwtSecret:         jwtSecret,
-		jwtPreviousSecret: jwtPreviousSecret,
+		handler:        h,
+		authorizer:     authorizer,
+		authMiddleware: authMiddleware,
 	}
 }
 
 // RegisterRoutes registers role module routes
 func (m *Module) RegisterRoutes(router fiber.Router) {
-	authMiddleware := middleware.Auth(middleware.DefaultAuthConfig(m.jwtSecret, m.jwtPreviousSecret))
 	requireRead := middleware.RequirePermission(m.authorizer, "roles", "read")
 	requireManage := middleware.RequirePermission(m.authorizer, "roles", "manage")
 
 	// Role management routes
 	roles := router.Group("/roles")
-	roles.Use(authMiddleware)
+	roles.Use(m.authMiddleware)
 
 	roles.Get("/", requireRead, m.handler.ListRoles)
 	// Register /permissions before /:role/permissions to avoid route conflicts
@@ -52,7 +49,7 @@ func (m *Module) RegisterRoutes(router fiber.Router) {
 
 	// User role/permission lookup routes (under /users/:id)
 	users := router.Group("/users")
-	users.Use(authMiddleware)
+	users.Use(m.authMiddleware)
 
 	users.Get("/:id/roles", requireRead, m.handler.GetUserRoles)
 	users.Get("/:id/permissions", requireRead, m.handler.GetUserPermissions)
