@@ -28,6 +28,7 @@ import (
 type infraDeps struct {
 	db                 *pgxpool.Pool
 	cache              port.Cache
+	rateLimiter        port.RateLimiter
 	queue              port.Queue
 	queueBackend       config.QueueBackend
 	storage            port.Storage
@@ -50,7 +51,7 @@ func initInfra(ctx context.Context, cfg *config.Config, log *logger.Logger) (*in
 	}
 	log.Info("Database connected successfully")
 
-	cacheAdapter, err := initCache(cfg, log)
+	cacheAdapter, rateLimiter, err := initCache(cfg, log)
 	if err != nil {
 		pool.Close()
 		return nil, err
@@ -89,6 +90,7 @@ func initInfra(ctx context.Context, cfg *config.Config, log *logger.Logger) (*in
 	return &infraDeps{
 		db:                 pool,
 		cache:              cacheAdapter,
+		rateLimiter:        rateLimiter,
 		queue:              queueAdapter,
 		queueBackend:       queueBackend,
 		storage:            storageAdapter,
@@ -125,19 +127,20 @@ func initTracer(ctx context.Context, cfg *config.Config, log *logger.Logger) fun
 // initCache initializes Redis when enabled, or returns NoOpCache when explicitly
 // disabled. When redis.enabled=true and Redis is unreachable, boot fails fast
 // rather than silently starting with broken login and session revocation.
-func initCache(cfg *config.Config, log *logger.Logger) (port.Cache, error) {
+func initCache(cfg *config.Config, log *logger.Logger) (port.Cache, port.RateLimiter, error) {
 	if !cfg.Redis.Enabled {
 		log.Warn("SECURITY WARNING: Redis is disabled (redis.enabled=false); login will be rejected and refresh-token revocation will not function")
-		return cache.NewNoOpCache(), nil
+		noop := cache.NewNoOpCache()
+		return noop, noop, nil
 	}
 
 	log.Info("Connecting to Redis...")
 	cacheAdapter, err := cache.NewRedisCache(cfg.Redis.Addr(), cfg.Redis.Password, cfg.Redis.DB)
 	if err != nil {
-		return nil, fmt.Errorf("redis enabled but unreachable: %w", err)
+		return nil, nil, fmt.Errorf("redis enabled but unreachable: %w", err)
 	}
 	log.Info("Redis connected successfully")
-	return cacheAdapter, nil
+	return cacheAdapter, cacheAdapter, nil
 }
 
 // initQueue initializes the queue adapter by resolved backend. Durable tiers

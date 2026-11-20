@@ -11,17 +11,17 @@ import (
 // Module represents the SSE module
 type Module struct {
 	handler        *handler.Handler
-	authorizer     port.Authorizer
+	enforcer       port.Enforcer
 	authMiddleware fiber.Handler
 }
 
 // NewModule creates a new SSE module
-func NewModule(broker port.SSEBroker, authorizer port.Authorizer, authMiddleware fiber.Handler) *Module {
+func NewModule(broker port.SSEBroker, enforcer port.Enforcer, authMiddleware fiber.Handler) *Module {
 	h := handler.NewHandler(broker)
 
 	return &Module{
 		handler:        h,
-		authorizer:     authorizer,
+		enforcer:       enforcer,
 		authMiddleware: authMiddleware,
 	}
 }
@@ -34,6 +34,6 @@ func (m *Module) RegisterRoutes(router fiber.Router) {
 	sseGroup.Get("/subscribe", m.authMiddleware, m.handler.Subscribe)
 
 	// Admin-only routes
-	sseGroup.Post("/broadcast", m.authMiddleware, middleware.RequirePermission(m.authorizer, "sse", "broadcast"), m.handler.Broadcast)
-	sseGroup.Get("/clients", m.authMiddleware, middleware.RequirePermission(m.authorizer, "sse", "read"), m.handler.ClientCount)
+	sseGroup.Post("/broadcast", m.authMiddleware, middleware.RequirePermission(m.enforcer, "sse", "broadcast"), m.handler.Broadcast)
+	sseGroup.Get("/clients", m.authMiddleware, middleware.RequirePermission(m.enforcer, "sse", "read"), m.handler.ClientCount)
 }

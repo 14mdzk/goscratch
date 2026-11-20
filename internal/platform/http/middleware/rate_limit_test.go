@@ -1,7 +1,9 @@
 package middleware
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -260,4 +262,60 @@ func TestMemoryStore_Close_StopsJanitor(t *testing.T) {
 	// Idempotent: second Close must not panic and must not block.
 	require.NotPanics(t, func() { _ = mb.Close() })
 	assert.NoError(t, mb.Close())
+}
+
+type fakeRateLimiter struct {
+	allowFn func(ctx context.Context, key string, maxReqs int, window time.Duration) (bool, int, int, error)
+}
+
+func (f *fakeRateLimiter) SlidingWindowAllow(ctx context.Context, key string, maxReqs int, window time.Duration) (bool, int, int, error) {
+	return f.allowFn(ctx, key, maxReqs, window)
+}
+
+func TestRateLimit_UsesNarrowRateLimiterPort(t *testing.T) {
+	t.Run("allows_and_blocks_via_port", func(t *testing.T) {
+		calls := 0
+		limiter := &fakeRateLimiter{
+			allowFn: func(_ context.Context, _ string, maxReqs int, _ time.Duration) (bool, int, int, error) {
+				calls++
+				if calls == 1 {
+					return true, maxReqs - 1, 0, nil
+				}
+				return false, 0, 60, nil
+			},
+		}
+
+		app := fiber.New()
+		h, closer := RateLimit(RateLimitConfig{Max: 2, Window: time.Minute, UseRedis: true}, limiter)
+		t.Cleanup(func() { _ = closer.Close() })
+		app.Use(h)
+		app.Get("/test", func(c *fiber.Ctx) error { return c.SendStatus(http.StatusOK) })
+
+		resp1, err := app.Test(httptest.NewRequest(http.MethodGet, "/test", nil))
+		require.NoError(t, err)
+		assert.Equal(t, http.StatusOK, resp1.StatusCode)
+		assert.Equal(t, "1", resp1.Header.Get("X-RateLimit-Remaining"))
+
+		resp2, err := app.Test(httptest.NewRequest(http.MethodGet, "/test", nil))
+		require.NoError(t, err)
+		assert.Equal(t, http.StatusTooManyRequests, resp2.StatusCode)
+	})
+
+	t.Run("fail_closed_rejects_on_limiter_error", func(t *testing.T) {
+		limiter := &fakeRateLimiter{
+			allowFn: func(_ context.Context, _ string, _ int, _ time.Duration) (bool, int, int, error) {
+				return false, 0, 0, errors.New("redis down")
+			},
+		}
+
+		app := fiber.New()
+		h, closer := RateLimit(RateLimitConfig{Max: 2, Window: time.Minute, UseRedis: true, FailClosed: true}, limiter)
+		t.Cleanup(func() { _ = closer.Close() })
+		app.Use(h)
+		app.Get("/test", func(c *fiber.Ctx) error { return c.SendStatus(http.StatusOK) })
+
+		resp, err := app.Test(httptest.NewRequest(http.MethodGet, "/test", nil))
+		require.NoError(t, err)
+		assert.Equal(t, http.StatusServiceUnavailable, resp.StatusCode)
+	})
 }

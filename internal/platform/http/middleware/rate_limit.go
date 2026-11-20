@@ -34,7 +34,7 @@ type rateLimitBackend interface {
 
 // RateLimit returns a rate limiting middleware and a Closer that must be called
 // on application shutdown to release backend resources (stop janitor goroutines).
-func RateLimit(cfg RateLimitConfig, cache port.Cache) (fiber.Handler, io.Closer) {
+func RateLimit(cfg RateLimitConfig, limiter port.RateLimiter) (fiber.Handler, io.Closer) {
 	// Apply defaults
 	if cfg.Max <= 0 {
 		cfg.Max = 100
@@ -47,8 +47,8 @@ func RateLimit(cfg RateLimitConfig, cache port.Cache) (fiber.Handler, io.Closer)
 	}
 
 	var backend rateLimitBackend
-	if cfg.UseRedis && cache != nil {
-		backend = newRedisBackend(cache)
+	if cfg.UseRedis && limiter != nil {
+		backend = newRedisBackend(limiter)
 	} else {
 		backend = newMemoryBackend()
 	}
@@ -186,17 +186,17 @@ func (mb *memoryBackend) Close() error {
 // --- Redis backend ---
 
 type redisBackend struct {
-	cache port.Cache
+	limiter port.RateLimiter
 }
 
-func newRedisBackend(cache port.Cache) *redisBackend {
-	return &redisBackend{cache: cache}
+func newRedisBackend(limiter port.RateLimiter) *redisBackend {
+	return &redisBackend{limiter: limiter}
 }
 
 func (rb *redisBackend) Allow(ctx context.Context, key string, maxReqs int, window time.Duration) (allowed bool, remaining int, resetAt time.Time, err error) {
 	now := time.Now()
 
-	ok, rem, _, redisErr := rb.cache.SlidingWindowAllow(ctx, key, maxReqs, window)
+	ok, rem, _, redisErr := rb.limiter.SlidingWindowAllow(ctx, key, maxReqs, window)
 	if redisErr != nil {
 		return true, maxReqs, now.Add(window), redisErr
 	}

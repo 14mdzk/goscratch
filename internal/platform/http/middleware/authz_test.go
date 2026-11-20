@@ -12,9 +12,11 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// mockAuthorizer implements port.Authorizer for testing
+// mockAuthorizer implements port.Enforcer for testing (no policy-management
+// or lifecycle stubs required).
 type mockAuthorizer struct {
 	enforceFunc        func(sub, obj, act string) (bool, error)
+	enforceCtxFunc     func(ctx context.Context, sub, obj, act string) (bool, error)
 	hasRoleForUserFunc func(userID, role string) (bool, error)
 }
 
@@ -25,7 +27,10 @@ func (m *mockAuthorizer) Enforce(sub, obj, act string) (bool, error) {
 	return false, nil
 }
 
-func (m *mockAuthorizer) EnforceWithContext(_ context.Context, sub, obj, act string) (bool, error) {
+func (m *mockAuthorizer) EnforceWithContext(ctx context.Context, sub, obj, act string) (bool, error) {
+	if m.enforceCtxFunc != nil {
+		return m.enforceCtxFunc(ctx, sub, obj, act)
+	}
 	return m.Enforce(sub, obj, act)
 }
 
@@ -35,25 +40,6 @@ func (m *mockAuthorizer) HasRoleForUser(userID, role string) (bool, error) {
 	}
 	return false, nil
 }
-
-// Stub implementations for the rest of the interface
-func (m *mockAuthorizer) AddRoleForUser(_, _ string) error                   { return nil }
-func (m *mockAuthorizer) RemoveRoleForUser(_, _ string) error                { return nil }
-func (m *mockAuthorizer) GetRolesForUser(_ string) ([]string, error)         { return nil, nil }
-func (m *mockAuthorizer) GetUsersForRole(_ string) ([]string, error)         { return nil, nil }
-func (m *mockAuthorizer) AddPermissionForRole(_, _, _ string) error          { return nil }
-func (m *mockAuthorizer) RemovePermissionForRole(_, _, _ string) error       { return nil }
-func (m *mockAuthorizer) GetPermissionsForRole(_ string) ([][]string, error) { return nil, nil }
-func (m *mockAuthorizer) AddPermissionForUser(_, _, _ string) error          { return nil }
-func (m *mockAuthorizer) RemovePermissionForUser(_, _, _ string) error       { return nil }
-func (m *mockAuthorizer) GetPermissionsForUser(_ string) ([][]string, error) { return nil, nil }
-func (m *mockAuthorizer) GetImplicitPermissionsForUser(_ string) ([][]string, error) {
-	return nil, nil
-}
-func (m *mockAuthorizer) LoadPolicy() error             { return nil }
-func (m *mockAuthorizer) SavePolicy() error             { return nil }
-func (m *mockAuthorizer) Start(_ context.Context) error { return nil }
-func (m *mockAuthorizer) Close() error                  { return nil }
 
 // setupAuthzApp creates a fiber app with user_id pre-set in locals
 func setupAuthzApp(handler fiber.Handler, userID string) *fiber.App {
@@ -233,4 +219,31 @@ func TestParsePermission(t *testing.T) {
 			assert.Equal(t, tt.wantAct, act)
 		})
 	}
+}
+
+func TestRequirePermission_PropagatesUserContext(t *testing.T) {
+	type ctxKey struct{}
+
+	var seenVal any
+	mock := &mockAuthorizer{
+		enforceCtxFunc: func(ctx context.Context, sub, obj, act string) (bool, error) {
+			seenVal = ctx.Value(ctxKey{})
+			return sub == "user-1" && obj == "users" && act == "read", nil
+		},
+	}
+
+	app := fiber.New()
+	app.Use(func(c *fiber.Ctx) error {
+		c.Locals("user_id", "user-1")
+		c.SetUserContext(context.WithValue(c.UserContext(), ctxKey{}, "req-trace-42"))
+		return c.Next()
+	})
+	app.Get("/test", RequirePermission(mock, "users", "read"), func(c *fiber.Ctx) error {
+		return c.SendStatus(fiber.StatusOK)
+	})
+
+	resp, err := app.Test(httptest.NewRequest(http.MethodGet, "/test", nil))
+	require.NoError(t, err)
+	assert.Equal(t, fiber.StatusOK, resp.StatusCode)
+	assert.Equal(t, "req-trace-42", seenVal)
 }

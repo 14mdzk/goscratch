@@ -66,7 +66,7 @@ func New(ctx context.Context, cfg *config.Config) (*App, error) {
 		return nil, err
 	}
 
-	httpLayer := initHTTP(cfg, log, infra.cache)
+	httpLayer := initHTTP(cfg, log, infra.rateLimiter)
 	inProcessWorker := initModules(cfg, log, infra, httpLayer.server)
 
 	// Start the authorizer lifecycle (backstop reload tick + watcher subscription).

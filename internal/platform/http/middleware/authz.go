@@ -10,20 +10,20 @@ import (
 
 // AuthzConfig holds configuration for authorization middleware
 type AuthzConfig struct {
-	Authorizer port.Authorizer
-	Object     string // e.g., "users", "orders"
-	Action     string // e.g., "read", "create", "update", "delete"
+	Enforcer port.Enforcer
+	Object   string // e.g., "users", "orders"
+	Action   string // e.g., "read", "create", "update", "delete"
 }
 
 // RequirePermission creates middleware that checks if user has the required permission
-func RequirePermission(authorizer port.Authorizer, obj, act string) fiber.Handler {
+func RequirePermission(enforcer port.Enforcer, obj, act string) fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		userID := GetUserID(c)
 		if userID == "" {
 			return response.Unauthorized(c, "authentication required")
 		}
 
-		allowed, err := authorizer.Enforce(userID, obj, act)
+		allowed, err := enforcer.EnforceWithContext(c.UserContext(), userID, obj, act)
 		if err != nil {
 			return response.Fail(c, apperr.Internalf("authorization check failed"))
 		}
@@ -37,14 +37,14 @@ func RequirePermission(authorizer port.Authorizer, obj, act string) fiber.Handle
 }
 
 // RequireRole creates middleware that checks if user has the required role
-func RequireRole(authorizer port.Authorizer, role string) fiber.Handler {
+func RequireRole(enforcer port.Enforcer, role string) fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		userID := GetUserID(c)
 		if userID == "" {
 			return response.Unauthorized(c, "authentication required")
 		}
 
-		hasRole, err := authorizer.HasRoleForUser(userID, role)
+		hasRole, err := enforcer.HasRoleForUser(userID, role)
 		if err != nil {
 			return response.Fail(c, apperr.Internalf("authorization check failed"))
 		}
@@ -58,7 +58,7 @@ func RequireRole(authorizer port.Authorizer, role string) fiber.Handler {
 }
 
 // RequireAnyPermission creates middleware that checks if user has any of the required permissions
-func RequireAnyPermission(authorizer port.Authorizer, permissions ...string) fiber.Handler {
+func RequireAnyPermission(enforcer port.Enforcer, permissions ...string) fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		userID := GetUserID(c)
 		if userID == "" {
@@ -67,7 +67,7 @@ func RequireAnyPermission(authorizer port.Authorizer, permissions ...string) fib
 
 		for _, perm := range permissions {
 			obj, act := parsePermission(perm)
-			allowed, err := authorizer.Enforce(userID, obj, act)
+			allowed, err := enforcer.EnforceWithContext(c.UserContext(), userID, obj, act)
 			if err != nil {
 				continue
 			}
@@ -81,7 +81,7 @@ func RequireAnyPermission(authorizer port.Authorizer, permissions ...string) fib
 }
 
 // RequireAllPermissions creates middleware that checks if user has all required permissions
-func RequireAllPermissions(authorizer port.Authorizer, permissions ...string) fiber.Handler {
+func RequireAllPermissions(enforcer port.Enforcer, permissions ...string) fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		userID := GetUserID(c)
 		if userID == "" {
@@ -90,7 +90,7 @@ func RequireAllPermissions(authorizer port.Authorizer, permissions ...string) fi
 
 		for _, perm := range permissions {
 			obj, act := parsePermission(perm)
-			allowed, err := authorizer.Enforce(userID, obj, act)
+			allowed, err := enforcer.EnforceWithContext(c.UserContext(), userID, obj, act)
 			if err != nil || !allowed {
 				return response.Forbidden(c, "insufficient permissions")
 			}
@@ -101,7 +101,7 @@ func RequireAllPermissions(authorizer port.Authorizer, permissions ...string) fi
 }
 
 // RequireAnyRole creates middleware that checks if user has any of the specified roles
-func RequireAnyRole(authorizer port.Authorizer, roles ...string) fiber.Handler {
+func RequireAnyRole(enforcer port.Enforcer, roles ...string) fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		userID := GetUserID(c)
 		if userID == "" {
@@ -109,7 +109,7 @@ func RequireAnyRole(authorizer port.Authorizer, roles ...string) fiber.Handler {
 		}
 
 		for _, role := range roles {
-			hasRole, err := authorizer.HasRoleForUser(userID, role)
+			hasRole, err := enforcer.HasRoleForUser(userID, role)
 			if err != nil {
 				continue
 			}

@@ -68,9 +68,10 @@ func TestInitAdapters_DisabledUseNoOp(t *testing.T) {
 		},
 	}
 
-	cacheAdapter, err := initCache(cfg, log)
+	cacheAdapter, rateLimiter, err := initCache(cfg, log)
 	require.NoError(t, err)
 	assert.IsType(t, &cache.NoOpCache{}, cacheAdapter)
+	assert.IsType(t, &cache.NoOpCache{}, rateLimiter)
 	assert.IsType(t, &sse.NoOpBroker{}, initSSE(cfg))
 	assert.IsType(t, &emailadapter.NoOpSender{}, initEmail(cfg, log))
 	assert.IsType(t, &notificationadapter.NoOpSender{}, initNotification(cfg, log))
@@ -107,10 +108,11 @@ func TestInitCache_FailFastWhenEnabledAndUnreachable(t *testing.T) {
 		},
 	}
 
-	got, err := initCache(cfg, log)
+	got, limiter, err := initCache(cfg, log)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "redis enabled but unreachable")
 	assert.Nil(t, got)
+	assert.Nil(t, limiter)
 }
 
 func TestInitCache_EnabledConnects(t *testing.T) {
@@ -130,9 +132,10 @@ func TestInitCache_EnabledConnects(t *testing.T) {
 		},
 	}
 
-	got, err := initCache(cfg, log)
+	got, limiter, err := initCache(cfg, log)
 	require.NoError(t, err)
 	assert.IsType(t, &cache.RedisCache{}, got)
+	assert.IsType(t, &cache.RedisCache{}, limiter)
 	require.NoError(t, got.Close())
 }
 

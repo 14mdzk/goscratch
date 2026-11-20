@@ -12,7 +12,7 @@ import (
 // Module represents the user module
 type Module struct {
 	handler        *handler.Handler
-	authorizer     port.Authorizer
+	enforcer       port.Enforcer
 	authMiddleware fiber.Handler
 }
 
@@ -23,14 +23,14 @@ type Module struct {
 // authRevoker is the auth module's session-revocation interface, injected so
 // ChangePassword can terminate all active refresh tokens for the user without
 // importing the auth package (avoiding a circular dependency).
-func NewModule(repo usecase.UserRepo, transactor port.Transactor, auditor port.Auditor, authorizer port.Authorizer, cache port.Cache, authMiddleware fiber.Handler, authRevoker usecase.AuthRevoker) *Module {
+func NewModule(repo usecase.UserRepo, transactor port.Transactor, auditor port.Auditor, enforcer port.Enforcer, cache port.Cache, authMiddleware fiber.Handler, authRevoker usecase.AuthRevoker) *Module {
 	uc := usecase.NewUseCase(repo, transactor, cache, authRevoker)
 	audited := usecase.NewAuditedUseCase(uc, auditor)
 	h := handler.NewHandler(audited)
 
 	return &Module{
 		handler:        h,
-		authorizer:     authorizer,
+		enforcer:       enforcer,
 		authMiddleware: authMiddleware,
 	}
 }
@@ -47,11 +47,11 @@ func (m *Module) RegisterRoutes(router fiber.Router) {
 	users.Post("/me/password", m.handler.ChangePassword)
 
 	// User management - require specific permissions
-	users.Get("/", middleware.RequirePermission(m.authorizer, "users", "read"), m.handler.List)
-	users.Get("/:id", middleware.RequirePermission(m.authorizer, "users", "read"), m.handler.GetByID)
-	users.Post("/", middleware.RequirePermission(m.authorizer, "users", "create"), m.handler.Create)
-	users.Put("/:id", middleware.RequirePermission(m.authorizer, "users", "update"), m.handler.Update)
-	users.Delete("/:id", middleware.RequirePermission(m.authorizer, "users", "delete"), m.handler.Delete)
-	users.Post("/:id/activate", middleware.RequirePermission(m.authorizer, "users", "update"), m.handler.Activate)
-	users.Post("/:id/deactivate", middleware.RequirePermission(m.authorizer, "users", "update"), m.handler.Deactivate)
+	users.Get("/", middleware.RequirePermission(m.enforcer, "users", "read"), m.handler.List)
+	users.Get("/:id", middleware.RequirePermission(m.enforcer, "users", "read"), m.handler.GetByID)
+	users.Post("/", middleware.RequirePermission(m.enforcer, "users", "create"), m.handler.Create)
+	users.Put("/:id", middleware.RequirePermission(m.enforcer, "users", "update"), m.handler.Update)
+	users.Delete("/:id", middleware.RequirePermission(m.enforcer, "users", "delete"), m.handler.Delete)
+	users.Post("/:id/activate", middleware.RequirePermission(m.enforcer, "users", "update"), m.handler.Activate)
+	users.Post("/:id/deactivate", middleware.RequirePermission(m.enforcer, "users", "update"), m.handler.Deactivate)
 }

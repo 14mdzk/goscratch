@@ -2,20 +2,27 @@ package port
 
 import "context"
 
-// Authorizer defines the interface for authorization operations
-type Authorizer interface {
+// Enforcer evaluates access-control checks. HTTP middleware and modules that
+// only guard routes depend on this narrow interface rather than the full
+// Authorizer lifecycle and policy-management surface.
+type Enforcer interface {
 	// Enforce checks if subject has permission to perform action on object
 	Enforce(sub, obj, act string) (bool, error)
 
 	// EnforceWithContext checks permission with context for cancellation
 	EnforceWithContext(ctx context.Context, sub, obj, act string) (bool, error)
 
+	// HasRoleForUser checks whether userID holds the given role
+	HasRoleForUser(userID, role string) (bool, error)
+}
+
+// PolicyManager manages RBAC role assignments, permissions, and policy persistence.
+type PolicyManager interface {
 	// Role management
 	AddRoleForUser(userID, role string) error
 	RemoveRoleForUser(userID, role string) error
 	GetRolesForUser(userID string) ([]string, error)
 	GetUsersForRole(role string) ([]string, error)
-	HasRoleForUser(userID, role string) (bool, error)
 
 	// Permission management for roles
 	AddPermissionForRole(role, obj, act string) error
@@ -33,6 +40,14 @@ type Authorizer interface {
 	// Policy management
 	LoadPolicy() error
 	SavePolicy() error
+}
+
+// Authorizer is the full lifecycle-managed authorization port wired at the
+// composition root. Consumers that only check permissions should depend on
+// Enforcer instead.
+type Authorizer interface {
+	Enforcer
+	PolicyManager
 
 	// Lifecycle
 	Start(ctx context.Context) error
