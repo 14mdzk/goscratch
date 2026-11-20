@@ -7,20 +7,24 @@ This document describes how `App.New` brings dependencies online and how `App.Sh
 
 ## Boot order (`app.New`)
 
-`app.New(ctx, cfg)` constructs adapters in the following order. Failures abort boot — this is intentional. Silent fallback to a no-op adapter for a security-critical path (authz, cache for refresh-token revocation) was a block-ship finding in the pre-ship audit and has been removed.
+`app.New(ctx, cfg)` orchestrates startup across three internal phases (`initInfra` in `infra.go`, `initHTTP` in `http.go`, `initModules` in `modules.go`) and starts the authorizer lifecycle. Failures on any enabled critical dependency abort boot and close any adapters already opened earlier in `initInfra` — see [ADR-012](../adr/012-fail-fast-boot-and-explicit-noop.md) for the complete fail-fast vs. explicit NoOp contract.
 
-1. `cfg.Validate()` — secure-defaults invariants (JWT secret length, `iss`/`aud` non-empty, etc.).
-2. Logger.
-3. Tracer (`observability.InitTracer`) — only if `observability.tracing.enabled`.
-4. Database pool (`pgxpool`).
-5. Cache (Redis or `NoOpCache` warning).
-6. Queue (RabbitMQ or `NoOpQueue`).
-7. Storage (S3 or local).
-8. SSE broker.
-9. Auditor.
-10. **Authorizer** — Casbin `Adapter` if `authorization.enabled=true`, otherwise `NoOpAdapter`. The `Authorizer` is then `Start`ed (`Adapter.Start` wires the `persist.Watcher` callback and launches the backstop reload ticker).
-11. Email sender.
-12. HTTP server + middleware + module registration.
+1. `cfg.Validate()` — secure-defaults invariants (JWT secret length, `iss`/`aud` non-empty, notification webhook URL when enabled, etc.).
+2. Logger (`pkg/logger`).
+3. **Infrastructure (`initInfra`)**:
+   - Tracer (`observability.InitTracer` with `version.Version`) — only if `observability.tracing.enabled` (warn & continue on failure).
+   - Database pool (`pgxpool`) — fail-fast.
+   - Cache — Redis when `redis.enabled=true` (**fail-fast** if unreachable); `NoOpCache` with `SECURITY WARNING` only when `redis.enabled=false`.
+   - Queue — `RabbitMQ` (**fail-fast** if unreachable) or in-process `GoroutineQueue` per `queue.backend` ([ADR-010](../adr/010-queue-backend-spectrum.md)).
+   - Storage — `S3Storage` when `storage.mode="s3"` (**fail-fast** on init error or empty bucket), `LocalStorage` when `""` or `"local"`, error on unsupported modes.
+   - SSE broker (`Broker` or `NoOpBroker`).
+   - Auditor (`LoggingAuditor(PostgresAuditor)` or `NoOpAuditor`).
+   - **Authorizer** — Casbin `Adapter` if `authorization.enabled=true` (**fail-fast** on init failure), with optional Redis watcher (warn & fall back to 5-minute backstop reload if watcher subscribe fails); `NoOpAdapter` with warning when `authorization.enabled=false`.
+   - Email sender (`SMTPSender` or `NoOpSender`).
+   - Notification sender (`WebhookSender` or `NoOpSender`).
+4. **HTTP layer (`initHTTP`)** — Fiber server, request ID, security headers, CORS, optional tracing/metrics middleware + localhost-only `/metrics` listener, request logger, optional rate limiter.
+5. **Modules & in-process worker (`initModules`)** — builds `authMiddleware` once via `middleware.AuthConfigFromJWT(cfg.JWT)`, wires and registers all modules, and creates the in-process worker via `handlers.RegisterDefault` when `queue.backend=goroutine`.
+6. **`Authorizer.Start(ctx)`** — wires the `persist.Watcher` callback and launches the backstop reload ticker (**fail-fast** on error).
 
 `Authorizer.Start(ctx)` is the lifecycle hook introduced in PR-03b. The backstop ticker derives an internal cancel context from the parent so `Authorizer.Close` can stop the goroutine even when the parent ctx is still alive.
 

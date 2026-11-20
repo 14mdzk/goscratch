@@ -1,7 +1,9 @@
 # ADR-006: Adapter Pattern with NoOp Fallbacks
 
 ## Status
-Accepted
+Accepted (Amended by [ADR-012](012-fail-fast-boot-and-explicit-noop.md))
+
+> **Amendment note:** NoOp adapters remain the mechanism for explicit opt-out (`*.enabled=false`) and unit tests, but automatic silent fallback when an *enabled* dependency fails to initialize has been replaced by fail-fast boot semantics. See [ADR-012: Fail-Fast Boot and Explicit NoOp Selection](012-fail-fast-boot-and-explicit-noop.md).
 
 ## Context
 The starterkit uses multiple external services (Redis, RabbitMQ, S3, SMTP) that may not be available in every environment. Developers should be able to run the application with just PostgreSQL during development, and production deployments should enable only the services they need.

@@ -64,9 +64,9 @@ HTTP Handler -> UseCase (business logic) -> Port (interface) -> Adapter (impleme
 ```
 
 Key principles:
-- **No magic** -- manual DI, explicit dependencies wired in `internal/platform/app/app.go`
+- **No magic** -- manual DI, explicit dependencies wired in `internal/platform/app/`
 - **Port-driven** -- swap implementations without touching business logic
-- **NoOp fallbacks** -- every adapter has a no-op variant, start minimal
+- **Explicit NoOp adapters** -- disable optional services via config; enabled services fail fast at boot (see `docs/adr/012-fail-fast-boot-and-explicit-noop.md`)
 - **Decorator Pattern** -- audit logging is decoupled from usecases via decorators
 - **TX-aware repositories** -- transactions propagate through context automatically
 
@@ -177,7 +177,7 @@ make install-tools      # Install air, golangci-lint, sqlc, migrate
 
 1. Create `internal/module/yourmodule/` with domain, dto, handler, usecase, module.go
 2. Add SQL queries and run `make sqlc`
-3. Register in `internal/platform/app/app.go`
+3. Register in `internal/platform/app/modules.go` (passing the shared `authMiddleware` if the module has protected routes)
 
 See `internal/module/user/` as reference.
 

@@ -1,6 +1,38 @@
 # Architecture Patterns
 
-Contributor reference for the four canonical idioms enforced across all modules.
+Contributor reference for the canonical idioms enforced across all modules and the composition root.
+
+---
+
+## Composition Root Layout (`internal/platform/app/`)
+
+Manual dependency wiring (see [ADR-003](../adr/003-manual-di-over-wire.md)) is split by startup phase across four files in `internal/platform/app/`:
+
+- `app.go` — `App` struct, thin `New` orchestrator (`cfg.Validate()` → `initInfra` → `initHTTP` → `initModules` → `authorizer.Start`), `Start`, and phased `Shutdown`.
+- `infra.go` — `initInfra` and per-adapter constructors (`initTracer`, `initCache`, `initQueue`, `initStorage`, `initSSE`, `initAuditor`, `initAuthorizer`, `initEmail`, `initNotification`), following the fail-fast contract in [ADR-012](../adr/012-fail-fast-boot-and-explicit-noop.md).
+- `http.go` — `initHTTP`, CORS config, rate-limit middleware, and localhost-only `/metrics` listener.
+- `modules.go` — `initModules` (module construction and route registration) and `initInProcessWorker`.
+
+Built-in worker handlers are registered through a single shared function — `handlers.RegisterDefault(w, handlers.Dependencies{...})` in `internal/worker/handlers/register.go` — called by both `cmd/worker/main.go` and `internal/platform/app/modules.go` so standalone and in-process workers never drift.
+
+Build version metadata lives in `internal/platform/version.Version` (defaults to `"dev"`, injected via `-ldflags` in `Makefile` and `Dockerfile`).
+
+---
+
+## Centralized Auth Middleware Injection
+
+The JWT authentication middleware is constructed **once** in the composition root from `cfg.JWT`:
+
+```go
+authMiddleware := middleware.Auth(middleware.AuthConfigFromJWT(cfg.JWT))
+```
+
+Every module with protected routes (`auth`, `user`, `role`, `storage`, `sse`, `job`, `audit`) accepts `authMiddleware fiber.Handler` in `NewModule(...)` instead of receiving raw JWT secrets or calling `middleware.DefaultAuthConfig(...)`.
+
+**Why:**
+- Eliminates repeating secret / rotation / issuer / audience plumbing across every module constructor.
+- Guarantees custom `JWT_ISSUER` and `JWT_AUDIENCE` values match between token issuance (`auth/usecase`) and token verification (`middleware.Auth`).
+- Lets `cmd/openapi-drift` register all routes with a trivial no-op `fiber.Handler`.
 
 ---
 
@@ -41,7 +73,7 @@ may import `github.com/golang-jwt/jwt/v5`. All other code uses `authdomain.Claim
 ## Shared Repo Injection
 
 Auth and user modules share a single `*userrepo.Repository` instance created
-once in `internal/platform/app/app.go`. `auth.NewModule` accepts a `usecase.UserRepo`
+once in `internal/platform/app/modules.go`. `auth.NewModule` accepts a `usecase.UserRepo`
 interface (not `*pgxpool.Pool`) so the same underlying connection pool is reused.
 
 **Why**: avoids a second repository being created for the same pool (audit finding

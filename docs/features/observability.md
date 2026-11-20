@@ -54,6 +54,7 @@ Distributed tracing via OTLP HTTP exporter. Each incoming HTTP request gets a sp
 ### Features
 
 - Automatic span creation for every HTTP request
+- Build-time `service.version` resource attribute sourced from `internal/platform/version.Version` (defaults to `"dev"`, injected via `-ldflags` in `Makefile` and `Dockerfile`)
 - `X-Trace-ID` response header for debugging
 - Context propagation (W3C TraceContext + Baggage)
 - Helper functions: `WrapDBOperation`, `WrapCacheOperation` for downstream tracing
@@ -81,15 +82,16 @@ The primary application logger (`pkg/logger`) provides structured logging used t
 
 | Key | Env | Default | Description |
 |-----|-----|---------|-------------|
-| `observability.metrics.enabled` | `METRICS_ENABLED` | `false` | Enable Prometheus metrics |
-| `observability.metrics.port` | `METRICS_PORT` | (none) | Metrics port (currently served on main port) |
+| `observability.metrics.enabled` | `METRICS_ENABLED` | `true` | Enable Prometheus metrics |
+| `observability.metrics.port` | `METRICS_PORT` | `9090` | Localhost-only (`127.0.0.1:<port>`) listener port for `/metrics` |
 | `observability.tracing.enabled` | `TRACING_ENABLED` | `false` | Enable OpenTelemetry tracing |
-| `observability.tracing.endpoint` | `TRACING_ENDPOINT` | (none) | OTLP HTTP endpoint (e.g., `localhost:4318`) |
+| `observability.tracing.endpoint` | `TRACING_ENDPOINT` | `http://localhost:4317` | OTLP HTTP endpoint (e.g., `localhost:4318`) |
 
 ## Architecture
 
 - `internal/platform/observability/metrics.go` - Prometheus metrics and middleware
 - `internal/platform/observability/tracer.go` - OpenTelemetry init and tracing middleware
 - `internal/platform/observability/logger.go` - Trace-correlated structured logger
+- `internal/platform/version/version.go` - Build-time `Version` injected via `-ldflags`
 - `pkg/logger/` - Primary application logger
-- Metrics and tracing middlewares are applied in `app.go` before route registration
+- Metrics and tracing middlewares (and the localhost `/metrics` server) are applied in `internal/platform/app/http.go` before route registration

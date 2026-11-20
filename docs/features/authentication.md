@@ -110,8 +110,9 @@ Login is **fail-closed** on the cache: if Redis is unavailable or not enabled, t
 > **Operator notes.**
 >
 > - `app.New` calls `cfg.Validate()` before any adapter is constructed. If `JWT_SECRET` is unset, equals the committed placeholder, or is shorter than 32 bytes, the process refuses to start. If `JWT_ISSUER` or `JWT_AUDIENCE` are empty, the process also refuses to start.
-> - Login is **fail-closed**: if the Redis cache is unavailable (not enabled or connection failure), `/auth/login` returns a 500 error. Enable Redis for any environment that issues JWTs.
-> - A `SECURITY WARNING` is logged at startup when Redis is disabled.
+> - **Fail-fast Redis boot:** when `redis.enabled=true` (the default in `config/config.default.json`) and Redis is unreachable, startup fails rather than falling back to `NoOpCache`. Set `REDIS_ENABLED=false` explicitly to run without Redis.
+> - Login is **fail-closed**: if Redis is disabled (`redis.enabled=false`) or becomes unavailable at runtime, `/auth/login` returns a 500 error. Enable Redis for any environment that issues JWTs.
+> - A `SECURITY WARNING` is logged at startup when Redis is explicitly disabled.
 
 ## Architecture
 
