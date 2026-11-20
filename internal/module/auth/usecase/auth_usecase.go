@@ -40,12 +40,12 @@ type authUseCase struct {
 	jwtCfg   config.JWTConfig
 }
 
-// NewUseCase creates a new auth use case.
-// userRepo accepts any value satisfying userLookup (GetByEmail + GetByID),
-// which the concrete *userrepo.Repository satisfies. Accepting the interface
-// allows the caller (auth.Module) to inject the same repository instance
-// already created by the user module, avoiding a second pool connection.
-func NewUseCase(userRepo userLookup, cache port.Cache, jwtCfg config.JWTConfig) UseCase {
+var _ Service = (*authUseCase)(nil)
+
+// NewUseCase creates a new auth use case satisfying both UseCase and Revoker.
+// userRepo accepts any value satisfying UserRepo (GetByEmail + GetByID),
+// which the concrete *userrepo.Repository satisfies.
+func NewUseCase(userRepo userLookup, cache port.Cache, jwtCfg config.JWTConfig) Service {
 	return &authUseCase{
 		userRepo: userRepo,
 		cache:    cache,

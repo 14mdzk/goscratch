@@ -21,22 +21,20 @@ type Module struct {
 }
 
 // NewModule creates a new auth module.
-// userRepo is the narrow user-lookup interface satisfied by *userrepo.Repository.
-// Accepting the interface lets the caller (app.go) share the repo instance
-// already created for the user module rather than opening a second connection
-// to the same pool (audit finding: auth/module.go instantiates its own repo).
+// userRepo is the narrow user-lookup interface satisfied by *userrepo.Repository,
+// shared with the user module from the composition root.
 func NewModule(userRepo usecase.UserRepo, cache port.Cache, auditor port.Auditor, jwtCfg config.JWTConfig, authMiddleware fiber.Handler) *Module {
 	uc := usecase.NewUseCase(userRepo, cache, jwtCfg)
 	audited := usecase.NewAuditedUseCase(uc, auditor)
 	h := handler.NewHandler(audited)
 
-	// Expose the concrete usecase as a Revoker so other modules (user) can call
-	// RevokeAllForUser without going through the audit decorator.
+	// uc satisfies usecase.Service (UseCase + Revoker) at compile time, so we
+	// expose Revoker directly without a runtime type assertion or audit wrapper.
 	return &Module{
 		handler:        h,
 		cache:          cache,
 		authMiddleware: authMiddleware,
-		revoker:        uc.(usecase.Revoker),
+		revoker:        uc,
 	}
 }
 

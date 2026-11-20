@@ -38,10 +38,9 @@ func initModules(cfg *config.Config, log *logger.Logger, infra *infraDeps, serve
 	}
 	healthModule := health.NewModule(cfg.Health.ReadinessTimeout(), healthCheckers...)
 
-	// Single shared user-repo instance wired into both the user module and the
-	// auth module so both use the same *pgxpool.Pool connection rather than
-	// opening a second one (audit finding: auth/module.go:20 instantiated its
-	// own userrepo.Repository).
+	// Single shared user-repository wrapper wired into both the auth module
+	// (via auth/usecase.UserRepo) and the user module (via user/usecase.UserRepo)
+	// so neither module constructs its own repository or imports pgxpool.
 	sharedUserRepo := userrepo.NewRepository(infra.db)
 
 	// Build the JWT auth middleware once from cfg.JWT (including configured
@@ -52,7 +51,7 @@ func initModules(cfg *config.Config, log *logger.Logger, infra *infraDeps, serve
 	// Auth module is constructed first so its Revoker can be injected into the
 	// user module (ChangePassword must revoke auth sessions cross-module).
 	authModule := auth.NewModule(sharedUserRepo, infra.cache, infra.auditor, cfg.JWT, authMiddleware)
-	userModule := user.NewModule(infra.db, transactor, infra.auditor, infra.authorizer, infra.cache, authMiddleware, authModule.Revoker())
+	userModule := user.NewModule(sharedUserRepo, transactor, infra.auditor, infra.authorizer, infra.cache, authMiddleware, authModule.Revoker())
 	roleModule := role.NewModule(infra.authorizer, authMiddleware)
 	storageModule := storagemodule.NewModule(infra.storage, infra.auditor, authMiddleware)
 	sseModule := ssemodule.NewModule(infra.sse, infra.authorizer, authMiddleware)

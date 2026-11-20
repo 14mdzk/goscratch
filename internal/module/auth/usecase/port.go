@@ -16,3 +16,11 @@ type UseCase interface {
 	// callerID is the user ID extracted from the JWT by the auth middleware.
 	Logout(ctx context.Context, callerID, refreshToken string) error
 }
+
+// Service combines UseCase and Revoker so callers wiring the auth module
+// obtain both contracts with compile-time verification instead of a runtime
+// type assertion.
+type Service interface {
+	UseCase
+	Revoker
+}

@@ -3,9 +3,25 @@ package usecase
 import (
 	"context"
 
+	userdomain "github.com/14mdzk/goscratch/internal/module/user/domain"
 	"github.com/14mdzk/goscratch/internal/module/user/dto"
 	shareddomain "github.com/14mdzk/goscratch/internal/shared/domain"
 )
+
+// UserRepo is the narrow repository port that userUseCase depends on.
+// *repository.Repository satisfies it; unit tests inject a mock.
+type UserRepo interface {
+	GetByID(ctx context.Context, id string) (*userdomain.User, error)
+	GetByEmail(ctx context.Context, email string) (*userdomain.User, error)
+	List(ctx context.Context, filter userdomain.UserFilter) ([]userdomain.User, error)
+	Create(ctx context.Context, email, passwordHash, name string) (*userdomain.User, error)
+	Update(ctx context.Context, id, name, email string) (*userdomain.User, error)
+	UpdatePassword(ctx context.Context, id, passwordHash string) error
+	Delete(ctx context.Context, id string) error
+	ExistsByEmail(ctx context.Context, email string) (bool, error)
+	Activate(ctx context.Context, id string) error
+	Deactivate(ctx context.Context, id string) error
+}
 
 // UseCase defines the interface for user business logic operations.
 // Handlers and decorators depend on this interface rather than on the
