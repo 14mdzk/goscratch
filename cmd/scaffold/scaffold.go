@@ -12,7 +12,7 @@ import (
 	"text/template"
 )
 
-//go:embed templates/module/*.go.tmpl
+//go:embed templates/module/*.tmpl
 var moduleTemplates embed.FS
 
 // goReservedWords is the set of Go reserved keywords that must not be used
@@ -29,9 +29,11 @@ var namePattern = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
 
 // templateData holds variables available inside every template.
 type templateData struct {
-	Name       string // lowercase, e.g. "foo"
-	Title      string // TitleCase, e.g. "Foo"
-	ModulePath string // go.mod module path, e.g. "github.com/14mdzk/goscratch"
+	Name        string // lowercase, e.g. "foo"
+	Plural      string // lowercase plural, e.g. "foos"
+	Title       string // TitleCase, e.g. "Foo"
+	TitlePlural string // TitleCase plural, e.g. "Foos"
+	ModulePath  string // go.mod module path, e.g. "github.com/14mdzk/goscratch"
 }
 
 // runModule is the entry point for the "module" subcommand.
@@ -55,10 +57,13 @@ func runModule(name string) error {
 		return fmt.Errorf("directory %s already exists; delete it first if you want to regenerate", destRoot)
 	}
 
+	title := titleCase(name)
 	data := templateData{
-		Name:       name,
-		Title:      titleCase(name),
-		ModulePath: modulePath,
+		Name:        name,
+		Plural:      name + "s",
+		Title:       title,
+		TitlePlural: title + "s",
+		ModulePath:  modulePath,
 	}
 
 	// Map: template file name → output path (relative to destRoot), subdirectory, output filename.
@@ -70,11 +75,15 @@ func runModule(name string) error {
 
 	specs := []fileSpec{
 		{"domain.go.tmpl", "domain", name + "_domain.go"},
+		{"dto.go.tmpl", "dto", name + "_dto.go"},
+		{"queries.sql.tmpl", filepath.Join("repository", "queries"), name + ".sql"},
+		{"repository.go.tmpl", "repository", name + "_repository.go"},
 		{"port.go.tmpl", "usecase", "port.go"},
 		{"usecase.go.tmpl", "usecase", name + "_usecase.go"},
+		{"usecase_test.go.tmpl", "usecase", name + "_usecase_test.go"},
 		{"handler.go.tmpl", "handler", name + "_handler.go"},
 		{"handler_test.go.tmpl", "handler", name + "_handler_test.go"},
-		{"usecase_test.go.tmpl", "usecase", name + "_usecase_test.go"},
+		{"module.go.tmpl", "", "module.go"},
 	}
 
 	for _, spec := range specs {
@@ -99,11 +108,11 @@ func runModule(name string) error {
 
 	fmt.Printf("\nModule %q scaffolded at %s\n", name, destRoot)
 	fmt.Println("Next steps:")
-	fmt.Printf("  1. Review TODO(scaffold) comments in each generated file.\n")
-	fmt.Printf("  2. Add domain fields to internal/module/%s/domain/%s_domain.go\n", name, name)
-	fmt.Printf("  3. Implement usecase methods in internal/module/%s/usecase/%s_usecase.go\n", name, name)
-	fmt.Printf("  4. Wire handler + usecase in internal/platform/app/app.go\n")
-	fmt.Printf("  5. Run: go test ./internal/module/%s/...\n", name)
+	fmt.Printf("  1. Run `make migrate-create NAME=create_%s` and define the %q table.\n", data.Plural, data.Plural)
+	fmt.Printf("  2. Add internal/module/%s/repository/queries/ to sqlc.yaml, run `make sqlc`, and switch %s_repository.go to sqlc.New(database.DBFromContext(ctx, r.pool)).\n", name, name)
+	fmt.Printf("  3. Wire %srepo.NewRepository(infra.db), %s.NewModule(repo, transactor, infra.authorizer, authMiddleware), and server.RegisterModules(...) in internal/platform/app/modules.go (plus internal/platform/testutil/testapp.go and cmd/openapi-drift/main.go).\n", name, name)
+	fmt.Printf("  4. Document routes in internal/module/docs/openapi.yaml and verify with `make openapi-drift`.\n")
+	fmt.Printf("  5. Run: go test -race ./internal/module/%s/...\n", name)
 
 	return nil
 }

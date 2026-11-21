@@ -1,0 +1,54 @@
+-- TODO(scaffold): add this query block to sqlc.yaml under `sql:` and run `make sqlc`,
+-- then replace the raw SQL in repository/{{ .Name }}_repository.go with sqlc.New(r.db(ctx)):
+--
+--   - engine: "postgresql"
+--     queries: "internal/module/{{ .Name }}/repository/queries/"
+--     schema: "migrations/"
+--     gen:
+--       go:
+--         package: "sqlc"
+--         out: "internal/module/{{ .Name }}/repository/sqlc"
+--         sql_package: "pgx/v5"
+--         emit_json_tags: true
+--         emit_db_tags: true
+--         emit_prepared_queries: false
+--         emit_interface: true
+--         emit_exact_table_names: false
+--         emit_empty_slices: true
+
+-- name: Get{{ .Title }}ByID :one
+SELECT id, name, created_at, updated_at
+FROM {{ .Plural }}
+WHERE id = $1;
+
+-- name: List{{ .TitlePlural }} :many
+SELECT id, name, created_at, updated_at
+FROM {{ .Plural }}
+WHERE (sqlc.narg(cursor)::uuid IS NULL OR id > sqlc.narg(cursor))
+  AND (sqlc.narg(search)::text IS NULL OR name ILIKE '%' || sqlc.narg(search) || '%')
+ORDER BY id ASC
+LIMIT $1;
+
+-- name: List{{ .TitlePlural }}Prev :many
+SELECT id, name, created_at, updated_at
+FROM {{ .Plural }}
+WHERE (sqlc.narg(cursor)::uuid IS NULL OR id < sqlc.narg(cursor))
+  AND (sqlc.narg(search)::text IS NULL OR name ILIKE '%' || sqlc.narg(search) || '%')
+ORDER BY id DESC
+LIMIT $1;
+
+-- name: Create{{ .Title }} :one
+INSERT INTO {{ .Plural }} (name)
+VALUES ($1)
+RETURNING id, name, created_at, updated_at;
+
+-- name: Update{{ .Title }} :one
+UPDATE {{ .Plural }}
+SET name = COALESCE(NULLIF($2, ''), name),
+    updated_at = NOW()
+WHERE id = $1
+RETURNING id, name, created_at, updated_at;
+
+-- name: Delete{{ .Title }} :exec
+DELETE FROM {{ .Plural }}
+WHERE id = $1;

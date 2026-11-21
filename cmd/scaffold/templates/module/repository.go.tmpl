@@ -1,0 +1,258 @@
+package repository
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"time"
+
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jackc/pgx/v5/pgxpool"
+
+	"{{ .ModulePath }}/internal/module/{{ .Name }}/domain"
+	"{{ .ModulePath }}/internal/platform/database"
+	"{{ .ModulePath }}/internal/platform/observability"
+	"{{ .ModulePath }}/pkg/apperr"
+	"{{ .ModulePath }}/pkg/pgutil"
+)
+
+// Repository handles {{ .Name }} data access.
+// It is TX-aware: when a pgx.Tx is present in ctx (started by
+// port.Transactor.WithTx), database.DBFromContext routes all queries through
+// that transaction automatically.
+//
+// TODO(scaffold): once you create the migration and run `make sqlc`, import
+// "{{ .ModulePath }}/internal/module/{{ .Name }}/repository/sqlc" and switch
+// queries to sqlc.New(r.db(ctx)).
+type Repository struct {
+	pool *pgxpool.Pool
+}
+
+// NewRepository creates a new {{ .Name }} repository.
+func NewRepository(pool *pgxpool.Pool) *Repository {
+	return &Repository{pool: pool}
+}
+
+func (r *Repository) db(ctx context.Context) database.DBTX {
+	return database.DBFromContext(ctx, r.pool)
+}
+
+// GetByID retrieves a {{ .Name }} by ID.
+func (r *Repository) GetByID(ctx context.Context, id string) (*domain.{{ .Title }}, error) {
+	start := time.Now()
+	defer func() {
+		observability.RecordDBQuery("select", "{{ .Plural }}", time.Since(start))
+	}()
+
+	ctx, span := observability.WrapDBOperation(ctx, "Get{{ .Title }}ByID", "{{ .Plural }}")
+	defer span.End()
+
+	uid, err := uuid.Parse(id)
+	if err != nil {
+		return nil, apperr.NotFoundf("{{ .Name }} %s not found", id)
+	}
+
+	var pgID pgtype.UUID
+	var name string
+	var createdAt, updatedAt pgtype.Timestamptz
+
+	err = r.db(ctx).QueryRow(ctx,
+		`SELECT id, name, created_at, updated_at FROM {{ .Plural }} WHERE id = $1`,
+		pgutil.UUIDToPgtype(uid),
+	).Scan(&pgID, &name, &createdAt, &updatedAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, apperr.NotFoundf("{{ .Name }} %s not found", id)
+	}
+	if err != nil {
+		observability.RecordSpanError(ctx, err)
+		return nil, fmt.Errorf("failed to get {{ .Name }}: %w", err)
+	}
+
+	item := rowToDomain(pgID, name, createdAt, updatedAt)
+	return &item, nil
+}
+
+// List retrieves a page of {{ .Plural }} with bidirectional cursor pagination.
+func (r *Repository) List(ctx context.Context, filter domain.{{ .Title }}Filter) ([]domain.{{ .Title }}, error) {
+	start := time.Now()
+	defer func() {
+		observability.RecordDBQuery("select", "{{ .Plural }}", time.Since(start))
+	}()
+
+	ctx, span := observability.WrapDBOperation(ctx, "List{{ .TitlePlural }}", "{{ .Plural }}")
+	defer span.End()
+
+	filter.NormalizeFilter()
+	limit := filter.Limit + 1
+	isBackward := filter.Direction == "prev"
+	cursorUUID := pgutil.NullableUUID(filter.Cursor)
+
+	var searchParam pgtype.Text
+	if filter.Search.Set && filter.Search.Val != "" {
+		searchParam = pgtype.Text{String: filter.Search.Val, Valid: true}
+	}
+
+	query := `SELECT id, name, created_at, updated_at FROM {{ .Plural }}
+		WHERE ($1::uuid IS NULL OR id > $1)
+		  AND ($2::text IS NULL OR name ILIKE '%' || $2 || '%')
+		ORDER BY id ASC
+		LIMIT $3`
+	if isBackward {
+		query = `SELECT id, name, created_at, updated_at FROM {{ .Plural }}
+			WHERE ($1::uuid IS NULL OR id < $1)
+			  AND ($2::text IS NULL OR name ILIKE '%' || $2 || '%')
+			ORDER BY id DESC
+			LIMIT $3`
+	}
+
+	rows, err := r.db(ctx).Query(ctx, query, cursorUUID, searchParam, int32(limit))
+	if err != nil {
+		observability.RecordSpanError(ctx, err)
+		return nil, fmt.Errorf("failed to list {{ .Plural }}: %w", err)
+	}
+	defer rows.Close()
+
+	items := make([]domain.{{ .Title }}, 0)
+	for rows.Next() {
+		var pgID pgtype.UUID
+		var name string
+		var createdAt, updatedAt pgtype.Timestamptz
+
+		if err := rows.Scan(&pgID, &name, &createdAt, &updatedAt); err != nil {
+			observability.RecordSpanError(ctx, err)
+			return nil, fmt.Errorf("failed to scan {{ .Name }}: %w", err)
+		}
+		items = append(items, rowToDomain(pgID, name, createdAt, updatedAt))
+	}
+	if err := rows.Err(); err != nil {
+		observability.RecordSpanError(ctx, err)
+		return nil, fmt.Errorf("failed to iterate {{ .Plural }}: %w", err)
+	}
+
+	if isBackward {
+		for i, j := 0, len(items)-1; i < j; i, j = i+1, j-1 {
+			items[i], items[j] = items[j], items[i]
+		}
+	}
+
+	return items, nil
+}
+
+// Create inserts a new {{ .Name }}.
+func (r *Repository) Create(ctx context.Context, name string) (*domain.{{ .Title }}, error) {
+	start := time.Now()
+	defer func() {
+		observability.RecordDBQuery("insert", "{{ .Plural }}", time.Since(start))
+	}()
+
+	ctx, span := observability.WrapDBOperation(ctx, "Create{{ .Title }}", "{{ .Plural }}")
+	defer span.End()
+
+	var pgID pgtype.UUID
+	var createdName string
+	var createdAt, updatedAt pgtype.Timestamptz
+
+	err := r.db(ctx).QueryRow(ctx,
+		`INSERT INTO {{ .Plural }} (name) VALUES ($1) RETURNING id, name, created_at, updated_at`,
+		name,
+	).Scan(&pgID, &createdName, &createdAt, &updatedAt)
+	if err != nil {
+		observability.RecordSpanError(ctx, err)
+		if pgutil.IsDuplicateKeyError(err) {
+			return nil, apperr.Conflictf("{{ .Name }} already exists")
+		}
+		return nil, fmt.Errorf("failed to create {{ .Name }}: %w", err)
+	}
+
+	item := rowToDomain(pgID, createdName, createdAt, updatedAt)
+	return &item, nil
+}
+
+// Update updates an existing {{ .Name }}.
+func (r *Repository) Update(ctx context.Context, id, name string) (*domain.{{ .Title }}, error) {
+	start := time.Now()
+	defer func() {
+		observability.RecordDBQuery("update", "{{ .Plural }}", time.Since(start))
+	}()
+
+	ctx, span := observability.WrapDBOperation(ctx, "Update{{ .Title }}", "{{ .Plural }}")
+	defer span.End()
+
+	uid, err := uuid.Parse(id)
+	if err != nil {
+		return nil, apperr.NotFoundf("{{ .Name }} %s not found", id)
+	}
+
+	var pgID pgtype.UUID
+	var updatedName string
+	var createdAt, updatedAt pgtype.Timestamptz
+
+	err = r.db(ctx).QueryRow(ctx,
+		`UPDATE {{ .Plural }}
+		SET name = COALESCE(NULLIF($2, ''), name),
+		    updated_at = NOW()
+		WHERE id = $1
+		RETURNING id, name, created_at, updated_at`,
+		pgutil.UUIDToPgtype(uid),
+		name,
+	).Scan(&pgID, &updatedName, &createdAt, &updatedAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, apperr.NotFoundf("{{ .Name }} %s not found", id)
+	}
+	if err != nil {
+		observability.RecordSpanError(ctx, err)
+		if pgutil.IsDuplicateKeyError(err) {
+			return nil, apperr.Conflictf("{{ .Name }} already exists")
+		}
+		return nil, fmt.Errorf("failed to update {{ .Name }}: %w", err)
+	}
+
+	item := rowToDomain(pgID, updatedName, createdAt, updatedAt)
+	return &item, nil
+}
+
+// Delete removes a {{ .Name }} by ID.
+func (r *Repository) Delete(ctx context.Context, id string) error {
+	start := time.Now()
+	defer func() {
+		observability.RecordDBQuery("delete", "{{ .Plural }}", time.Since(start))
+	}()
+
+	ctx, span := observability.WrapDBOperation(ctx, "Delete{{ .Title }}", "{{ .Plural }}")
+	defer span.End()
+
+	uid, err := uuid.Parse(id)
+	if err != nil {
+		return apperr.NotFoundf("{{ .Name }} %s not found", id)
+	}
+
+	tag, err := r.db(ctx).Exec(ctx, `DELETE FROM {{ .Plural }} WHERE id = $1`, pgutil.UUIDToPgtype(uid))
+	if err != nil {
+		observability.RecordSpanError(ctx, err)
+		return fmt.Errorf("failed to delete {{ .Name }}: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return apperr.NotFoundf("{{ .Name }} %s not found", id)
+	}
+
+	return nil
+}
+
+func rowToDomain(id pgtype.UUID, name string, createdAt, updatedAt pgtype.Timestamptz) domain.{{ .Title }} {
+	var created, updated time.Time
+	if createdAt.Valid {
+		created = createdAt.Time
+	}
+	if updatedAt.Valid {
+		updated = updatedAt.Time
+	}
+
+	return domain.{{ .Title }}{
+		ID:        pgutil.PgtypeToUUID(id),
+		Name:      name,
+		CreatedAt: created,
+		UpdatedAt: updated,
+	}
+}

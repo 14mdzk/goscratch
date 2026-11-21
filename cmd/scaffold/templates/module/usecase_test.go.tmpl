@@ -3,41 +3,173 @@ package usecase
 import (
 	"context"
 	"testing"
+	"time"
 
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+
+	"{{ .ModulePath }}/internal/module/{{ .Name }}/domain"
+	"{{ .ModulePath }}/internal/module/{{ .Name }}/dto"
+	"{{ .ModulePath }}/pkg/apperr"
 )
 
-func TestSmoke_NewUseCase(t *testing.T) {
-	uc := NewUseCase()
+type mockRepo struct {
+	mock.Mock
+}
+
+var _ Repo = (*mockRepo)(nil)
+
+func (m *mockRepo) GetByID(ctx context.Context, id string) (*domain.{{ .Title }}, error) {
+	args := m.Called(ctx, id)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*domain.{{ .Title }}), args.Error(1)
+}
+
+func (m *mockRepo) List(ctx context.Context, filter domain.{{ .Title }}Filter) ([]domain.{{ .Title }}, error) {
+	args := m.Called(ctx, filter)
+	return args.Get(0).([]domain.{{ .Title }}), args.Error(1)
+}
+
+func (m *mockRepo) Create(ctx context.Context, name string) (*domain.{{ .Title }}, error) {
+	args := m.Called(ctx, name)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*domain.{{ .Title }}), args.Error(1)
+}
+
+func (m *mockRepo) Update(ctx context.Context, id, name string) (*domain.{{ .Title }}, error) {
+	args := m.Called(ctx, id, name)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*domain.{{ .Title }}), args.Error(1)
+}
+
+func (m *mockRepo) Delete(ctx context.Context, id string) error {
+	return m.Called(ctx, id).Error(0)
+}
+
+type fakeTransactor struct {
+	called int
+}
+
+func (f *fakeTransactor) WithTx(ctx context.Context, fn func(ctx context.Context) error) error {
+	f.called++
+	return fn(ctx)
+}
+
+func TestNewUseCase(t *testing.T) {
+	uc := NewUseCase(&mockRepo{}, &fakeTransactor{})
 	assert.NotNil(t, uc)
 }
 
-func TestSmoke_GetByID(t *testing.T) {
-	tests := []struct {
-		name    string
-		id      string
-		wantID  string
-		wantErr bool
-	}{
-		{
-			name:    "returns stub record",
-			id:      "abc-123",
-			wantID:  "abc-123",
-			wantErr: false,
-		},
-	}
+func Test{{ .Title }}UseCase_GetByID(t *testing.T) {
+	ctx := context.Background()
+	id := uuid.New()
+	now := time.Now().UTC()
 
-	uc := NewUseCase()
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			result, err := uc.GetByID(context.Background(), tc.id)
-			if tc.wantErr {
-				require.Error(t, err)
-				return
-			}
-			require.NoError(t, err)
-			assert.Equal(t, tc.wantID, result.ID)
-		})
-	}
+	t.Run("found", func(t *testing.T) {
+		repo := new(mockRepo)
+		repo.On("GetByID", ctx, id.String()).Return(&domain.{{ .Title }}{
+			ID:        id,
+			Name:      "sample",
+			CreatedAt: now,
+			UpdatedAt: now,
+		}, nil)
+
+		uc := NewUseCase(repo, &fakeTransactor{})
+		resp, err := uc.GetByID(ctx, id.String())
+		require.NoError(t, err)
+		assert.Equal(t, id.String(), resp.ID)
+		assert.Equal(t, "sample", resp.Name)
+		repo.AssertExpectations(t)
+	})
+
+	t.Run("not_found", func(t *testing.T) {
+		repo := new(mockRepo)
+		repo.On("GetByID", ctx, id.String()).Return(nil, apperr.NotFoundf("{{ .Name }} not found"))
+
+		uc := NewUseCase(repo, &fakeTransactor{})
+		resp, err := uc.GetByID(ctx, id.String())
+		assert.Nil(t, resp)
+		require.Error(t, err)
+		repo.AssertExpectations(t)
+	})
+}
+
+func Test{{ .Title }}UseCase_List(t *testing.T) {
+	ctx := context.Background()
+	id := uuid.New()
+	now := time.Now().UTC()
+
+	t.Run("valid_page", func(t *testing.T) {
+		repo := new(mockRepo)
+		repo.On("List", ctx, mock.AnythingOfType("domain.{{ .Title }}Filter")).Return([]domain.{{ .Title }}{
+			{ID: id, Name: "first", CreatedAt: now, UpdatedAt: now},
+		}, nil)
+
+		uc := NewUseCase(repo, &fakeTransactor{})
+		page, err := uc.List(ctx, dto.List{{ .TitlePlural }}Request{Limit: 10})
+		require.NoError(t, err)
+		require.Len(t, page.GetItems(), 1)
+		assert.Equal(t, id.String(), page.GetItems()[0].ID)
+		repo.AssertExpectations(t)
+	})
+
+	t.Run("invalid_cursor", func(t *testing.T) {
+		uc := NewUseCase(new(mockRepo), &fakeTransactor{})
+		_, err := uc.List(ctx, dto.List{{ .TitlePlural }}Request{Cursor: "not-valid-base64!"})
+		require.Error(t, err)
+	})
+}
+
+func Test{{ .Title }}UseCase_Create(t *testing.T) {
+	ctx := context.Background()
+	id := uuid.New()
+	now := time.Now().UTC()
+
+	repo := new(mockRepo)
+	tx := &fakeTransactor{}
+	repo.On("Create", ctx, "new item").Return(&domain.{{ .Title }}{
+		ID:        id,
+		Name:      "new item",
+		CreatedAt: now,
+		UpdatedAt: now,
+	}, nil)
+
+	uc := NewUseCase(repo, tx)
+	resp, err := uc.Create(ctx, dto.Create{{ .Title }}Request{Name: "new item"})
+	require.NoError(t, err)
+	assert.Equal(t, 1, tx.called)
+	assert.Equal(t, id.String(), resp.ID)
+	assert.Equal(t, "new item", resp.Name)
+	repo.AssertExpectations(t)
+}
+
+func Test{{ .Title }}UseCase_UpdateAndDelete(t *testing.T) {
+	ctx := context.Background()
+	id := uuid.New()
+	now := time.Now().UTC()
+
+	repo := new(mockRepo)
+	repo.On("Update", ctx, id.String(), "updated").Return(&domain.{{ .Title }}{
+		ID:        id,
+		Name:      "updated",
+		CreatedAt: now,
+		UpdatedAt: now,
+	}, nil)
+	repo.On("Delete", ctx, id.String()).Return(nil)
+
+	uc := NewUseCase(repo, &fakeTransactor{})
+	resp, err := uc.Update(ctx, id.String(), dto.Update{{ .Title }}Request{Name: "updated"})
+	require.NoError(t, err)
+	assert.Equal(t, "updated", resp.Name)
+
+	require.NoError(t, uc.Delete(ctx, id.String()))
+	repo.AssertExpectations(t)
 }

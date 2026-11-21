@@ -1,43 +1,201 @@
 package handler
 
 import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
+
+	"{{ .ModulePath }}/internal/module/{{ .Name }}/dto"
+	"{{ .ModulePath }}/internal/module/{{ .Name }}/usecase"
+	shareddomain "{{ .ModulePath }}/internal/shared/domain"
+	"{{ .ModulePath }}/pkg/apperr"
 )
 
-func TestSmoke_NewHandler(t *testing.T) {
-	h := NewHandler(nil)
+type mockUseCase struct {
+	mock.Mock
+}
+
+var _ usecase.UseCase = (*mockUseCase)(nil)
+
+func (m *mockUseCase) GetByID(ctx context.Context, id string) (*dto.{{ .Title }}Response, error) {
+	args := m.Called(ctx, id)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*dto.{{ .Title }}Response), args.Error(1)
+}
+
+func (m *mockUseCase) List(ctx context.Context, req dto.List{{ .TitlePlural }}Request) (shareddomain.CursorPage[dto.{{ .Title }}Response], error) {
+	args := m.Called(ctx, req)
+	return args.Get(0).(shareddomain.CursorPage[dto.{{ .Title }}Response]), args.Error(1)
+}
+
+func (m *mockUseCase) Create(ctx context.Context, req dto.Create{{ .Title }}Request) (*dto.{{ .Title }}Response, error) {
+	args := m.Called(ctx, req)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*dto.{{ .Title }}Response), args.Error(1)
+}
+
+func (m *mockUseCase) Update(ctx context.Context, id string, req dto.Update{{ .Title }}Request) (*dto.{{ .Title }}Response, error) {
+	args := m.Called(ctx, id, req)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*dto.{{ .Title }}Response), args.Error(1)
+}
+
+func (m *mockUseCase) Delete(ctx context.Context, id string) error {
+	return m.Called(ctx, id).Error(0)
+}
+
+func parseJSONBody(t *testing.T, resp *http.Response) map[string]any {
+	t.Helper()
+	body, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	var result map[string]any
+	require.NoError(t, json.Unmarshal(body, &result))
+	return result
+}
+
+func TestNewHandler(t *testing.T) {
+	h := NewHandler(&mockUseCase{})
 	assert.NotNil(t, h)
 }
 
-func TestSmoke_GetByID(t *testing.T) {
-	tests := []struct {
-		name       string
-		id         string
-		wantStatus int
-	}{
-		{
-			name:       "returns record",
-			id:         "test-id",
-			wantStatus: http.StatusOK,
-		},
-	}
+func TestHandler_GetByID(t *testing.T) {
+	t.Run("ok", func(t *testing.T) {
+		uc := new(mockUseCase)
+		uc.On("GetByID", mock.Anything, "id-1").Return(&dto.{{ .Title }}Response{
+			ID:   "id-1",
+			Name: "sample",
+		}, nil)
 
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			app := fiber.New()
-			app.Get("/{{ .Name }}/:id", func(c *fiber.Ctx) error {
-				return c.JSON(fiber.Map{"success": true, "data": fiber.Map{"id": c.Params("id")}})
-			})
+		app := fiber.New()
+		h := NewHandler(uc)
+		app.Get("/{{ .Plural }}/:id", h.GetByID)
 
-			req := httptest.NewRequest(http.MethodGet, "/{{ .Name }}/"+tc.id, nil)
-			resp, err := app.Test(req)
-			assert.NoError(t, err)
-			assert.Equal(t, tc.wantStatus, resp.StatusCode)
-		})
-	}
+		resp, err := app.Test(httptest.NewRequest(http.MethodGet, "/{{ .Plural }}/id-1", nil))
+		require.NoError(t, err)
+		assert.Equal(t, http.StatusOK, resp.StatusCode)
+
+		body := parseJSONBody(t, resp)
+		assert.Equal(t, true, body["success"])
+		uc.AssertExpectations(t)
+	})
+
+	t.Run("not_found", func(t *testing.T) {
+		uc := new(mockUseCase)
+		uc.On("GetByID", mock.Anything, "missing").Return(nil, apperr.NotFoundf("{{ .Name }} not found"))
+
+		app := fiber.New()
+		h := NewHandler(uc)
+		app.Get("/{{ .Plural }}/:id", h.GetByID)
+
+		resp, err := app.Test(httptest.NewRequest(http.MethodGet, "/{{ .Plural }}/missing", nil))
+		require.NoError(t, err)
+		assert.Equal(t, http.StatusNotFound, resp.StatusCode)
+		uc.AssertExpectations(t)
+	})
+}
+
+func TestHandler_List(t *testing.T) {
+	uc := new(mockUseCase)
+	uc.On("List", mock.Anything, mock.AnythingOfType("dto.List{{ .TitlePlural }}Request")).Return(
+		shareddomain.CursorPage[dto.{{ .Title }}Response]{
+			Items: []dto.{{ .Title }}Response{
+				{ID: "id-1", Name: "first"},
+			},
+		}, nil,
+	)
+
+	app := fiber.New()
+	h := NewHandler(uc)
+	app.Get("/{{ .Plural }}", h.List)
+
+	resp, err := app.Test(httptest.NewRequest(http.MethodGet, "/{{ .Plural }}?limit=10", nil))
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+
+	body := parseJSONBody(t, resp)
+	assert.Equal(t, true, body["success"])
+	uc.AssertExpectations(t)
+}
+
+func TestHandler_Create(t *testing.T) {
+	t.Run("created", func(t *testing.T) {
+		uc := new(mockUseCase)
+		uc.On("Create", mock.Anything, dto.Create{{ .Title }}Request{Name: "alpha"}).Return(&dto.{{ .Title }}Response{
+			ID:   "id-1",
+			Name: "alpha",
+		}, nil)
+
+		app := fiber.New()
+		h := NewHandler(uc)
+		app.Post("/{{ .Plural }}", h.Create)
+
+		req := httptest.NewRequest(http.MethodPost, "/{{ .Plural }}", bytes.NewBufferString(`{"name":"alpha"}`))
+		req.Header.Set("Content-Type", "application/json")
+		resp, err := app.Test(req)
+		require.NoError(t, err)
+		assert.Equal(t, http.StatusCreated, resp.StatusCode)
+		uc.AssertExpectations(t)
+	})
+
+	t.Run("validation_error", func(t *testing.T) {
+		app := fiber.New()
+		h := NewHandler(new(mockUseCase))
+		app.Post("/{{ .Plural }}", h.Create)
+
+		req := httptest.NewRequest(http.MethodPost, "/{{ .Plural }}", bytes.NewBufferString(`{"name":""}`))
+		req.Header.Set("Content-Type", "application/json")
+		resp, err := app.Test(req)
+		require.NoError(t, err)
+		assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
+	})
+}
+
+func TestHandler_Update(t *testing.T) {
+	uc := new(mockUseCase)
+	uc.On("Update", mock.Anything, "id-1", dto.Update{{ .Title }}Request{Name: "beta"}).Return(&dto.{{ .Title }}Response{
+		ID:   "id-1",
+		Name: "beta",
+	}, nil)
+
+	app := fiber.New()
+	h := NewHandler(uc)
+	app.Put("/{{ .Plural }}/:id", h.Update)
+
+	req := httptest.NewRequest(http.MethodPut, "/{{ .Plural }}/id-1", bytes.NewBufferString(`{"name":"beta"}`))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := app.Test(req)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	uc.AssertExpectations(t)
+}
+
+func TestHandler_Delete(t *testing.T) {
+	uc := new(mockUseCase)
+	uc.On("Delete", mock.Anything, "id-1").Return(nil)
+
+	app := fiber.New()
+	h := NewHandler(uc)
+	app.Delete("/{{ .Plural }}/:id", h.Delete)
+
+	resp, err := app.Test(httptest.NewRequest(http.MethodDelete, "/{{ .Plural }}/id-1", nil))
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusNoContent, resp.StatusCode)
+	uc.AssertExpectations(t)
 }

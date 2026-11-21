@@ -175,9 +175,9 @@ make install-tools      # Install air, golangci-lint, sqlc, migrate
 
 ### Adding a New Module
 
-1. Create `internal/module/yourmodule/` with domain, dto, handler, usecase, module.go
-2. Add SQL queries and run `make sqlc`
-3. Register in `internal/platform/app/modules.go` (passing the shared `authMiddleware` if the module has protected routes)
+1. Scaffold with `make new-module name=yourmodule` (emits `domain`, `dto`, `repository` + SQLC queries, `usecase`, `handler`, `module.go`, and unit tests)
+2. Create a migration (`make migrate-create NAME=create_yourmodules`), add the query block to `sqlc.yaml`, and run `make sqlc`
+3. Register in `internal/platform/app/modules.go` (passing `transactor`, `infra.authorizer`, and the shared `authMiddleware`)
 
 See `internal/module/user/` as reference.
 
