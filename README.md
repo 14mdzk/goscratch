@@ -197,7 +197,7 @@ Production configs in `deploy/`:
 - `docs/RUNBOOK.md` -- Incident-response playbooks (rotate JWT secret, mass refresh-token revoke, audit-log retention re-run, cache flush, reading audit logs and metrics)
 - `docs/features/` -- Feature specifications (13 specs)
 - `docs/adr/` -- Architecture decision records (12 ADRs)
-- `docs/audit/` -- Pre-ship audit findings, per-PR scope files, and the punch-list ledger
+- `archive/audit-v1.x` branch -- Historical v1.0–v1.3 pre-ship audit findings, per-PR scope files, and punch-list ledgers (archived out of `main`)
 - `CHANGELOG.md` -- Release history (current: v1.3.0)
 - `/docs` -- Interactive API explorer (Scalar, runtime)
 - `/healthz/live` & `/healthz/ready` -- Liveness and readiness endpoints
