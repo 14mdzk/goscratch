@@ -126,10 +126,12 @@ func TestLoad_InvalidJSON(t *testing.T) {
 func TestApplyEnvOverrides_String(t *testing.T) {
 	path := writeTempConfig(t, validConfigJSON)
 	t.Setenv("APP_NAME", "overridden-name")
+	t.Setenv("LOG_FORMAT", "text")
 
 	cfg, err := Load(path)
 	require.NoError(t, err)
 	assert.Equal(t, "overridden-name", cfg.App.Name)
+	assert.Equal(t, "text", cfg.App.LogFormat)
 }
 
 func TestApplyEnvOverrides_Int(t *testing.T) {

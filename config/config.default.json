@@ -1,7 +1,8 @@
 {
   "app": {
     "name": "goscratch",
-    "env": "development"
+    "env": "development",
+    "log_format": "json"
   },
   "server": {
     "host": "0.0.0.0",

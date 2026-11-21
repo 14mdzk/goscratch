@@ -53,7 +53,7 @@ Test credentials (from seeded data):
 | **API Documentation** | OpenAPI 3.0 spec, Scalar interactive explorer at `/docs` |
 | **Observability** | Prometheus metrics, OpenTelemetry tracing, structured JSON logging |
 | **Security** | Security headers, config-driven CORS, JWT iss/aud claims, XSS sanitization |
-| **Health Checks** | Database, cache, queue, storage readiness at `/health` |
+| **Health Checks** | Database, cache, queue, authz readiness at `/healthz/live` and `/healthz/ready` |
 
 ## Architecture
 
@@ -196,11 +196,11 @@ Production configs in `deploy/`:
 - `docs/QUICKSTART.md` -- Five-minute setup + secure-defaults checklist for upgrading operators
 - `docs/RUNBOOK.md` -- Incident-response playbooks (rotate JWT secret, mass refresh-token revoke, audit-log retention re-run, cache flush, reading audit logs and metrics)
 - `docs/features/` -- Feature specifications (13 specs)
-- `docs/adr/` -- Architecture decision records (7 ADRs)
+- `docs/adr/` -- Architecture decision records (12 ADRs)
 - `docs/audit/` -- Pre-ship audit findings, per-PR scope files, and the punch-list ledger
-- `CHANGELOG.md` -- Release history (current: v1.1.0 — Hardening)
+- `CHANGELOG.md` -- Release history (current: v1.3.0)
 - `/docs` -- Interactive API explorer (Scalar, runtime)
-- `/health` -- Health check endpoint
+- `/healthz/live` & `/healthz/ready` -- Liveness and readiness endpoints
 - `/metrics` -- Prometheus metrics (bound to `127.0.0.1` since v1.1.0)
 
 ## Tech Stack

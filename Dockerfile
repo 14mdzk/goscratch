@@ -1,5 +1,5 @@
 # Build stage
-FROM golang:1.27-alpine AS builder
+FROM golang:1.27.4-alpine AS builder
 
 WORKDIR /app
 
@@ -40,12 +40,12 @@ RUN chown -R appuser:appgroup /app
 # Switch to non-root user
 USER appuser
 
-# Expose port
-EXPOSE 3000
+# Expose default API port (matches config/config.default.json; override via SERVER_PORT)
+EXPOSE 8080
 
-# Health check
+# Health check (uses /healthz/live and honors SERVER_PORT)
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-    CMD wget --no-verbose --tries=1 --spider http://localhost:3000/health || exit 1
+    CMD sh -c 'wget --no-verbose --tries=1 --spider "http://localhost:${SERVER_PORT:-8080}/healthz/live"' || exit 1
 
 # Run
 CMD ["./api"]

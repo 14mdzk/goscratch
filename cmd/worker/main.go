@@ -47,7 +47,7 @@ func run() error {
 	}
 	appLogger := logger.New(logger.Config{
 		Level:  logLevel,
-		Format: "json",
+		Format: cfg.App.LogFormat,
 	})
 
 	appLogger.Info("Starting worker process",
