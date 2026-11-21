@@ -139,14 +139,34 @@ func (a *App) Shutdown(ctx context.Context) error {
 		phaseCtx, cancel := context.WithTimeout(ctx, budget)
 		defer cancel()
 		start := time.Now()
-		if err := fn(phaseCtx); err != nil {
-			a.Logger.Error("shutdown phase failed", "phase", name, "error", err)
+
+		// Execute fn in a goroutine and select on phaseCtx.Done() so phases
+		// whose Close() methods do not accept a context (SSE, Authorizer,
+		// adapters, DB) still obey their slice of the shutdown budget and
+		// cannot starve downstream phases (especially tracer flush).
+		done := make(chan error, 1)
+		go func() {
+			done <- fn(phaseCtx)
+		}()
+
+		select {
+		case err := <-done:
+			if err != nil {
+				a.Logger.Error("shutdown phase failed", "phase", name, "error", err)
+			}
+			a.Logger.Info("shutdown phase complete",
+				"phase", name,
+				"duration_ms", time.Since(start).Milliseconds(),
+				"budget_ms", budget.Milliseconds(),
+			)
+		case <-phaseCtx.Done():
+			a.Logger.Error("shutdown phase timed out",
+				"phase", name,
+				"duration_ms", time.Since(start).Milliseconds(),
+				"budget_ms", budget.Milliseconds(),
+				"error", phaseCtx.Err(),
+			)
 		}
-		a.Logger.Info("shutdown phase complete",
-			"phase", name,
-			"duration_ms", time.Since(start).Milliseconds(),
-			"budget_ms", budget.Milliseconds(),
-		)
 	}
 
 	// 1. HTTP server — drain in-flight requests. Gets the largest slice
@@ -176,7 +196,7 @@ func (a *App) Shutdown(ctx context.Context) error {
 		return a.metricsServer.Shutdown(ctx)
 	})
 
-	// 3. SSE broker — close subscriber channels so range loops exit before
+	// 4. SSE broker — close subscriber channels so range loops exit before
 	//    we yank their downstream adapters.
 	runPhase("sse", 0.05, func(_ context.Context) error {
 		if a.SSE == nil {
@@ -185,7 +205,7 @@ func (a *App) Shutdown(ctx context.Context) error {
 		return a.SSE.Close()
 	})
 
-	// 4. Authorizer — Casbin DB handle + watcher goroutine + backstop ticker.
+	// 5. Authorizer — Casbin DB handle + watcher goroutine + backstop ticker.
 	//    Closed before the main DB pool so no in-flight policy load races
 	//    against a shutting-down pool.
 	runPhase("authorizer", 0.10, func(_ context.Context) error {
@@ -195,8 +215,9 @@ func (a *App) Shutdown(ctx context.Context) error {
 		return a.Authorizer.Close()
 	})
 
-	// 5. Bulk adapters. None of these accept a ctx; we run them under the
-	//    phase budget so a hung Close cannot stall the rest.
+	// 6. Bulk adapters. None of these accept a ctx; runPhase enforces the
+	//    phase budget via goroutine + select so a hung Close cannot stall
+	//    database close or tracer flush.
 	runPhase("adapters", 0.10, func(_ context.Context) error {
 		if a.rateLimitCloser != nil {
 			if err := a.rateLimitCloser.Close(); err != nil {
@@ -227,7 +248,7 @@ func (a *App) Shutdown(ctx context.Context) error {
 		return nil
 	})
 
-	// 6. DB — last database-using thing closed.
+	// 7. DB — last database-using thing closed.
 	runPhase("database", 0.10, func(_ context.Context) error {
 		if a.DB != nil {
 			a.DB.Close()
@@ -235,7 +256,7 @@ func (a *App) Shutdown(ctx context.Context) error {
 		return nil
 	})
 
-	// 7. Tracer — LAST so spans from every prior phase flush through it.
+	// 8. Tracer — LAST so spans from every prior phase flush through it.
 	runPhase("tracer", 0.15, func(ctx context.Context) error {
 		if a.tracerShutdown == nil {
 			return nil
