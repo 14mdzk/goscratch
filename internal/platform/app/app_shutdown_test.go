@@ -191,6 +191,45 @@ func TestApp_Shutdown_RespectsParentBudget(t *testing.T) {
 		"shutdown overran the parent 100ms budget (got %s)", total)
 }
 
+type blockingCloser struct {
+	release <-chan struct{}
+}
+
+func (b *blockingCloser) Close() error {
+	<-b.release
+	return nil
+}
+
+// TestApp_Shutdown_HungAdapterDoesNotStarveLaterPhases is a regression test
+// proving that a hung non-context-aware Close() in the adapters phase times
+// out at its phase budget and still lets subsequent phases (such as tracer
+// flush) execute within the parent deadline.
+func TestApp_Shutdown_HungAdapterDoesNotStarveLaterPhases(t *testing.T) {
+	release := make(chan struct{})
+	t.Cleanup(func() { close(release) })
+
+	var tracerCalled atomic.Bool
+	a := &App{
+		Logger:          logger.New(logger.Config{Level: "error", Format: "json"}),
+		rateLimitCloser: &blockingCloser{release: release},
+		tracerShutdown: func(ctx context.Context) error {
+			require.NoError(t, ctx.Err(), "tracer phase must still have live budget after adapters timeout")
+			tracerCalled.Store(true)
+			return nil
+		},
+	}
+
+	parent, cancel := context.WithTimeout(context.Background(), 400*time.Millisecond)
+	defer cancel()
+
+	start := time.Now()
+	require.NoError(t, a.Shutdown(parent))
+	elapsed := time.Since(start)
+
+	assert.True(t, tracerCalled.Load(), "tracer must still flush after a hung adapter phase times out")
+	assert.Less(t, elapsed, 250*time.Millisecond, "hung adapters phase (10%% of 400ms = 40ms) must not burn the parent deadline (got %s)", elapsed)
+}
+
 func indexOf(ss []string, target string) int {
 	for i, s := range ss {
 		if s == target {
