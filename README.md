@@ -125,6 +125,7 @@ Design decisions documented in `docs/adr/`.
 ├── docs/                        # Documentation
 │   ├── features/                #   Feature specifications
 │   ├── adr/                     #   Architecture decision records
+│   ├── recipes/                 #   Optional add-on recipes (PostGIS)
 │   └── openapi.yaml             #   OpenAPI 3.0 spec
 ├── .github/workflows/ci.yml    # CI pipeline (lint, test, build)
 ├── docker-compose.yml           # Development environment
@@ -196,7 +197,8 @@ Production configs in `deploy/`:
 - `docs/QUICKSTART.md` -- Five-minute setup + secure-defaults checklist for upgrading operators
 - `docs/RUNBOOK.md` -- Incident-response playbooks (rotate JWT secret, mass refresh-token revoke, audit-log retention re-run, cache flush, reading audit logs and metrics)
 - `docs/features/` -- Feature specifications (13 specs)
-- `docs/adr/` -- Architecture decision records (12 ADRs)
+- `docs/adr/` -- Architecture decision records (13 ADRs)
+- `docs/recipes/` -- Optional add-on recipes (e.g., restoring PostGIS + spatial packages from `archive/postgis-v1.x`)
 - `archive/audit-v1.x` branch -- Historical v1.0–v1.3 pre-ship audit findings, per-PR scope files, and punch-list ledgers (archived out of `main`)
 - `CHANGELOG.md` -- Release history (current: v1.3.0)
 - `/docs` -- Interactive API explorer (Scalar, runtime)
