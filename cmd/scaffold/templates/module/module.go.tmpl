@@ -1,0 +1,47 @@
+package {{ .Name }}
+
+import (
+	"github.com/gofiber/fiber/v2"
+
+	"{{ .ModulePath }}/internal/module/{{ .Name }}/handler"
+	"{{ .ModulePath }}/internal/module/{{ .Name }}/usecase"
+	"{{ .ModulePath }}/internal/platform/http/middleware"
+	"{{ .ModulePath }}/internal/port"
+)
+
+// Module represents the {{ .Name }} module.
+//
+// TODO(scaffold): wire in internal/platform/app/modules.go (and update
+// internal/platform/testutil/testapp.go + cmd/openapi-drift/main.go):
+//
+//	{{ .Name }}Repo := {{ .Name }}repo.NewRepository(infra.db)
+//	{{ .Name }}Module := {{ .Name }}.NewModule({{ .Name }}Repo, transactor, infra.authorizer, authMiddleware)
+type Module struct {
+	handler        *handler.Handler
+	enforcer       port.Enforcer
+	authMiddleware fiber.Handler
+}
+
+// NewModule creates a new {{ .Name }} module.
+func NewModule(repo usecase.Repo, transactor port.Transactor, enforcer port.Enforcer, authMiddleware fiber.Handler) *Module {
+	uc := usecase.NewUseCase(repo, transactor)
+	h := handler.NewHandler(uc)
+
+	return &Module{
+		handler:        h,
+		enforcer:       enforcer,
+		authMiddleware: authMiddleware,
+	}
+}
+
+// RegisterRoutes registers {{ .Name }} module routes.
+func (m *Module) RegisterRoutes(router fiber.Router) {
+	group := router.Group("/{{ .Plural }}")
+	group.Use(m.authMiddleware)
+
+	group.Get("/", middleware.RequirePermission(m.enforcer, "{{ .Plural }}", "read"), m.handler.List)
+	group.Get("/:id", middleware.RequirePermission(m.enforcer, "{{ .Plural }}", "read"), m.handler.GetByID)
+	group.Post("/", middleware.RequirePermission(m.enforcer, "{{ .Plural }}", "create"), m.handler.Create)
+	group.Put("/:id", middleware.RequirePermission(m.enforcer, "{{ .Plural }}", "update"), m.handler.Update)
+	group.Delete("/:id", middleware.RequirePermission(m.enforcer, "{{ .Plural }}", "delete"), m.handler.Delete)
+}

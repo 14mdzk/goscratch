@@ -1,6 +1,8 @@
 package main
 
 import (
+	"go/parser"
+	"go/token"
 	"os"
 	"path/filepath"
 	"strings"
@@ -112,41 +114,71 @@ func TestRunModule_IdempotencyRefusal(t *testing.T) {
 
 func TestRenderTemplate_ProducesExpectedContent(t *testing.T) {
 	data := templateData{
-		Name:       "widget",
-		Title:      "Widget",
-		ModulePath: "github.com/example/repo",
+		Name:        "widget",
+		Plural:      "widgets",
+		Title:       "Widget",
+		TitlePlural: "Widgets",
+		ModulePath:  "github.com/example/repo",
 	}
 
 	tests := []struct {
 		tmpl    string
+		isGo    bool
 		contain []string
 	}{
 		{
 			"domain.go.tmpl",
-			[]string{"package domain", "type Widget struct"},
+			true,
+			[]string{"package domain", "type Widget struct", "type WidgetFilter struct"},
+		},
+		{
+			"dto.go.tmpl",
+			true,
+			[]string{"package dto", "type CreateWidgetRequest struct", "type WidgetResponse struct", "type ListWidgetsRequest struct"},
+		},
+		{
+			"queries.sql.tmpl",
+			false,
+			[]string{"-- name: GetWidgetByID :one", "-- name: ListWidgets :many", "FROM widgets"},
+		},
+		{
+			"repository.go.tmpl",
+			true,
+			[]string{"package repository", "type Repository struct", "database.DBFromContext", "pgx.ErrNoRows"},
 		},
 		{
 			"port.go.tmpl",
-			[]string{"package usecase", "type UseCase interface", "GetByID"},
+			true,
+			[]string{"package usecase", "type Repo interface", "type UseCase interface", "CursorPage[dto.WidgetResponse]"},
 		},
 		{
 			"usecase.go.tmpl",
-			[]string{"package usecase", "type widgetUseCase struct", "func NewUseCase()"},
-		},
-		{
-			"handler.go.tmpl",
-			[]string{"package handler", "type Handler struct", "func NewHandler("},
-		},
-		{
-			"handler_test.go.tmpl",
-			[]string{"package handler", "func TestSmoke_NewHandler"},
+			true,
+			[]string{"package usecase", "type widgetUseCase struct", "port.Transactor", "func NewUseCase(repo Repo, transactor port.Transactor) UseCase"},
 		},
 		{
 			"usecase_test.go.tmpl",
-			[]string{"package usecase", "func TestSmoke_NewUseCase"},
+			true,
+			[]string{"package usecase", "func TestNewUseCase", "func TestWidgetUseCase_Create"},
+		},
+		{
+			"handler.go.tmpl",
+			true,
+			[]string{"package handler", "type Handler struct", "func NewHandler(useCase usecase.UseCase) *Handler", "validator.ValidateAndBind", "response.Paginated"},
+		},
+		{
+			"handler_test.go.tmpl",
+			true,
+			[]string{"package handler", "func TestNewHandler", "func TestHandler_Create"},
+		},
+		{
+			"module.go.tmpl",
+			true,
+			[]string{"package widget", "type Module struct", "port.Enforcer", "middleware.RequirePermission"},
 		},
 	}
 
+	fset := token.NewFileSet()
 	for _, tc := range tests {
 		t.Run(tc.tmpl, func(t *testing.T) {
 			out, err := renderTemplate(tc.tmpl, data)
@@ -155,6 +187,10 @@ func TestRenderTemplate_ProducesExpectedContent(t *testing.T) {
 			for _, needle := range tc.contain {
 				assert.True(t, strings.Contains(src, needle),
 					"template %s: expected to contain %q\ngot:\n%s", tc.tmpl, needle, src)
+			}
+			if tc.isGo {
+				_, parseErr := parser.ParseFile(fset, tc.tmpl, out, parser.ParseComments)
+				assert.NoError(t, parseErr, "rendered template %s must be valid Go syntax", tc.tmpl)
 			}
 		})
 	}
@@ -175,11 +211,15 @@ func TestRunModule_ScaffoldsFully(t *testing.T) {
 
 	wantFiles := []string{
 		filepath.Join(dir, "internal", "module", "widget", "domain", "widget_domain.go"),
+		filepath.Join(dir, "internal", "module", "widget", "dto", "widget_dto.go"),
+		filepath.Join(dir, "internal", "module", "widget", "repository", "queries", "widget.sql"),
+		filepath.Join(dir, "internal", "module", "widget", "repository", "widget_repository.go"),
 		filepath.Join(dir, "internal", "module", "widget", "usecase", "port.go"),
 		filepath.Join(dir, "internal", "module", "widget", "usecase", "widget_usecase.go"),
+		filepath.Join(dir, "internal", "module", "widget", "usecase", "widget_usecase_test.go"),
 		filepath.Join(dir, "internal", "module", "widget", "handler", "widget_handler.go"),
 		filepath.Join(dir, "internal", "module", "widget", "handler", "widget_handler_test.go"),
-		filepath.Join(dir, "internal", "module", "widget", "usecase", "widget_usecase_test.go"),
+		filepath.Join(dir, "internal", "module", "widget", "module.go"),
 	}
 
 	for _, f := range wantFiles {

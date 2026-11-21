@@ -1,0 +1,28 @@
+package dto
+
+import "{{ .ModulePath }}/pkg/types"
+
+// Create{{ .Title }}Request represents the payload to create a {{ .Name }}.
+type Create{{ .Title }}Request struct {
+	Name string `json:"name" validate:"required,min=2,max=100"`
+}
+
+// Update{{ .Title }}Request represents the payload to update a {{ .Name }}.
+type Update{{ .Title }}Request struct {
+	Name string `json:"name" validate:"omitempty,min=2,max=100"`
+}
+
+// {{ .Title }}Response represents a {{ .Name }} API response.
+type {{ .Title }}Response struct {
+	ID        string `json:"id"`
+	Name      string `json:"name"`
+	CreatedAt string `json:"created_at"`
+	UpdatedAt string `json:"updated_at"`
+}
+
+// List{{ .TitlePlural }}Request represents query parameters for listing {{ .Plural }}.
+type List{{ .TitlePlural }}Request struct {
+	Cursor string            `query:"cursor"`
+	Limit  int               `query:"limit" validate:"omitempty,min=1,max=100"`
+	Search types.Opt[string] `query:"search"`
+}

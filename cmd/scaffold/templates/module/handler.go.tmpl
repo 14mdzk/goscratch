@@ -1,17 +1,15 @@
 package handler
 
 import (
-	"{{ .ModulePath }}/internal/module/{{ .Name }}/usecase"
-
 	"github.com/gofiber/fiber/v2"
+
+	"{{ .ModulePath }}/internal/module/{{ .Name }}/dto"
+	"{{ .ModulePath }}/internal/module/{{ .Name }}/usecase"
+	"{{ .ModulePath }}/internal/platform/validator"
+	"{{ .ModulePath }}/pkg/response"
 )
 
 // Handler handles {{ .Name }} HTTP requests.
-//
-// TODO(scaffold): register routes on the fiber router in internal/platform/app/app.go:
-//
-//	h := {{ .Name }}handler.NewHandler(uc)
-//	api.Get("/{{ .Name }}/:id", h.GetByID)
 type Handler struct {
 	useCase usecase.UseCase
 }
@@ -21,17 +19,64 @@ func NewHandler(useCase usecase.UseCase) *Handler {
 	return &Handler{useCase: useCase}
 }
 
-// GetByID retrieves a {{ .Name }} record by ID.
-//
-// TODO(scaffold): implement full handler logic — validation, error mapping, pagination.
+// GetByID retrieves a {{ .Name }} by ID.
 func (h *Handler) GetByID(c *fiber.Ctx) error {
 	id := c.Params("id")
 	result, err := h.useCase.GetByID(c.UserContext(), id)
 	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"success": false,
-			"error":   fiber.Map{"message": err.Error()},
-		})
+		return response.Fail(c, err)
 	}
-	return c.JSON(fiber.Map{"success": true, "data": result})
+	return response.Success(c, result)
+}
+
+// List retrieves a paginated list of {{ .Plural }}.
+func (h *Handler) List(c *fiber.Ctx) error {
+	var req dto.List{{ .TitlePlural }}Request
+	if err := validator.ValidateQuery(c, &req); err != nil {
+		return validator.HandleValidationError(c, err)
+	}
+
+	result, err := h.useCase.List(c.UserContext(), req)
+	if err != nil {
+		return response.Fail(c, err)
+	}
+	return response.Paginated(c, result.GetItems(), result.GetMeta())
+}
+
+// Create creates a new {{ .Name }}.
+func (h *Handler) Create(c *fiber.Ctx) error {
+	var req dto.Create{{ .Title }}Request
+	if err := validator.ValidateAndBind(c, &req); err != nil {
+		return validator.HandleValidationError(c, err)
+	}
+
+	result, err := h.useCase.Create(c.UserContext(), req)
+	if err != nil {
+		return response.Fail(c, err)
+	}
+	return response.Created(c, result)
+}
+
+// Update updates a {{ .Name }}.
+func (h *Handler) Update(c *fiber.Ctx) error {
+	id := c.Params("id")
+	var req dto.Update{{ .Title }}Request
+	if err := validator.ValidateAndBind(c, &req); err != nil {
+		return validator.HandleValidationError(c, err)
+	}
+
+	result, err := h.useCase.Update(c.UserContext(), id, req)
+	if err != nil {
+		return response.Fail(c, err)
+	}
+	return response.Success(c, result)
+}
+
+// Delete removes a {{ .Name }}.
+func (h *Handler) Delete(c *fiber.Ctx) error {
+	id := c.Params("id")
+	if err := h.useCase.Delete(c.UserContext(), id); err != nil {
+		return response.Fail(c, err)
+	}
+	return response.NoContent(c)
 }

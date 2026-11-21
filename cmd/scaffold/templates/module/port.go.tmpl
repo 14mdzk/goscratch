@@ -1,23 +1,30 @@
 package usecase
 
-import "context"
+import (
+	"context"
+
+	"{{ .ModulePath }}/internal/module/{{ .Name }}/domain"
+	"{{ .ModulePath }}/internal/module/{{ .Name }}/dto"
+	shareddomain "{{ .ModulePath }}/internal/shared/domain"
+)
+
+// Repo is the narrow repository port that {{ .Name }}UseCase depends on.
+// *repository.Repository satisfies it; unit tests inject a mock.
+type Repo interface {
+	GetByID(ctx context.Context, id string) (*domain.{{ .Title }}, error)
+	List(ctx context.Context, filter domain.{{ .Title }}Filter) ([]domain.{{ .Title }}, error)
+	Create(ctx context.Context, name string) (*domain.{{ .Title }}, error)
+	Update(ctx context.Context, id, name string) (*domain.{{ .Title }}, error)
+	Delete(ctx context.Context, id string) error
+}
 
 // UseCase defines the interface for {{ .Name }} business logic operations.
 // Handlers and decorators depend on this interface rather than on the
-// concrete *useCase struct, enabling testability and extensibility.
-//
-// TODO(scaffold): wire {{ .Title }}UseCase into internal/platform/app/app.go:
-//
-//	uc := {{ .Name }}usecase.NewUseCase(repo)
-//	h  := {{ .Name }}handler.NewHandler(uc)
-//	// register routes on the fiber app
+// concrete *{{ .Name }}UseCase struct, enabling testability and extensibility.
 type UseCase interface {
-	// TODO(scaffold): add method signatures matching {{ .Name }} business operations.
-	GetByID(ctx context.Context, id string) (*{{ .Title }}, error)
-}
-
-// {{ .Title }} is a minimal return type placeholder.
-// TODO(scaffold): replace with the real domain or DTO type once the domain model is defined.
-type {{ .Title }} struct {
-	ID string `json:"id"`
+	GetByID(ctx context.Context, id string) (*dto.{{ .Title }}Response, error)
+	List(ctx context.Context, req dto.List{{ .TitlePlural }}Request) (shareddomain.CursorPage[dto.{{ .Title }}Response], error)
+	Create(ctx context.Context, req dto.Create{{ .Title }}Request) (*dto.{{ .Title }}Response, error)
+	Update(ctx context.Context, id string, req dto.Update{{ .Title }}Request) (*dto.{{ .Title }}Response, error)
+	Delete(ctx context.Context, id string) error
 }

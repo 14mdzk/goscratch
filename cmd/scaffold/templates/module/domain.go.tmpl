@@ -1,12 +1,44 @@
 package domain
 
-import "time"
+import (
+	"time"
 
-// {{ .Title }} represents the {{ .Name }} entity.
+	"github.com/google/uuid"
+
+	"{{ .ModulePath }}/pkg/types"
+)
+
+// {{ .Title }} represents a {{ .Name }} domain entity.
 //
 // TODO(scaffold): add fields that belong to the {{ .Name }} domain model.
 type {{ .Title }} struct {
-	ID        string    `json:"id"`
+	ID        uuid.UUID `json:"id"`
+	Name      string    `json:"name"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
+}
+
+// {{ .Title }}Filter contains cursor-pagination and filter options for listing {{ .Plural }}.
+type {{ .Title }}Filter struct {
+	Cursor    string
+	Limit     int
+	Direction string // "next" (default) or "prev"
+
+	Search types.Opt[string]
+}
+
+// DefaultLimit is the default pagination page size.
+const DefaultLimit = 20
+
+// MaxLimit is the maximum pagination page size.
+const MaxLimit = 100
+
+// NormalizeFilter applies pagination bounds to the filter.
+func (f *{{ .Title }}Filter) NormalizeFilter() {
+	if f.Limit <= 0 {
+		f.Limit = DefaultLimit
+	}
+	if f.Limit > MaxLimit {
+		f.Limit = MaxLimit
+	}
 }
