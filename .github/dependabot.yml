@@ -27,7 +27,7 @@ updates:
       - ci
     open-pull-requests-limit: 5
 
-  # Monitors Dockerfile at /. Docker Compose image pins are not auto-updated; see docs/audit/v1.2-punch-list.md
+  # Monitors Dockerfile at /. Docker Compose image pins are not auto-updated; see branch archive/audit-v1.x (docs/audit/v1.2-punch-list.md)
   - package-ecosystem: docker
     directory: "/"
     schedule:

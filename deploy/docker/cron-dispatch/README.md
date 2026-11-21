@@ -18,7 +18,7 @@ See the *Alternatives* section below.
   outbound HTTPS — no DB or Redis access.
 - **No code surface in the API**: no new config knob, no new lifecycle hook,
   no new package to maintain. Matches the "no abstraction without a 2nd
-  consumer" guard documented in `docs/audit/v1.2-plan.md`.
+  consumer" guard documented in `docs/audit/v1.2-plan.md` (archived on branch `archive/audit-v1.x`).
 
 ## Build
 

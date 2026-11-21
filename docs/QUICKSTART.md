@@ -168,7 +168,7 @@ curl -s http://127.0.0.1:9090/metrics | head -1
 # Should succeed locally; should fail from outside the host.
 ```
 
-Full release notes for v1.1.0 are in [`CHANGELOG.md`](../CHANGELOG.md). Audit trail: [`docs/audit/`](audit/).
+Full release notes for v1.1.0 are in [`CHANGELOG.md`](../CHANGELOG.md). Historical v1.x audit trail: branch `archive/audit-v1.x`.
 
 ## Next steps
 
