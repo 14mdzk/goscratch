@@ -82,6 +82,7 @@ The primary application logger (`pkg/logger`) provides structured logging used t
 
 | Key | Env | Default | Description |
 |-----|-----|---------|-------------|
+| `app.log_format` | `LOG_FORMAT` | `json` | Log output format (`json` or `text`) |
 | `observability.metrics.enabled` | `METRICS_ENABLED` | `true` | Enable Prometheus metrics |
 | `observability.metrics.port` | `METRICS_PORT` | `9090` | Localhost-only (`127.0.0.1:<port>`) listener port for `/metrics` |
 | `observability.tracing.enabled` | `TRACING_ENABLED` | `false` | Enable OpenTelemetry tracing |

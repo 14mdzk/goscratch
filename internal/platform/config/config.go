@@ -35,8 +35,9 @@ type Config struct {
 }
 
 type AppConfig struct {
-	Name string `json:"name" env:"APP_NAME"`
-	Env  string `json:"env" env:"APP_ENV"`
+	Name      string `json:"name" env:"APP_NAME"`
+	Env       string `json:"env" env:"APP_ENV"`
+	LogFormat string `json:"log_format" env:"LOG_FORMAT"`
 }
 
 type ServerConfig struct {

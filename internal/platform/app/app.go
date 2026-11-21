@@ -58,7 +58,7 @@ func New(ctx context.Context, cfg *config.Config) (*App, error) {
 	}
 	log := logger.New(logger.Config{
 		Level:  logLevel,
-		Format: "json",
+		Format: cfg.App.LogFormat,
 	})
 
 	infra, err := initInfra(ctx, cfg, log)
