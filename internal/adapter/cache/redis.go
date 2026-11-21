@@ -179,7 +179,9 @@ local remaining = max - count - 1
 return {1, remaining, 0}
 `)
 
-// SlidingWindowAllow implements port.Cache.SlidingWindowAllow using a Lua
+var _ port.RateLimiter = (*RedisCache)(nil)
+
+// SlidingWindowAllow implements port.RateLimiter using a Lua
 // script so the ZREMRANGEBYSCORE → ZCARD → ZADD sequence is atomic.
 func (c *RedisCache) SlidingWindowAllow(ctx context.Context, key string, maxReqs int, window time.Duration) (allowed bool, remaining, retryAfter int, err error) {
 	nowNs := time.Now().UnixNano()

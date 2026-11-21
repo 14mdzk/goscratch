@@ -82,13 +82,18 @@ func NewTestApp(ctx context.Context, pgConnStr, redisAddr string) (*fiber.App, f
 
 	// Set up Redis cache (real if address provided, otherwise NoOp)
 	var cacheAdapter port.Cache
+	var rateLimiter port.RateLimiter
 	if redisAddr != "" {
-		cacheAdapter, err = cache.NewRedisCache(redisAddr, "", 0)
-		if err != nil {
-			cacheAdapter = cache.NewNoOpCache()
+		rc, rerr := cache.NewRedisCache(redisAddr, "", 0)
+		if rerr != nil {
+			noop := cache.NewNoOpCache()
+			cacheAdapter, rateLimiter = noop, noop
+		} else {
+			cacheAdapter, rateLimiter = rc, rc
 		}
 	} else {
-		cacheAdapter = cache.NewNoOpCache()
+		noop := cache.NewNoOpCache()
+		cacheAdapter, rateLimiter = noop, noop
 	}
 
 	// NoOp adapters for services not needed in integration tests
@@ -128,7 +133,7 @@ func NewTestApp(ctx context.Context, pgConnStr, redisAddr string) (*fiber.App, f
 	)
 	sharedUserRepo := userrepo.NewRepository(pool)
 	authMiddleware := middleware.Auth(middleware.AuthConfigFromJWT(jwtCfg))
-	authModule := auth.NewModule(sharedUserRepo, cacheAdapter, auditor, jwtCfg, authMiddleware)
+	authModule := auth.NewModule(sharedUserRepo, cacheAdapter, rateLimiter, auditor, jwtCfg, authMiddleware)
 	userModule := user.NewModule(sharedUserRepo, transactor, auditor, authorizer, cacheAdapter, authMiddleware, authModule.Revoker())
 	roleModule := role.NewModule(authorizer, authMiddleware)
 	storageModule := storagemodule.NewModule(storageAdapter, auditor, authMiddleware)

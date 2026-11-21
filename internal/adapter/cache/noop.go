@@ -62,6 +62,8 @@ func (c *NoOpCache) Expire(ctx context.Context, key string, ttl time.Duration) e
 	return nil
 }
 
+var _ port.RateLimiter = (*NoOpCache)(nil)
+
 // SlidingWindowAllow always allows on the NoOp backend.  When Redis is
 // unavailable the in-memory backend is used instead, so this path is only
 // hit if someone deliberately passes a NoOpCache to the rate-limit middleware.

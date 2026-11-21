@@ -86,6 +86,15 @@ When a usecase satisfies a secondary cross-module port in addition to its handle
 
 ---
 
+## Segregated Shared Ports (`internal/port/`)
+
+Keep shared port interfaces focused on a single consumer role so modules and tests only depend on the methods they actually call:
+
+- **Rate limiting vs. cache:** `port.RateLimiter` (`SlidingWindowAllow`) is separate from `port.Cache`. `*cache.RedisCache` and `*cache.NoOpCache` satisfy both, while `middleware.RateLimit` and `module/auth` depend on `port.RateLimiter` instead of the full 11-method cache interface.
+- **Authorization enforcement vs. policy management:** `port.Authorizer` composes `port.Enforcer` (`Enforce`, `EnforceWithContext`, `HasRoleForUser`), `port.PolicyManager` (role/permission CRUD and policy persistence), and lifecycle (`Start`, `Close`). `middleware/authz` (which calls `EnforceWithContext(c.UserContext(), ...)`) and route-guarding modules (`user`, `sse`, `job`, `audit`) depend on `port.Enforcer`; only `module/role` and the composition root depend on the full `port.Authorizer`.
+
+---
+
 ## `errors.Is` Convention
 
 All sentinel comparisons must use `errors.Is`, not `==`:

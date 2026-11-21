@@ -50,7 +50,7 @@ func initModules(cfg *config.Config, log *logger.Logger, infra *infraDeps, serve
 
 	// Auth module is constructed first so its Revoker can be injected into the
 	// user module (ChangePassword must revoke auth sessions cross-module).
-	authModule := auth.NewModule(sharedUserRepo, infra.cache, infra.auditor, cfg.JWT, authMiddleware)
+	authModule := auth.NewModule(sharedUserRepo, infra.cache, infra.rateLimiter, infra.auditor, cfg.JWT, authMiddleware)
 	userModule := user.NewModule(sharedUserRepo, transactor, infra.auditor, infra.authorizer, infra.cache, authMiddleware, authModule.Revoker())
 	roleModule := role.NewModule(infra.authorizer, authMiddleware)
 	storageModule := storagemodule.NewModule(infra.storage, infra.auditor, authMiddleware)

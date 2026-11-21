@@ -12,18 +12,18 @@ import (
 // Module represents the audit module
 type Module struct {
 	handler        *handler.Handler
-	authorizer     port.Authorizer
+	enforcer       port.Enforcer
 	authMiddleware fiber.Handler
 }
 
 // NewModule creates a new audit module
-func NewModule(auditor port.Auditor, authorizer port.Authorizer, authMiddleware fiber.Handler) *Module {
+func NewModule(auditor port.Auditor, enforcer port.Enforcer, authMiddleware fiber.Handler) *Module {
 	uc := usecase.NewUseCase(auditor)
 	h := handler.NewHandler(uc)
 
 	return &Module{
 		handler:        h,
-		authorizer:     authorizer,
+		enforcer:       enforcer,
 		authMiddleware: authMiddleware,
 	}
 }
@@ -31,5 +31,5 @@ func NewModule(auditor port.Auditor, authorizer port.Authorizer, authMiddleware 
 // RegisterRoutes registers audit module routes
 func (m *Module) RegisterRoutes(router fiber.Router) {
 	audit := router.Group("/audit", m.authMiddleware)
-	audit.Get("/logs", middleware.RequirePermission(m.authorizer, "audit", "read"), m.handler.List)
+	audit.Get("/logs", middleware.RequirePermission(m.enforcer, "audit", "read"), m.handler.List)
 }

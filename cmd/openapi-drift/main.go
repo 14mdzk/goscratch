@@ -130,7 +130,7 @@ func collectFiberRoutes() (map[routeKey]struct{}, error) {
 	// nil cache causes RateLimit to fall back to the in-memory backend (safe).
 	// Zero JWTConfig is fine — Auth middleware only runs on actual requests.
 	var userRepo authusecase.UserRepo // typed-nil interface value
-	authmod.NewModule(userRepo, nil, nil, config.JWTConfig{}, noopAuth).RegisterRoutes(app)
+	authmod.NewModule(userRepo, nil, nil, nil, config.JWTConfig{}, noopAuth).RegisterRoutes(app)
 
 	// User: nil repo, transactor, auditor, authorizer, cache.
 	usermod.NewModule(nil, nil, nil, nil, nil, noopAuth, nil).RegisterRoutes(app)

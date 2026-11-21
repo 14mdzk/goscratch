@@ -24,7 +24,7 @@ type httpDeps struct {
 	rateLimitCloser io.Closer
 }
 
-func initHTTP(cfg *config.Config, log *logger.Logger, cacheAdapter port.Cache) *httpDeps {
+func initHTTP(cfg *config.Config, log *logger.Logger, rateLimiter port.RateLimiter) *httpDeps {
 	server := http.NewServer(cfg.Server, log, cfg.IsProduction())
 	app := server.App()
 
@@ -60,7 +60,7 @@ func initHTTP(cfg *config.Config, log *logger.Logger, cacheAdapter port.Cache) *
 			Max:      rlMax,
 			Window:   rlWindow,
 			UseRedis: cfg.Redis.Enabled,
-		}, cacheAdapter)
+		}, rateLimiter)
 		rateLimitCloser = rlCloser
 		app.Use(rlHandler)
 		log.Info("Rate limiting enabled", "max", rlMax, "window_sec", cfg.RateLimit.WindowSec)
