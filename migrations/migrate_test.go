@@ -23,7 +23,7 @@ import (
 var migrationsFS embed.FS
 
 // TestMigrations_UpDownRoundTrip applies every up migration in this directory
-// against a fresh PostGIS container, then rolls all the way down and asserts
+// against a fresh PostgreSQL container, then rolls all the way down and asserts
 // the public schema is empty apart from golang-migrate's own version table.
 // It runs against the real migrations/ directory (not the testutil fixture
 // copy) so a broken down migration shows here, not in prod.
@@ -36,9 +36,7 @@ func TestMigrations_UpDownRoundTrip(t *testing.T) {
 	ctx := context.Background()
 
 	pgContainer, err := postgres.Run(ctx,
-		"postgis/postgis:18-master",
-		// 18-master publishes amd64 only; emulate there (no-op on amd64 CI).
-		testcontainers.WithImagePlatform("linux/amd64"),
+		"postgres:18-alpine",
 		postgres.WithDatabase("testdb"),
 		postgres.WithUsername("testuser"),
 		postgres.WithPassword("testpass"),
@@ -67,7 +65,7 @@ func TestMigrations_UpDownRoundTrip(t *testing.T) {
 	version, dirty, err := m.Version()
 	require.NoError(t, err)
 	assert.False(t, dirty, "migration left a dirty version")
-	assert.Equal(t, uint(5), version, "expected all 5 migrations applied")
+	assert.Equal(t, uint(5), version, "expected migration version 5 applied")
 
 	// Sanity: the migrated objects exist.
 	pool, err := pgxpool.New(ctx, connStr)

@@ -9,6 +9,8 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/14mdzk/goscratch/internal/platform/config"
 )
 
 // TestGetTx verifies that GetTx returns nil when no transaction is in the
@@ -42,12 +44,10 @@ func TestDBFromContext(t *testing.T) {
 	})
 
 	t.Run("returns_tx_when_tx_present", func(t *testing.T) {
-		// Craft a context that carries a value under txKey that IS a pgx.Tx.
-		// Without a live database we cannot obtain a real pgx.Tx, so we
-		// exercise only the "no TX" path in this unit-test suite.
-		// The integration tests validate the full round-trip.
-		ctx := context.Background()
-		require.Nil(t, GetTx(ctx))
+		tx := &fakeTx{}
+		ctx := context.WithValue(context.Background(), txKey{}, tx)
+		db := DBFromContext(ctx, nil)
+		assert.Equal(t, tx, db)
 	})
 }
 
@@ -59,6 +59,7 @@ type fakeTx struct {
 	pgx.Tx
 	rollbackCalled      bool
 	commitCalled        bool
+	commitErr           error
 	rollbackErrAtCall   error // ctx.Err() captured at rollback time
 	rollbackHadDeadline bool
 	rollbackDeadline    time.Time
@@ -80,7 +81,7 @@ func (f *fakeTx) Rollback(ctx context.Context) error {
 
 func (f *fakeTx) Commit(ctx context.Context) error {
 	f.commitCalled = true
-	return nil
+	return f.commitErr
 }
 
 // fakeBeginner returns the same fakeTx for every Begin call.
@@ -140,5 +141,107 @@ func TestWithTx_RollbackUsesFreshContext(t *testing.T) {
 		require.NoError(t, err)
 		require.False(t, tx.rollbackCalled)
 		require.True(t, tx.commitCalled)
+	})
+}
+
+func TestNewTransactor(t *testing.T) {
+	tor := NewTransactor(nil)
+	require.NotNil(t, tor)
+}
+
+func TestWithTx_ErrorAndPanicPaths(t *testing.T) {
+	t.Run("begin_error", func(t *testing.T) {
+		tx := &fakeTx{}
+		beginErr := errors.New("begin boom")
+		tor := &Transactor{pool: &fakeBeginner{tx: tx, beginErr: beginErr}}
+
+		err := tor.WithTx(context.Background(), func(ctx context.Context) error {
+			t.Fatal("fn should not be called when Begin fails")
+			return nil
+		})
+		require.ErrorIs(t, err, beginErr)
+		assert.False(t, tx.rollbackCalled)
+		assert.False(t, tx.commitCalled)
+	})
+
+	t.Run("fn_panic_rolls_back_with_fresh_context_and_repanics", func(t *testing.T) {
+		tx := &fakeTx{}
+		tor := &Transactor{pool: &fakeBeginner{tx: tx}}
+
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+
+		require.PanicsWithValue(t, "unexpected panic", func() {
+			_ = tor.WithTx(ctx, func(ctx context.Context) error {
+				panic("unexpected panic")
+			})
+		})
+		require.True(t, tx.rollbackCalled)
+		require.NoError(t, tx.rollbackErrAtCall)
+		require.True(t, tx.rollbackHadDeadline)
+		assert.False(t, tx.commitCalled)
+	})
+
+	t.Run("rollback_error_wrapped", func(t *testing.T) {
+		fnErr := errors.New("fn failed")
+		rbErr := errors.New("rollback failed")
+		tx := &fakeTx{
+			rollbackErrFunc: func(ctx context.Context) error {
+				return rbErr
+			},
+		}
+		tor := &Transactor{pool: &fakeBeginner{tx: tx}}
+
+		err := tor.WithTx(context.Background(), func(ctx context.Context) error {
+			return fnErr
+		})
+		require.ErrorIs(t, err, fnErr)
+		assert.ErrorContains(t, err, rbErr.Error())
+		assert.False(t, tx.commitCalled)
+	})
+
+	t.Run("commit_error_wrapped", func(t *testing.T) {
+		commitErr := errors.New("commit failed")
+		tx := &fakeTx{commitErr: commitErr}
+		tor := &Transactor{pool: &fakeBeginner{tx: tx}}
+
+		err := tor.WithTx(context.Background(), func(ctx context.Context) error {
+			return nil
+		})
+		require.ErrorIs(t, err, commitErr)
+		assert.True(t, tx.commitCalled)
+		assert.False(t, tx.rollbackCalled)
+	})
+}
+
+func TestNewPostgresPool(t *testing.T) {
+	t.Run("invalid_config", func(t *testing.T) {
+		pool, err := NewPostgresPool(context.Background(), config.DatabaseConfig{
+			Host:    "localhost",
+			Port:    5432,
+			User:    "postgres",
+			Name:    "goscratch",
+			SSLMode: "invalid-mode",
+		})
+		require.Nil(t, pool)
+		require.ErrorContains(t, err, "failed to parse database config")
+	})
+
+	t.Run("ping_failure_on_cancelled_context", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+
+		pool, err := NewPostgresPool(ctx, config.DatabaseConfig{
+			Host:            "127.0.0.1",
+			Port:            1,
+			User:            "postgres",
+			Name:            "goscratch",
+			SSLMode:         "disable",
+			MaxOpenConns:    2,
+			MaxIdleConns:    1,
+			ConnMaxLifetime: 60,
+		})
+		require.Nil(t, pool)
+		require.ErrorContains(t, err, "failed to ping database")
 	})
 }

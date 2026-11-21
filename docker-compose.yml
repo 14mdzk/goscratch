@@ -1,9 +1,8 @@
 services:
   # PostgreSQL Database
   postgres:
-    image: postgis/postgis:18-master
+    image: postgres:18-alpine
     container_name: goscratch-postgres
-    platform: linux/amd64
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
